@@ -5,3 +5,6 @@ node_modules/
 build/
 *.bin
 __pycache__/
+tools/e2e/bin/
+tools/e2e/KpHelper/bin/
+tools/e2e/KpHelper/obj/
