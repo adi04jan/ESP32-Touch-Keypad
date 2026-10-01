@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "clipped-overflow-container",
+        "value": "*",
+        "files": [
+          "docs/viewer/index.html"
+        ],
+        "createdAt": "2026-10-01T20:09:08.245Z",
+        "reason": "Claude triage: .theatre proscenium and .screen intentionally clip scenery flats and screen content; no tooltips/menus live inside them"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "docs/viewer/index.html"
+        ],
+        "createdAt": "2026-10-01T21:50:29.350Z",
+        "reason": "Claude triage: flagged children are intentionally full-bleed: sheet deckle edge strips (.tail, ::before), the stage backdrop plate, and the keypad bezel inside .shell (percent padding)."
+      }
+    ]
+  }
+}

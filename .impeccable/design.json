@@ -1,0 +1,546 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-01T23:04:06+00:00",
+  "title": "Design System: ESP32 Touch Keypad",
+  "extensions": {
+    "colorMeta": {
+      "house": {
+        "role": "neutral",
+        "displayName": "House Dark",
+        "canonical": "#13212b",
+        "tonalRamp": [
+          "oklch(15% 0.014 240)",
+          "oklch(26% 0.018 240)",
+          "oklch(38% 0.021 240)",
+          "oklch(49% 0.025 240)",
+          "oklch(61% 0.025 240)",
+          "oklch(72% 0.021 240)",
+          "oklch(84% 0.018 240)",
+          "oklch(95% 0.014 240)"
+        ]
+      },
+      "oxblood": {
+        "role": "primary",
+        "displayName": "Playbill Oxblood",
+        "canonical": "#7a1f2b",
+        "tonalRamp": [
+          "oklch(15% 0.062 18)",
+          "oklch(26% 0.080 18)",
+          "oklch(38% 0.098 18)",
+          "oklch(49% 0.116 18)",
+          "oklch(61% 0.116 18)",
+          "oklch(72% 0.098 18)",
+          "oklch(84% 0.080 18)",
+          "oklch(95% 0.062 18)"
+        ]
+      },
+      "oxblood-2": {
+        "role": "primary",
+        "displayName": "Curtain Fold",
+        "canonical": "#94283a",
+        "tonalRamp": [
+          "oklch(15% 0.071 16)",
+          "oklch(26% 0.092 16)",
+          "oklch(38% 0.112 16)",
+          "oklch(49% 0.133 16)",
+          "oklch(61% 0.133 16)",
+          "oklch(72% 0.112 16)",
+          "oklch(84% 0.092 16)",
+          "oklch(95% 0.071 16)"
+        ]
+      },
+      "gold": {
+        "role": "secondary",
+        "displayName": "Gilt",
+        "canonical": "#e2b04a",
+        "tonalRamp": [
+          "oklch(15% 0.066 82)",
+          "oklch(26% 0.084 82)",
+          "oklch(38% 0.103 82)",
+          "oklch(49% 0.122 82)",
+          "oklch(61% 0.122 82)",
+          "oklch(72% 0.103 82)",
+          "oklch(84% 0.084 82)",
+          "oklch(95% 0.066 82)"
+        ]
+      },
+      "gold-2": {
+        "role": "secondary",
+        "displayName": "Gilt Highlight",
+        "canonical": "#f3d27c",
+        "tonalRamp": [
+          "oklch(15% 0.056 89)",
+          "oklch(26% 0.072 89)",
+          "oklch(38% 0.088 89)",
+          "oklch(49% 0.104 89)",
+          "oklch(61% 0.104 89)",
+          "oklch(72% 0.088 89)",
+          "oklch(84% 0.072 89)",
+          "oklch(95% 0.056 89)"
+        ]
+      },
+      "gold-ink": {
+        "role": "secondary",
+        "displayName": "Gilt Ink",
+        "canonical": "#7d5300",
+        "tonalRamp": [
+          "oklch(15% 0.050 75)",
+          "oklch(26% 0.065 75)",
+          "oklch(38% 0.079 75)",
+          "oklch(49% 0.093 75)",
+          "oklch(61% 0.093 75)",
+          "oklch(72% 0.079 75)",
+          "oklch(84% 0.065 75)",
+          "oklch(95% 0.050 75)"
+        ]
+      },
+      "gilt-shade": {
+        "role": "secondary",
+        "displayName": "Gilt Shade",
+        "canonical": "#c9952e",
+        "tonalRamp": [
+          "oklch(15% 0.065 80)",
+          "oklch(26% 0.083 80)",
+          "oklch(38% 0.102 80)",
+          "oklch(49% 0.120 80)",
+          "oklch(61% 0.120 80)",
+          "oklch(72% 0.102 80)",
+          "oklch(84% 0.083 80)",
+          "oklch(95% 0.065 80)"
+        ]
+      },
+      "teal": {
+        "role": "tertiary",
+        "displayName": "Prussian Teal",
+        "canonical": "#264653",
+        "tonalRamp": [
+          "oklch(15% 0.022 226)",
+          "oklch(26% 0.028 226)",
+          "oklch(38% 0.034 226)",
+          "oklch(49% 0.041 226)",
+          "oklch(61% 0.041 226)",
+          "oklch(72% 0.034 226)",
+          "oklch(84% 0.028 226)",
+          "oklch(95% 0.022 226)"
+        ]
+      },
+      "teal-2": {
+        "role": "tertiary",
+        "displayName": "Backdrop Teal",
+        "canonical": "#2f6b73",
+        "tonalRamp": [
+          "oklch(15% 0.031 207)",
+          "oklch(26% 0.040 207)",
+          "oklch(38% 0.049 207)",
+          "oklch(49% 0.058 207)",
+          "oklch(61% 0.058 207)",
+          "oklch(72% 0.049 207)",
+          "oklch(84% 0.040 207)",
+          "oklch(95% 0.031 207)"
+        ]
+      },
+      "stage-teal": {
+        "role": "tertiary",
+        "displayName": "Stage Teal",
+        "canonical": "#1f4450",
+        "tonalRamp": [
+          "oklch(15% 0.023 222)",
+          "oklch(26% 0.030 222)",
+          "oklch(38% 0.037 222)",
+          "oklch(49% 0.044 222)",
+          "oklch(61% 0.044 222)",
+          "oklch(72% 0.037 222)",
+          "oklch(84% 0.030 222)",
+          "oklch(95% 0.023 222)"
+        ]
+      },
+      "viridian": {
+        "role": "tertiary",
+        "displayName": "Viridian",
+        "canonical": "#2f6b4f",
+        "tonalRamp": [
+          "oklch(15% 0.039 161)",
+          "oklch(26% 0.050 161)",
+          "oklch(38% 0.061 161)",
+          "oklch(49% 0.072 161)",
+          "oklch(61% 0.072 161)",
+          "oklch(72% 0.061 161)",
+          "oklch(84% 0.050 161)",
+          "oklch(95% 0.039 161)"
+        ]
+      },
+      "vermilion": {
+        "role": "tertiary",
+        "displayName": "Vermilion",
+        "canonical": "#c2412b",
+        "tonalRamp": [
+          "oklch(15% 0.084 32)",
+          "oklch(26% 0.109 32)",
+          "oklch(38% 0.133 32)",
+          "oklch(49% 0.157 32)",
+          "oklch(61% 0.157 32)",
+          "oklch(72% 0.133 32)",
+          "oklch(84% 0.109 32)",
+          "oklch(95% 0.084 32)"
+        ]
+      },
+      "kraft": {
+        "role": "neutral",
+        "displayName": "Kraft",
+        "canonical": "#b98a5a",
+        "tonalRamp": [
+          "oklch(15% 0.043 66)",
+          "oklch(26% 0.055 66)",
+          "oklch(38% 0.068 66)",
+          "oklch(49% 0.080 66)",
+          "oklch(61% 0.080 66)",
+          "oklch(72% 0.068 66)",
+          "oklch(84% 0.055 66)",
+          "oklch(95% 0.043 66)"
+        ]
+      },
+      "kraft-2": {
+        "role": "neutral",
+        "displayName": "Stage Boards",
+        "canonical": "#8f6337",
+        "tonalRamp": [
+          "oklch(15% 0.041 64)",
+          "oklch(26% 0.053 64)",
+          "oklch(38% 0.065 64)",
+          "oklch(49% 0.077 64)",
+          "oklch(61% 0.077 64)",
+          "oklch(72% 0.065 64)",
+          "oklch(84% 0.053 64)",
+          "oklch(95% 0.041 64)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Lamp Ink",
+        "canonical": "#1b1814",
+        "tonalRamp": [
+          "oklch(15% 0.005 75)",
+          "oklch(26% 0.006 75)",
+          "oklch(38% 0.007 75)",
+          "oklch(49% 0.008 75)",
+          "oklch(61% 0.008 75)",
+          "oklch(72% 0.007 75)",
+          "oklch(84% 0.006 75)",
+          "oklch(95% 0.005 75)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Faded Ink",
+        "canonical": "#4f4840",
+        "tonalRamp": [
+          "oklch(15% 0.008 71)",
+          "oklch(26% 0.010 71)",
+          "oklch(38% 0.013 71)",
+          "oklch(49% 0.015 71)",
+          "oklch(61% 0.015 71)",
+          "oklch(72% 0.013 71)",
+          "oklch(84% 0.010 71)",
+          "oklch(95% 0.008 71)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Clean Sheet",
+        "canonical": "#f4f4ef",
+        "tonalRamp": [
+          "oklch(15% 0.003 107)",
+          "oklch(26% 0.004 107)",
+          "oklch(38% 0.005 107)",
+          "oklch(49% 0.006 107)",
+          "oklch(61% 0.006 107)",
+          "oklch(72% 0.005 107)",
+          "oklch(84% 0.004 107)",
+          "oklch(95% 0.003 107)"
+        ]
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "Bright Sheet",
+        "canonical": "#fbfbf7",
+        "tonalRamp": [
+          "oklch(15% 0.003 106)",
+          "oklch(26% 0.003 106)",
+          "oklch(38% 0.004 106)",
+          "oklch(49% 0.005 106)",
+          "oklch(61% 0.005 106)",
+          "oklch(72% 0.004 106)",
+          "oklch(84% 0.003 106)",
+          "oklch(95% 0.003 106)"
+        ]
+      },
+      "screen-night": {
+        "role": "neutral",
+        "displayName": "Screen Night",
+        "canonical": "#24345c",
+        "tonalRamp": [
+          "oklch(15% 0.037 266)",
+          "oklch(26% 0.048 266)",
+          "oklch(38% 0.058 266)",
+          "oklch(49% 0.069 266)",
+          "oklch(61% 0.069 266)",
+          "oklch(72% 0.058 266)",
+          "oklch(84% 0.048 266)",
+          "oklch(95% 0.037 266)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(27, 24, 20, .18)",
+        "tonalRamp": []
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display (Ultra wood type)",
+        "purpose": "Scene titles on the bill head and the title card; oxblood, centred, max 26ch."
+      },
+      "headline": {
+        "displayName": "Headline (Ultra)",
+        "purpose": "Part heads, panel titles, act tags, ticket numerals, cue numbers."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "h3 subheads in ink."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Reading text, max 70ch; tables at .9rem."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, tickets, cue text, field labels."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Table headers (uppercase), pills, console, passkeys, dates; tabular numerals."
+      }
+    },
+    "shadows": [
+      {
+        "name": "house-sheet",
+        "value": "0 14px 26px -14px rgba(5,10,14,.7), 0 2px 3px rgba(5,10,14,.18)",
+        "purpose": "Scene sheets, under-sheets, cue cards, title card."
+      },
+      {
+        "name": "card-drop",
+        "value": "0 6px 10px -6px rgba(0,0,0,.65), inset 0 -2px 0 rgba(0,0,0,.12)",
+        "purpose": "Gold buttons."
+      },
+      {
+        "name": "ticket",
+        "value": "0 6px 9px -6px rgba(0,0,0,.75)",
+        "purpose": "Rail tickets."
+      },
+      {
+        "name": "player",
+        "value": "inset 0 0 0 3px #8f6337, 0 22px 30px -16px rgba(0,0,0,.85), 0 3px 4px rgba(0,0,0,.4)",
+        "purpose": "The keypad shell on stage."
+      },
+      {
+        "name": "tile-base",
+        "value": "0 1cqw 1.6cqw -.8cqw rgba(0,0,0,.8)",
+        "purpose": "Bottom paper layer of a screen tile."
+      },
+      {
+        "name": "tile-face",
+        "value": "0 .5cqw .9cqw -.3cqw rgba(0,0,0,.5), inset 0 .25cqw 0 rgba(255,255,255,.25)",
+        "purpose": "Top paper layer of a screen tile."
+      },
+      {
+        "name": "focus-ring",
+        "value": "outline: 2px solid #1b1814; outline-offset: 2px; box-shadow: 0 0 0 5px #f4f4ef",
+        "purpose": "Keyboard focus everywhere."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Exponential ease-out for on-rail slides, wings, parallax, ticket slider."
+      },
+      {
+        "name": "press",
+        "value": "cubic-bezier(.34, 1.4, .64, 1)",
+        "purpose": "Overshoot spring for button tilt, ticket lift, tile press, toggles."
+      },
+      {
+        "name": "scene-drop",
+        "value": "drop .55s cubic-bezier(.5, 0, .75, 0): translateY(112%) rotate(2.5deg)",
+        "purpose": "Outgoing scene sheet falls through the stage."
+      },
+      {
+        "name": "scene-enter",
+        "value": "enter .85s ease .1s: from translateX(-108%) rotate(-2deg)",
+        "purpose": "Incoming scene sheet slides in from the wing."
+      },
+      {
+        "name": "tile-press",
+        "value": "transform .32s press",
+        "purpose": "Tile face flattens onto its base."
+      },
+      {
+        "name": "wing-shift",
+        "value": "transform .8s ease",
+        "purpose": "Wing flats shift by depth (5, 9, 14) on scene change and parallax."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce removes all transitions and animations",
+        "purpose": "Accessibility floor."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "notes-stack",
+        "value": "480px"
+      },
+      {
+        "name": "act-stack",
+        "value": "520px"
+      },
+      {
+        "name": "rail-scroll",
+        "value": "760px"
+      },
+      {
+        "name": "device-stack",
+        "value": "980px"
+      },
+      {
+        "name": "arch-slip",
+        "value": "1080px"
+      },
+      {
+        "name": "studio-stack",
+        "value": "1100px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Gold Button",
+      "kind": "button",
+      "refersTo": "button-gold",
+      "description": "Default stage button: a gilt paper cut-out that tilts on hover.",
+      "html": "<button class=\"ds-btn-gold\">Pair new host</button>",
+      "css": ".ds-btn-gold { font: 700 .88rem 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; color: #1b1814; background: #e2b04a; border: 0; border-radius: 3px; padding: 8px 14px; cursor: pointer; box-shadow: 0 6px 10px -6px rgba(0,0,0,.65), inset 0 -2px 0 rgba(0,0,0,.12); transition: transform .3s cubic-bezier(.34, 1.4, .64, 1), box-shadow .2s; } .ds-btn-gold:hover { transform: translateY(-1px) rotate(-.4deg); } .ds-btn-gold:active { transform: translateY(1px); box-shadow: 0 2px 4px -2px rgba(0,0,0,.6); } .ds-btn-gold:focus-visible { outline: 2px solid #1b1814; outline-offset: 2px; box-shadow: 0 0 0 5px #f4f4ef; }"
+    },
+    {
+      "name": "Paper Button",
+      "kind": "button",
+      "refersTo": "button-paper",
+      "description": "Button inside sheets, the prompt book and Studio: bright paper with a hairline ring; selected fills oxblood.",
+      "html": "<button class=\"ds-btn-paper\">Clear</button> <button class=\"ds-btn-paper\" aria-pressed=\"true\">Page 1</button>",
+      "css": ".ds-btn-paper { font: 700 .88rem 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; color: #1b1814; background: #fbfbf7; border: 0; border-radius: 3px; padding: 8px 14px; cursor: pointer; box-shadow: inset 0 0 0 1.5px rgba(27,24,20,.18), 0 3px 6px -4px rgba(0,0,0,.4); transition: transform .3s cubic-bezier(.34, 1.4, .64, 1); } .ds-btn-paper:hover { transform: translateY(-1px) rotate(-.4deg); } .ds-btn-paper:active { transform: translateY(1px); } .ds-btn-paper[aria-pressed=true] { background: #7a1f2b; color: #f4f4ef; } .ds-btn-paper:focus-visible { outline: 2px solid #1b1814; outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Underlined paper field; the underline turns oxblood on focus.",
+      "html": "<label class=\"ds-field\"><span>Tile label</span><input class=\"ds-input\" value=\"Mute mic\"></label>",
+      "css": ".ds-field { display: grid; gap: 5px; font-family: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; } .ds-field > span { font-size: .82rem; font-weight: 700; color: #4f4840; } .ds-input { font: .92rem 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; color: #1b1814; background: #fbfbf7; border: 0; border-bottom: 2px solid rgba(27,24,20,.18); border-radius: 2px 2px 0 0; padding: 7px 9px; caret-color: #7a1f2b; } .ds-input:focus { outline: none; border-bottom-color: #7a1f2b; background: #fff; }"
+    },
+    {
+      "name": "Footlights Rail",
+      "kind": "nav",
+      "refersTo": "rail-ticket",
+      "description": "Scene navigation: paper tickets with roman numerals on a wooden rail; the current ticket turns gold and rises.",
+      "html": "<nav class=\"ds-rail\"><a href=\"#\" aria-current=\"page\"><b>I</b>Device</a><a href=\"#\"><b>II</b>Studio</a><a href=\"#\"><b>III</b>Reference</a></nav>",
+      "css": ".ds-rail { display: flex; gap: 8px; justify-content: center; align-items: flex-end; padding: 18px 14px 12px; background: #8f6337; border-top: 2px solid #1b1814; } .ds-rail a { text-decoration: none; color: #1b1814; font: 700 .9rem 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; padding: 6px 13px 7px; background: #f4f4ef; border-radius: 2px; box-shadow: 0 6px 9px -6px rgba(0,0,0,.75); transform: rotate(-.6deg); transition: transform .4s cubic-bezier(.34, 1.4, .64, 1), background-color .3s; } .ds-rail a:nth-child(2n) { transform: rotate(.7deg); } .ds-rail a b { font: 400 .8rem Ultra, 'Rockwell Extra Bold', Rockwell, Georgia, serif; color: #7a1f2b; margin-right: 6px; } .ds-rail a:hover { transform: translateY(-2px) rotate(-.6deg); } .ds-rail a[aria-current=page] { background: #e2b04a; transform: translateY(-5px); } .ds-rail a:focus-visible { outline: 2px solid #1b1814; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Mono status chip with a diamond dot; colour plus words.",
+      "html": "<span class=\"ds-pill ok\"><i></i>Touch Keypad · COM7</span> <span class=\"ds-pill warn\"><i></i>Saving</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 6px; font: 500 .78rem 'Red Hat Mono', ui-monospace, Consolas, monospace; padding: 2px 9px; border-radius: 2px; background: #fff; box-shadow: inset 0 0 0 1.5px currentColor; } .ds-pill i { width: 7px; height: 7px; background: currentColor; transform: rotate(45deg); } .ds-pill.ok { color: #2f6b4f; } .ds-pill.warn { color: #c2412b; }"
+    },
+    {
+      "name": "Scene Sheet",
+      "kind": "card",
+      "refersTo": "scene-sheet",
+      "description": "Printed sheet over a rotated coloured endpaper under-sheet; bill head of Ultra title, fleuron rule and lede.",
+      "html": "<div class=\"ds-sheet\"><h2>The keypad takes the stage</h2><div class=\"ds-fleuron\"></div><p>Specs and tables sit on clean paper so the numbers stay crisp.</p></div>",
+      "css": ".ds-sheet { position: relative; isolation: isolate; max-width: 520px; margin: 14px 18px 22px 8px; padding: 28px 24px; text-align: center; background: #f4f4ef; color: #1b1814; box-shadow: 0 14px 26px -14px rgba(5,10,14,.7), 0 2px 3px rgba(5,10,14,.18); font-family: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; } .ds-sheet::after { content: ''; position: absolute; inset: 0; z-index: -1; transform: translate(12px, 10px) rotate(.8deg); background: #2f6b73; box-shadow: 0 14px 26px -14px rgba(5,10,14,.7), 0 2px 3px rgba(5,10,14,.18); } .ds-sheet h2 { margin: 0; font: 400 1.9rem/1.12 Ultra, 'Rockwell Extra Bold', Rockwell, Georgia, serif; color: #7a1f2b; } .ds-fleuron { width: 60%; height: 5px; margin: 12px auto; border-top: 1px solid #1b1814; border-bottom: 1px solid #1b1814; } .ds-sheet p { margin: 0; color: #4f4840; }"
+    },
+    {
+      "name": "Lighting Cue Card",
+      "kind": "custom",
+      "refersTo": "cue-card",
+      "description": "Rotated paper slip naming the device state: oxblood wood-type cue number, then the state in words.",
+      "html": "<div class=\"ds-cue\" aria-live=\"polite\"><b>Cue 3</b>Pairing wash · passkey on screen</div>",
+      "css": ".ds-cue { display: inline-block; transform: rotate(-1deg); background: #f4f4ef; color: #1b1814; font: 700 .86rem/1.3 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; padding: 6px 14px; box-shadow: 0 14px 26px -14px rgba(5,10,14,.7), 0 2px 3px rgba(5,10,14,.18); } .ds-cue b { font: 400 .86rem Ultra, 'Rockwell Extra Bold', Rockwell, Georgia, serif; color: #7a1f2b; margin-right: 8px; }"
+    },
+    {
+      "name": "Paper Tile",
+      "kind": "custom",
+      "refersTo": "paper-tile",
+      "description": "Keypad screen tile: dark base, light face offset up-left, paper label chip; press flattens the face onto the base.",
+      "html": "<button class=\"ds-tile\"><span class=\"ds-tile-base\"><span class=\"ds-tile-face\"><svg viewBox=\"0 0 24 24\" width=\"28\" height=\"28\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg></span></span><span class=\"ds-tile-lbl\">Play</span></button>",
+      "css": ".ds-tile { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: 0; padding: 12px; cursor: pointer; font-family: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif; } .ds-tile-base { position: relative; width: 64px; height: 64px; border-radius: 16%; background: #1a3a40; box-shadow: 0 6px 10px -5px rgba(0,0,0,.8); } .ds-tile-face { position: absolute; inset: 0; border-radius: 16%; display: grid; place-items: center; background: #36757e; box-shadow: 0 3px 6px -2px rgba(0,0,0,.5), inset 0 2px 0 rgba(255,255,255,.25); transform: translate(-4px, -4px) rotate(1deg); transition: transform .32s cubic-bezier(.34, 1.4, .64, 1); } .ds-tile:active .ds-tile-face { transform: translate(0, 0) rotate(-.6deg); } .ds-tile:focus-visible { outline: 2px solid #1b1814; outline-offset: 2px; } .ds-tile-lbl { font-size: 12px; font-weight: 700; color: #1b1814; background: #f4f4ef; padding: 1px 7px; border-radius: 2px; transform: rotate(-1deg); box-shadow: 0 2px 4px -1px rgba(0,0,0,.5); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Pollock's Toy Theatre",
+    "overview": "The viewer is a hand-coloured lithograph toy theatre. One gilt proscenium fills the window: a coffered frieze carrying an arched playbill banner, hatched gilt pilasters, a bead-moulded stage opening, an oxblood swag valance, hatched paper curtains, three depths of wing flats and a painted prussian-teal backdrop. Every scene is a printed paper sheet slotted onto that one stage, and scenes are called from tickets on a footlights rail. The keypad is the player, a card figure riding a wire slider.\n\nEverything is drawn, not rendered. Plates are authored SVG with ink outline (#1b1814, 1 to 3px), diagonal hatching at 45 degrees and flat hand-coloured fills; paper carries a faint fractal grain. Specs, tables, pin maps and code sit on clean paper-white sheets so the numbers stay crisp, and the theatre does the theatre around them. Depth is physical: stacked paper layers with soft offset shadows, deckled edges and a coloured endpaper under-sheet peeking out at a slight rotation.\n\nThe keypad's own screen belongs to the same world in cut paper: each tile is two paper layers (a darker base and a lighter face) with a small paper label chip beneath. Motion follows the stage: sheets slide on rails with exponential ease-out, and a press flattens the top paper onto its base.",
+    "keyCharacteristics": [
+      "One proscenium, one stage; no header, tab strip or card grid.",
+      "Ink outline plus hatching plus flat fills on every authored plate.",
+      "Paper sheets with deckled top and bottom edges over a rotated endpaper under-sheet.",
+      "Wood-type display (Ultra) in oxblood for titles; Atkinson Hyperlegible for reading; Red Hat Mono for data.",
+      "Device state named by a lighting cue: a gel over the stage plus a written cue card.",
+      "Slight, deliberate rotations (between -1.5 and 2.5 degrees) on loose paper pieces."
+    ],
+    "rules": [
+      {
+        "name": "The Clean Sheet Rule",
+        "body": "Anything a collaborator must read exactly (tables, pin maps, code, protocol) sits on Clean Sheet with Lamp Ink. Colour belongs to the theatre, never under the numbers.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gilt Is Not Text Rule",
+        "body": "Gold fills surfaces; it never sets text on paper. Use Gilt Ink when a gold-family text colour is required.",
+        "section": "colors"
+      },
+      {
+        "name": "The Wood-Type Is For Names Rule",
+        "body": "Ultra sets names (scene titles, part heads, ticket numerals, cue numbers, the clock). It never sets running text or data.",
+        "section": "typography"
+      },
+      {
+        "name": "The Under-Sheet Rule",
+        "body": "Every scene sheet has a coloured endpaper under-sheet, deckled and slightly rotated. A sheet without one reads as a web card.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Soft Shadow Rule",
+        "body": "Paper shadows are soft and negative-spread. Hard zero-blur offset shadows do not belong to this world.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** draw new plates as authored SVG: Lamp Ink outline, 45-degree hatching, flat fills from this palette.",
+      "**Do** put every new scene on a Clean Sheet with deckled edges and a coloured endpaper under-sheet.",
+      "**Do** set scene and part titles in Ultra, oxblood; keep reading text in Atkinson Hyperlegible and data in Red Hat Mono.",
+      "**Do** name every device state with a cue card in words alongside its gel.",
+      "**Do** use the house sheet shadow for loose paper and the press spring for anything touched.",
+      "**Do** keep loose-paper rotations small (under 2.5 degrees) and seeded, never random per render."
+    ],
+    "donts": [
+      "**Don't** add a header bar, tab strip or card grid; navigation is tickets on the footlights rail.",
+      "**Don't** set gold text on paper or put colour fills under tables, code or pin maps.",
+      "**Don't** use hard zero-blur offset shadows on paper pieces.",
+      "**Don't** signal state by colour alone; pills, cues and stamps always carry a word.",
+      "**Don't** add small uppercase labels above titles; the bill head is title, fleuron, lede."
+    ]
+  }
+}

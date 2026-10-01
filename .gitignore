@@ -1,0 +1,7 @@
+.remember/
+.impeccable/review/
+.impeccable/live/
+node_modules/
+build/
+*.bin
+__pycache__/
