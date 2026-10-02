@@ -1,0 +1,39 @@
+{
+  "name": "touch-keypad-studio",
+  "productName": "Macropad Studio (Touch Keypad)",
+  "version": "3.0.0-dev",
+  "description": "Windows host app for the ESP32 Touch Keypad: profile editor, tile renderer, host bridge, feeds.",
+  "main": "main.js",
+  "author": "Aditya Biswas <adi04jan@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node test/boot-smoke.js",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.adi04jan.touchkeypadstudio",
+    "productName": "Macropad Studio Touch",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/serialport/**",
+      "**/node_modules/@serialport/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "services/**/*"
+    ],
+    "win": { "target": "nsis" },
+    "directories": { "output": "dist-build" }
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}

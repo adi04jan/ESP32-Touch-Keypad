@@ -1,0 +1,4 @@
+node_modules/
+dist-build/
+device_backups/
+data/
