@@ -63,7 +63,7 @@ void loop() {
   scanTouch();
   macroEngine.tick();
   blePoll();
-  uiTick();
+  if (!cliUploading()) uiTick();
   ledsTick();
   delay(1);
 }

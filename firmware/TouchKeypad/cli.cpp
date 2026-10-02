@@ -15,15 +15,19 @@ static char line[CLI_LINE_MAX];
 static size_t lineLen = 0;
 static bool lineTooLong = false;
 
-// Uploads stream to <path>.tmp line by line and are committed only after they validate.
+// Uploads collect in RAM and touch flash only after ###END###: this core's UART
+// ISR is not in IRAM, so a flash erase mid-stream overflows the 128-byte RX FIFO
+// and drops bytes. The host waits for the reply, so nothing arrives during the write.
 static struct {
   bool on, bin;
   char path[64];
-  File f;
-  size_t size, want;
+  uint8_t *buf;
+  size_t size, cap, want;
   uint32_t crc, wantCrc, last;
-  bool failed;
+  bool failed, tooBig;
 } up;
+
+bool cliUploading() { return up.on; }
 
 static void prompt() { Serial.print("macropad:$ "); }
 
@@ -35,24 +39,52 @@ static void normPath(const char *in, char *out, size_t n) {
 static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   normPath(path, up.path, sizeof up.path);
   if (strstr(up.path, "..") || strlen(path) > 56) { Serial.println("ERR bad path"); return false; }
-  up.f = LittleFS.open(String(up.path) + ".tmp", "w", true);
-  if (!up.f) { Serial.printf("ERR cannot write %s\n", up.path); return false; }
+  up.cap = bin ? want : 8192;
+  up.buf = (uint8_t *)malloc(up.cap);
+  if (!up.buf) { Serial.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
   up.on = true;
   up.bin = bin;
   up.size = 0;
   up.want = want;
   up.crc = 0;
   up.wantCrc = crc;
-  up.failed = false;
+  up.failed = up.tooBig = false;
   up.last = millis();
   Serial.printf("RECV %s\n", up.path);
   return true;
 }
 
-static void uploadAbort(const char *why) {
-  up.f.close();
-  LittleFS.remove(String(up.path) + ".tmp");
+static void uploadEnd() {
+  free(up.buf);
+  up.buf = nullptr;
   up.on = false;
+}
+
+static bool append(const uint8_t *d, size_t n) {
+  if (up.size + n > up.cap) {
+    size_t cap = up.cap;
+    while (cap < up.size + n) cap *= 2;
+    if (cap > UPLOAD_MAX) cap = UPLOAD_MAX;
+    uint8_t *nb = up.size + n <= cap ? (uint8_t *)realloc(up.buf, cap) : nullptr;
+    if (!nb) return false;
+    up.buf = nb;
+    up.cap = cap;
+  }
+  memcpy(up.buf + up.size, d, n);
+  up.size += n;
+  return true;
+}
+
+static bool writeTmp(const String &tmp) {
+  File f = LittleFS.open(tmp, "w", true);
+  bool ok = f && f.write(up.buf, up.size) == up.size;
+  f.close();
+  if (!ok) LittleFS.remove(tmp);
+  return ok;
+}
+
+static void uploadAbort(const char *why) {
+  uploadEnd();
   Serial.println(why);
   prompt();
 }
@@ -64,31 +96,36 @@ static void uploadLine(char *s, size_t n) {
     while (n && s[n - 1] == ' ') s[--n] = 0;
     static uint8_t out[CLI_LINE_MAX / 4 * 3 + 3];
     size_t got = 0;
-    if (mbedtls_base64_decode(out, sizeof out, &got, (const uint8_t *)s, n) != 0) { up.failed = true; return; }
+    if (mbedtls_base64_decode(out, sizeof out, &got, (const uint8_t *)s, n) != 0 || !append(out, got)) { up.failed = true; return; }
     up.crc = esp_rom_crc32_le(up.crc, out, got);
-    up.size += got;
-    if (up.size > up.want || up.f.write(out, got) != got) up.failed = true;
   } else {
-    up.size += n + 1;
-    if (up.size > UPLOAD_MAX) { up.failed = true; return; }
-    if (up.f.write((const uint8_t *)s, n) != n || up.f.write('\n') != 1) up.failed = true;
+    s[n] = '\n';   // the line buffer always has room for it
+    up.tooBig = up.size + n + 1 > UPLOAD_MAX;
+    if (up.tooBig || !append((const uint8_t *)s, n + 1)) up.failed = true;
   }
 }
 
 static void uploadFinish() {
-  up.f.close();
-  up.on = false;
   String tmp = String(up.path) + ".tmp";
   if (up.bin) {
     if (up.failed || up.size != up.want) Serial.printf("ERR size mismatch %u != %u\n", (unsigned)up.size, (unsigned)up.want);
     else if (up.crc != up.wantCrc) Serial.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc);
-    else if (!commitTmp(up.path, false)) Serial.printf("ERR cannot save %s\n", up.path);
-    else { Serial.printf("SAVED %s\n", up.path); uiMarkAll(); prompt(); return; }
-    LittleFS.remove(tmp);
+    else if (!writeTmp(tmp) || !commitTmp(up.path, false)) Serial.printf("ERR cannot save %s\n", up.path);
+    else { Serial.printf("SAVED %s\n", up.path); uiMarkAll(); }
+    uploadEnd();
     prompt();
     return;
   }
-  if (up.failed) { LittleFS.remove(tmp); Serial.println(up.size > UPLOAD_MAX ? "Upload too large; discarded." : "ERR write failed"); prompt(); return; }
+  if (up.failed) {
+    Serial.println(up.tooBig ? "Upload too large; discarded." : "ERR out of RAM");
+    uploadEnd();
+    prompt();
+    return;
+  }
+  size_t size = up.size;
+  bool written = writeTmp(tmp);
+  uploadEnd();
+  if (!written) { Serial.printf("ERR cannot write %s\n", tmp.c_str()); prompt(); return; }
 
   int id = 0;
   String err;
@@ -105,7 +142,7 @@ static void uploadFinish() {
   }
   if (!ok) { LittleFS.remove(tmp); Serial.printf("Upload rejected: %s\n", err.c_str()); prompt(); return; }
   if (!commitTmp(up.path, true)) { Serial.printf("ERR cannot save %s\n", up.path); prompt(); return; }
-  Serial.printf("SAVED %s %u\n", up.path + 1, (unsigned)up.size);
+  Serial.printf("SAVED %s %u\n", up.path + 1, (unsigned)size);
   if (id) {
     gcTiles();
     if (id == currentProfile) {
@@ -334,7 +371,7 @@ void handleSerialInput() {
     lineLen = 0;
     if (lineTooLong) {
       lineTooLong = false;
-      if (up.on) up.failed = true;
+      if (up.on) up.failed = true;   // a line longer than CLI_LINE_MAX: the upload is corrupt
       else { Serial.printf("ERR line longer than %d bytes\n", CLI_LINE_MAX - 1); prompt(); }
       continue;
     }

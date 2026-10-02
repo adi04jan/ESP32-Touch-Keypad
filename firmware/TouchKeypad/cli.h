@@ -5,3 +5,4 @@
 
 void cliBegin();
 void handleSerialInput();
+bool cliUploading();   // an upload is streaming: keep flash idle (see cli.cpp)
