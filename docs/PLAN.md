@@ -15,6 +15,19 @@ Status: firmware 3.1.0 and Studio 3.1.0 built and tested on hardware (2026-10-02
 - Settings sheet tabs: Display, Profiles, Bluetooth (three hosts, switch, forget, pair), LED (rainbow default, breathe, solid, status, off), Device (key click, calibrate, about).
 - Studio: a glass device preview, icon search, tints, animation and toggle fields, LED and display controls, and a firmware installer (esptool, bundled in the installer).
 
+**3.2 task list: device themes** (owner's brief, 2026-10-02: up to five whole-device themes, light and dark gradients among them, remembering that on this TFT black glows grey under the backlight; one device-wide setting, Glass by default, Studio's preview follows)
+- [x] Theme engine in the firmware: one table of roles per theme (ground stops, plies, text, state colours, key style), switched at runtime; crisp mode for the pixel theme.
+- [x] Six themes, each from a real device: **Glass** (watch glass, the default, its ground lifted off black), **Paper** (the old papercraft: cut cards on cream, ink lines), **Daylight** (iOS / Car Thing light: sky-to-white, frosted white keys, tinted glyphs), **Aurora** (indigo-to-teal night sky, translucent panes, luminous glyphs), **Synth** (Teenage Engineering OP-1: warm grey, flat matte keys with a lip, colour dots, orange current), **Retro** (Game Boy DMG LCD: four greens, pixel boxes, crisp glyphs).
+- [x] Dark themes use deep coloured grounds, never near-black fields; light themes carry contrast with ink, not with black.
+- [x] Per theme: keys (rest, pressed, toggle on, animated, empty well, tags, labels), status band, stations, player, sheet, pairing, calibration, toast, volume HUD.
+- [x] Settings → Display gets a theme row with a live preview chip per theme; switching wipes the new theme down the screen at 60 fps.
+- [x] CLI `theme [name]`, NVS `kp/theme`, `theme:` in `status`; Studio's Device view picks the theme and the editor preview renders it.
+- [x] Tests: per-theme screenshots with pixel checks, the wipe and a key press at 50 fps or better in every theme, the theme command; Studio unit and hardware tests.
+- [x] Impeccable critique of each theme from device screenshots; fix what it finds.
+- [x] Docs (DESIGN.md theme tokens, PROTOCOL.md, README), release build, cleanup, commit.
+
+Done 2026-10-02: firmware 3.2.0 and Studio 3.2.0. 51 board tests (15 for themes: ground and key style per theme, page wave and press at 50+ fps in each, the wipe, the sheet chip, survival across a reboot), Studio 44 unit + 10 hardware, both end-to-end runs. Gradients are dithered (2×2, half an RGB565 step), which also removed banding from the Glass and Aurora skies and a pink cast on near-white tiles.
+
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.
 - Macropad Studio 3 replaces the planned Web Serial configurator and the Tauri companion. It gets a "Touch Keypad" device type (§10).

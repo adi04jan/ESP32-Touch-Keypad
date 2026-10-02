@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.1.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.2.0.
 
 ## Transport
 
@@ -18,7 +18,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | Command | Reply (before the prompt) | Notes |
 |---|---|---|
 | `help` | one line listing the commands | |
-| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.1.0 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `cal:1` once touch is calibrated |
+| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.2.0 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1 theme:glass` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `cal:1` once touch is calibrated; `theme:` the device theme |
 | `ls [dir]` | `path\tsize` per file, recursive, no leading slash (`t/3fa9c2d1.565\t10368`) | default `/` |
 | `cat <file>` | the file, ending with a newline | `ERR no such file: /x` |
 | `rm <file>` | `removed /x` or `ERR no such file: /x` | removing a profile also deletes tiles nothing references |
@@ -41,6 +41,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `led [rainbow\|breathe\|solid\|status\|off] [r g b]` | `led <pattern> color <r g b> brightness <n> showing <r g b>` | the RGB status LED; rainbow is the default; the colour is for solid and breathe; no argument reports |
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
+| `theme [id\|title\|1-6]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
 | `ble use <n>` | `using <n>` or `ERR no host <n>` | drop the current link and advertise only to bond n |
@@ -81,6 +82,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:PAGE <n>` | page shown (swipe, station, folder key, `back`, `page`) |
 | `EVT:PROFILE <n>` | profile loaded |
 | `EVT:UI home\|sheet\|pair\|cal` | the screen mode changed |
+| `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
 | `EVT:SEEK <s>` | tap on the player's seek bar; the host should seek its media session there |
 | `EVT:CAL start\|point <n> <rx> <ry>\|retry fit <px>\|retry verify <px>\|saved <px>\|redo\|done\|cancel` | calibration progress; `saved` carries the check-point error in px (at most 16) |
 | `EVT:BLE <slot> up\|down` | host link up (encrypted) or down |
@@ -146,6 +148,7 @@ The device is DisplayOnly with LE Secure Connections, MITM and bonding.
 | `kp/prof` | last profile (boot loads it; hold BOOT while the board starts to come up on profile 1) |
 | `kp/bright`, `kp/dim` | backlight 8–255; dim after N s |
 | `kp/ledp`, `kp/ledb`, `kp/ledc`, `kp/click` | LED pattern, LED brightness, LED colour, key click |
+| `kp/theme` | the theme index (0 Glass, 1 Paper, 2 Daylight, 3 Aurora, 4 Synth, 5 Retro) |
 | `kp/defv`, `kp/dcrc1..3` | which default profiles were installed, and their CRCs (an edited default is never replaced) |
 | `touch/aff` | 6 floats: the affine touch calibration. Missing = the calibration screen opens at boot |
 | `hosts/<address>` | the name Studio gave each bonded host |

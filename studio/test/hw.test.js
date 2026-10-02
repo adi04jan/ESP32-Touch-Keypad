@@ -126,7 +126,11 @@ test("device panel: BLE list, fsinfo, now playing, clock", { skip: !HW }, async 
   await sleep(200);
   assert.match(await dev.syncTime(), /time set/);
   const look = await dev.look();
-  assert.ok(look.brightness >= 8 && look.led, JSON.stringify(look));
+  assert.ok(look.brightness >= 8 && look.led && look.theme, JSON.stringify(look));
+  const before = look.theme;
+  assert.match(await link.command("theme paper"), /theme paper/);
+  assert.equal((await dev.look()).theme, "paper");
+  await link.command(`theme ${before}`);
   assert.match(b.raw, /^\d+ \S+ (connected|bonded) .+$|hosts:0/m, "ble list names each host");
 });
 

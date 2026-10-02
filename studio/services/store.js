@@ -19,6 +19,7 @@ const DEFAULTS = {
   obs_password: "",
   nowplaying_enabled: true,
   art_enabled: true,             // album art to the keypad's player page
+  preview_theme: "glass",        // the editor preview's theme while no keypad is connected
   settime_enabled: true,
 };
 

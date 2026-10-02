@@ -2,12 +2,12 @@
 
 A Stream Deck–style BLE macropad on the LCDwiki 4.0" ESP32-32E board (E32R40T: ESP32-WROOM-32E, ST7796S 480×320, XPT2046 resistive touch), with Macropad Studio for Windows.
 
-Glass keys with real icons (214 built in, some animated), three ready profiles, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps.
+Six device themes (Glass, Paper, Daylight, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), three ready profiles, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps.
 
 | Path | What |
 |---|---|
 | `firmware/TouchKeypad/` | Arduino sketch: glass UI renderer (DMA, damage rects, 60 fps), gestures, calibration, profiles (schema v2), macro engine, NimBLE HID, LED patterns, line CLI |
-| `firmware/DESIGN.md` | The device's design system (colour as state, B612, glass keys) |
+| `firmware/DESIGN.md` | The device's design system (colour as state, B612, the six themes) |
 | `studio/` | Electron app: glass profile editor, media feed (track, art, seek), host bridge (F13–F24 → open / run / OBS), LED and display controls, firmware installer |
 | `tools/kp.py` | Build, flash, screen capture, touch injection and uploads over USB |
 | `tools/icons/`, `tools/fonts/`, `tools/gen_defaults.py` | Generate the key icons (Lucide, Simple Icons), the B612 fonts and the three default profiles |
@@ -43,7 +43,7 @@ Studio's Device view installs the bundled firmware over USB (profiles, pairings 
 ```
 cd studio && npm test                # 44 unit tests against a simulated keypad
 cd studio && npm run smoke           # Electron boots and draws the glass preview with all icons
-python -m pytest tools/tests -v      # 36 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, 60 fps floors
+python -m pytest tools/tests -v      # 51 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
 python tools/e2e/run_e2e.py          # pairs this PC over BLE; types, toggles, host action through Studio, Play/Pause; unpairs

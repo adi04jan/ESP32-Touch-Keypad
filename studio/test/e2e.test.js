@@ -157,7 +157,9 @@ test("device panel: status, BLE slots, forget, profile switch, events, now playi
   assert.equal(dev.status.ver, "3.0.0");
   const ble = await dev.bleList();
   assert.deepEqual(ble.slots.map(({ slot, name, state }) => ({ slot, name, state })), [{ slot: 0, name: "ADITYA-PC", state: "connected" }, { slot: 1, name: "MacBook-Air", state: "bonded" }]);
-  assert.deepEqual(await dev.look(), { led: "rainbow", ledColor: "255 255 255", ledBright: 153, brightness: 200, click: true });
+  assert.deepEqual(await dev.look(), { led: "rainbow", ledColor: "255 255 255", ledBright: 153, brightness: 200, click: true, theme: "glass" });
+  assert.match(await link.command("theme aurora"), /theme aurora/);
+  assert.equal((await dev.look()).theme, "aurora");
   const events = [];
   link.on("ble", (b) => events.push(b));
   await dev.bleForget(0);

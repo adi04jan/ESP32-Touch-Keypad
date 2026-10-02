@@ -207,6 +207,12 @@ class SimDevice extends EventEmitter {
       case "setbrightness": if (arg) this.bright = +arg; return this.println(`brightness ${this.bright ?? 200}`);
       case "ledbright": if (arg) this.ledBright = +arg; return this.println(`ledbright ${this.ledBright ?? 153}`);
       case "click": if (arg) this.click = arg === "on"; return this.println(`click ${this.click === false ? "off" : "on"}`);
+      case "theme": {
+        const ids = ["glass", "paper", "daylight", "aurora", "synth", "retro"];
+        if (arg && !ids.includes(arg)) return this.println(`theme ${ids.join(" ")}`);
+        if (arg) { this.theme = arg; this.event(`THEME ${arg}`); }
+        return this.println(`theme ${this.theme || "glass"}`);
+      }
       case "led": {
         const [name, ...c] = arg.split(/\s+/).filter(Boolean);
         if (name) this.led = name;

@@ -206,3 +206,94 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .ctl .play { --t: var(--cyan); width: 84px; height: 84px; background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d), color-mix(in oklab, var(--t) 36%, #070a0e)); }
 .dev .ctl .play svg { width: 36px; height: 36px; }
 .dev .ctl .mute { width: 56px; height: 56px; } .dev .ctl .mute svg { width: 24px; height: 24px; }
+
+/* ---------- device themes: the same six looks the firmware draws (firmware/TouchKeypad/themes.h) ---------- */
+.dev { --dg0: #121c28; --dg1: #0e1620; --dg2: #0a1119; --tag-bg: #0a141a; --gear-top: #242e39; --gear-bot: #151c24; --knob: #fff; --art: #6b4fd8; --ink: #fff;
+  background: linear-gradient(180deg, var(--dg0), var(--dg1) 50%, var(--dg2)); }
+.dev .line i { background: var(--dg2); }
+.dev .line i.cur { background: var(--line); box-shadow: 0 0 0 2px var(--dg2); }
+.dev .sb .gear { background: linear-gradient(180deg, var(--gear-top), var(--gear-bot)); }
+.dev .tag.pc, .dev .tag.hold, .dev[data-theme] .tag.anim { background: var(--tag-bg); }
+.dev .meta .t { color: var(--txt); }
+.dev .seek b { background: var(--knob); }
+.dev .key { color: var(--ink); }
+
+/* Paper: toy-theatre cards on cream, an ink outline and a darker card behind */
+.dev[data-theme="paper"] { --dg0: #f4ecda; --dg1: #efe4cc; --dg2: #e5d6b6; --txt: #1f1a14; --txt-2: #5a4f40; --lbl: #2a231a; --cyan: #23697a; --mag: #a52f3d;
+  --green: #3b7a3f; --amber: #b87d14; --hair: rgba(31, 26, 20, .24); --hair-2: rgba(31, 26, 20, .4); --well: #e3d5b6; --track: #d8c9a8; --tag-bg: #fbf7ee;
+  --gear-top: #fffdf6; --gear-bot: #eee4cf; --knob: #fffdf6; --art: #2d5f6e;
+  background: repeating-linear-gradient(180deg, transparent 0 3px, rgba(90, 60, 20, .035) 3px 4px), linear-gradient(180deg, var(--dg0), var(--dg1) 50%, var(--dg2)); }
+.dev[data-theme="paper"] .key, .dev[data-theme="paper"] .art, .dev[data-theme="paper"] .ctl span { border-radius: 11px;
+  --card: color-mix(in oklab, var(--t) 82%, #efe4cc);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--card) 88%, #fff), var(--card));
+  box-shadow: inset 0 0 0 1.4px rgba(31, 26, 20, .78), 3px 3px 0 0 color-mix(in oklab, var(--t) 51%, #1f1a14); }
+.dev[data-theme="paper"] .ctl span { border-radius: 50%; color: #fffaf0; }
+.dev[data-theme="paper"] .art { --t: var(--art); color: #fffaf0; }
+.dev[data-theme="paper"] .well { border-radius: 11px; box-shadow: inset 0 3px 0 rgba(140, 122, 92, .5), inset 0 0 0 1px rgba(140, 122, 92, .3); }
+
+/* Daylight: iOS-light frosted white tiles on a sky gradient; the glyph carries the tint, on fills the tile */
+.dev[data-theme="daylight"] { --dg0: #c7daf1; --dg1: #dbe7f5; --dg2: #e9f0f8; --txt: #151d27; --txt-2: #4c5866; --lbl: #26303c; --cyan: #0a6fd6; --mag: #c23a8c;
+  --green: #1c9a55; --amber: #c07600; --hair: rgba(38, 56, 77, .14); --hair-2: rgba(38, 56, 77, .26); --well: #dbe4ee; --track: #d2dbe5; --tag-bg: #fff;
+  --gear-top: #fff; --gear-bot: #edf1f6; --art: #5d7fe0; }
+.dev[data-theme="daylight"] .key, .dev[data-theme="daylight"] .art, .dev[data-theme="daylight"] .ctl span { background: linear-gradient(180deg, #fff, #edf2f7);
+  box-shadow: inset 0 0 0 1px #c4d0dd, 0 12px 16px -12px rgba(30, 58, 92, .55); }
+.dev[data-theme="daylight"] .ctl span { color: color-mix(in oklab, var(--t) 70%, #000); }
+.dev[data-theme="daylight"] .art { --t: var(--art); color: #3a55a8; }
+.dev[data-theme="daylight"] .cell.on .key, .dev[data-theme="daylight"] .ctl .play { background: linear-gradient(180deg, color-mix(in oklab, var(--t) 40%, #fff), var(--t)); color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 72%, #000), 0 12px 16px -12px rgba(30, 58, 92, .55); }
+.dev[data-theme="daylight"] .well { box-shadow: inset 0 3px 0 #c4d0dd, inset 0 0 0 1px rgba(196, 208, 221, .6); }
+
+/* Aurora: translucent panes over an indigo-to-teal sky, a luminous rim in the tint */
+.dev[data-theme="aurora"] { --dg0: #1e1450; --dg1: #1c2d6e; --dg2: #0c5b62; --txt: #f3f5ff; --txt-2: #bac3e8; --lbl: #e4e9fc; --cyan: #6ae6f8; --mag: #ff7cd8;
+  --green: #70f0b0; --amber: #ffd166; --hair: rgba(216, 222, 255, .16); --hair-2: rgba(216, 222, 255, .3); --well: rgba(255, 255, 255, .08); --track: #39408a;
+  --tag-bg: #1d1d58; --gear-top: #403c8a; --gear-bot: #2a2768; --art: #ff7cd8; }
+.dev[data-theme="aurora"] .key, .dev[data-theme="aurora"] .art, .dev[data-theme="aurora"] .ctl span { background: linear-gradient(180deg, rgba(255, 255, 255, .24), rgba(255, 255, 255, .1));
+  color: color-mix(in oklab, var(--t) 49%, #fff);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 60%, #fff), 0 12px 16px -12px rgba(7, 5, 28, .85); }
+.dev[data-theme="aurora"] .art { --t: var(--art); }
+.dev[data-theme="aurora"] .cell.on .key, .dev[data-theme="aurora"] .ctl .play { background: linear-gradient(180deg, color-mix(in oklab, var(--t) 78%, transparent), color-mix(in oklab, var(--t) 59%, transparent)); color: #fff; }
+.dev[data-theme="aurora"] .well { box-shadow: inset 0 0 0 1px rgba(94, 90, 168, .5); }
+
+/* Synth: Teenage Engineering OP-1 grey; flat matte keys on a darker side, a colour dot, mono capitals */
+.dev[data-theme="synth"] { --dg0: #dedbd5; --dg1: #d8d5ce; --dg2: #cfccc4; --txt: #151515; --txt-2: #55524d; --lbl: #232220; --cyan: #2160d0; --mag: #ff5a1f;
+  --green: #14a150; --amber: #dc9e00; --hair: rgba(26, 26, 26, .24); --hair-2: rgba(26, 26, 26, .36); --well: #cfcbc3; --track: #bfbab1; --tag-bg: #f3f2ee;
+  --gear-top: #f8f7f4; --gear-bot: #e8e6e1; --knob: #2a2a2a; --ink: #1b1b1b; --art: #ff5a1f; }
+.dev[data-theme="synth"] .key, .dev[data-theme="synth"] .art, .dev[data-theme="synth"] .ctl span { border-radius: 8px; background: linear-gradient(180deg, #f7f6f3, #e8e6e1); color: #1b1b1b;
+  box-shadow: inset 0 0 0 1px #99948b, 0 3px 0 0 #a39e95; }
+.dev[data-theme="synth"] .ctl span { border-radius: 50%; }
+.dev[data-theme="synth"] .ctl .play { color: var(--mag); }
+.dev[data-theme="synth"] .key::before, .dev[data-theme="synth"] .art::before { content: ""; display: block; position: absolute; inset: auto; left: 10px; top: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--t); }
+.dev[data-theme="synth"] .art { --t: var(--art); }
+.dev[data-theme="synth"] .lbl { font: 400 12px/14px var(--mono); text-transform: uppercase; }
+.dev[data-theme="synth"] .well { border-radius: 8px; box-shadow: inset 0 3px 0 #b3aea5; }
+
+/* Retro: Game Boy DMG LCD, four greens, pixel boxes with a hard shadow */
+.dev[data-theme="retro"] { --dg0: #9fbf12; --dg1: #9bbc0f; --dg2: #93b40e; --txt: #0f380f; --txt-2: #306230; --lbl: #0f380f; --cyan: #306230; --mag: #0f380f;
+  --green: #306230; --amber: #306230; --hair: #0f380f; --hair-2: #0f380f; --well: transparent; --track: #8bac0f; --tag-bg: #9bbc0f;
+  --gear-top: #9bbc0f; --gear-bot: #9bbc0f; --knob: #0f380f; --ink: #0f380f; --art: #306230; --line: #306230;
+  background: repeating-linear-gradient(180deg, transparent 0 2px, rgba(15, 56, 15, .09) 2px 3px), linear-gradient(180deg, var(--dg0), var(--dg1) 50%, var(--dg2));
+  -webkit-font-smoothing: none; }
+.dev[data-theme="retro"] .sb { border-bottom: 2px solid #0f380f; }
+.dev[data-theme="retro"] .key, .dev[data-theme="retro"] .art, .dev[data-theme="retro"] .ctl span { border-radius: 4px; background: #8bac0f; color: #0f380f;
+  box-shadow: inset 0 0 0 2px #0f380f, 3px 3px 0 0 #306230; }
+.dev[data-theme="retro"] .ctl span { border-radius: 50%; }
+.dev[data-theme="retro"] .cell.on .key, .dev[data-theme="retro"] .ctl .play { background: #0f380f; color: #9bbc0f; }
+.dev[data-theme="retro"] .well { border-radius: 4px; box-shadow: inset 0 0 0 2px #8bac0f; }
+.dev[data-theme="retro"] .tag.on { color: #9bbc0f; }
+
+:is(.dev[data-theme="paper"], .dev[data-theme="daylight"], .dev[data-theme="retro"]) .key::before { display: none; }
+:is(.dev[data-theme="paper"], .dev[data-theme="daylight"], .dev[data-theme="synth"], .dev[data-theme="retro"], .dev[data-theme="aurora"]) .key > svg { filter: none; }
+.dev[data-theme="aurora"] .key::before { background: linear-gradient(180deg, rgba(255, 255, 255, .12), transparent); }
+:is(.dev[data-theme="paper"], .dev[data-theme="daylight"], .dev[data-theme="synth"]) .tag.on { color: #fff; }
+
+/* the theme picker in the Device view: a tiny screen of each theme */
+.themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; min-width: 0; }
+.themes button { display: grid; justify-items: center; gap: 6px; padding: 6px 4px 8px; min-height: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--hair); border-radius: 12px; font-weight: 400; }
+.themes button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--mag); color: var(--mag); }
+.dev.chip { width: 56px; height: 40px; border-radius: 8px; display: grid; place-items: center; overflow: visible; }
+.dev.chip .key { width: 26px; height: 26px; border-radius: calc(var(--kr, 19) * 26px / 66); }
+.dev.chip .key::before { display: none; }
+.dev[data-theme="synth"].chip .key::before { display: block; left: 4px; top: 4px; width: 4px; height: 4px; }
+.dev[data-theme="paper"].chip .key { --kr: 11; box-shadow: inset 0 0 0 1px rgba(31, 26, 20, .78), 1.5px 1.5px 0 0 color-mix(in oklab, var(--t) 51%, #1f1a14); }
+.dev[data-theme="synth"].chip .key { --kr: 8; box-shadow: inset 0 0 0 1px #99948b, 0 1.5px 0 0 #a39e95; }
+.dev[data-theme="retro"].chip .key { --kr: 4; box-shadow: inset 0 0 0 1.5px #0f380f, 1.5px 1.5px 0 0 #306230; }

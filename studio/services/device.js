@@ -263,7 +263,8 @@ class Device extends EventEmitter {
     const led = (await this.link.command("led")).match(/led (\w+) color (\d+) (\d+) (\d+) brightness (\d+)/);
     const br = (await this.link.command("setbrightness")).match(/brightness (\d+)/);
     const ck = (await this.link.command("click")).match(/click (on|off)/);
-    return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on" };
+    const th = (await this.link.command("theme")).match(/^theme (\w+)$/m);
+    return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on", theme: th ? th[1] : "" };
   }
 
   async fsinfo() {

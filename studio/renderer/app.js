@@ -35,6 +35,8 @@ const ICON_NAMES = window.KEY_ICON_NAMES || [];
 const TINTS = [[79, 140, 255], [63, 198, 224], [47, 191, 154], [82, 214, 143], [168, 214, 74], [242, 183, 70], [255, 138, 61], [255, 95, 87], [255, 111, 174], [216, 108, 232], [155, 123, 255], [138, 152, 171]];
 const ANIMS = [["", "None"], ["eq", "Equalizer while playing"], ["pulse", "Pulse while off"], ["rec", "Blink red while on"]];
 const LED_PATTERNS = ["rainbow", "breathe", "solid", "status", "off"];
+// The keypad's themes (firmware/TouchKeypad/themes.h); the preview draws the chosen one.
+const THEMES = [["glass", "Glass"], ["paper", "Paper"], ["daylight", "Daylight"], ["aurora", "Aurora"], ["synth", "Synth"], ["retro", "Retro"]];
 const NUM_PROFILES = 8;
 
 /* ============ helpers ============ */
@@ -52,13 +54,28 @@ const norm = (k) => { const u = String(k).trim().toUpperCase(); return ALIASES[u
 const blankKeys = () => Array.from({ length: 15 }, () => null);
 const blankProfile = (n) => ({ schema_version: 2, profile_name: `Profile ${n}`, color: [138, 152, 171], default_delay: 20, pages: [{ name: "Main", keys: blankKeys() }] });
 const K = (id, name, icon, led_color, actions) => ({ id, name, icon, led_color, actions });
+const luma = ([r, g, b]) => (r * 77 + g * 150 + b * 29) >> 8;
+const mixc = (a, b, t) => a.map((v, i) => Math.round(v + ((b[i] - v) * t) / 255));
+// Glyph ink where the theme does not use one ink for every key (the firmware's keyInk).
+function keyInk(tint) {
+  if (state.theme === "paper") return luma(mixc(tint, [239, 228, 204], 46)) > 165 ? "#1f1a14" : "#fffaf0";
+  if (state.theme === "daylight") { let c = tint; for (let i = 0; i < 6 && luma(c) > 118; i++) c = mixc(c, [0, 0, 0], 45); return rgb(c); }
+  return "";
+}
+// The profile line as the keypad draws it: four greens in Retro, darkened to read on light grounds.
+function lineFor(c) {
+  if (state.theme === "retro") return [48, 98, 48];
+  const light = ["paper", "daylight", "synth"].includes(state.theme);
+  for (let i = 0; light && i < 4 && luma(c) > 140; i++) c = mixc(c, [0, 0, 0], 50);
+  return c;
+}
 const mmss = (s) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padStart(2, "0")}`;
 const isPlayerPage = (page) => !!(page.keys[0] && page.keys[0].widget);
 
 /* ============ state ============ */
 const state = {
   slots: Object.fromEntries(Array.from({ length: NUM_PROFILES }, (_, i) => [i + 1, blankProfile(i + 1)])),
-  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "",
+  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "glass",
   conn: { connected: false }, settings: {}, np: { title: "", album: "", artist: "", app: "", pos: 0, len: 0, playing: false }, art: null,
 };
 const prof = () => state.slots[state.slot];
@@ -93,7 +110,7 @@ function keyHTML(k, i) {
   const anim = k.anim ? `<span class="tag anim">${k.anim.toUpperCase()}</span>` : "";
   const face = k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`;
   return `<div class="cell${sel}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}">
-    <span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
+    <span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
 }
 function playerHTML(sel) {
   const np = state.np, pct = np.len ? Math.min(100, (np.pos / np.len) * 100) : 0;
@@ -108,11 +125,11 @@ function playerHTML(sel) {
       <span class="play">${kicon(np.playing ? "pause" : "play", 36)}</span><span>${kicon("skip-forward", 28)}</span><span>${kicon("volume-2", 28)}</span></div></div>`;
 }
 function devHTML() {
-  const p = prof(), page = pg(), line = rgb(p.color || [138, 152, 171]);
+  const p = prof(), page = pg(), line = rgb(lineFor(p.color || [138, 152, 171]));
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const up = state.conn.connected && state.conn.status && +state.conn.status.ble > 0;
   const body = isPlayerPage(page) ? playerHTML(state.sel === 0) : `<div class="grid">${page.keys.map(keyHTML).join("")}</div>`;
-  return `<div class="dev" style="--line:${line}">
+  return `<div class="dev" data-theme="${state.theme}" style="--line:${line}">
     <div class="sb"><span class="clock">${time}</span><span class="prof"><i></i>${esc(p.profile_name)} <span>${state.page + 1}/${p.pages.length}</span></span>
       <span class="host${up ? "" : " caution"}">${kicon(up ? "bluetooth" : "bluetooth-off", 18)}${up ? "Host" : "No host"}</span><span class="gear">${kicon("settings", 18)}</span></div>
     ${body}
@@ -177,7 +194,7 @@ function renderSide() {
   if (!modes.some(([m]) => m === state.mode)) state.mode = "actions";
   side.innerHTML = `
     <div class="two"><label class="field"><span>Label</span><input id="k-name" value="${esc(k.name)}" maxlength="14"></label>
-      <div class="dev keyprev"><span class="key" style="--t:${rgb(k.led_color)}">${k.icon ? kicon(k.icon, 36) : ""}</span></div></div>
+      <div class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${k.icon ? kicon(k.icon, 36) : ""}</span></div></div>
     <div class="field"><span>Colour</span><div class="swatches">${TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${c.join() === k.led_color.join()}" data-sw="${c.join(",")}" aria-label="Colour ${c.join(",")}"></button>`).join("")}</div></div>
     <div class="field iconbox"><span>Icon · ${ICON_NAMES.length} built in</span><input id="ic-filter" placeholder="Search icons: play, mic, git, spotify…" value="${esc(state.iconFilter)}" aria-label="Search icons"><div class="icons" id="icons">${iconGrid(k)}</div></div>
     <div class="two"><label class="field"><span>Animation</span><select id="k-anim">${ANIMS.map(([v, l]) => `<option value="${v}" ${(k.anim || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -340,6 +357,7 @@ async function renderDevice() {
   const fs = c.connected ? await api.fsinfo() : null;
   const ble = c.connected ? await api.bleList() : { slots: [] };
   const look = c.connected ? await api.lookState() : null;
+  if (look && look.theme) state.theme = look.theme;
   const dis = c.connected ? "" : "disabled";
   const pct = (v) => (look ? `${Math.round(v / 2.55)}%` : "—");
   el.innerHTML = `
@@ -352,6 +370,7 @@ async function renderDevice() {
         <dt>Storage</dt><dd>${fs ? `${Math.round(fs.used / 1024)} KB of ${Math.round(fs.total / 1024)} KB` : "—"}</dd></dl>
       <div class="row"><button id="d-refresh" ${dis}>${ico("refresh-cw")} Refresh</button><button id="d-cal" ${dis}>${ico("crosshair")} Calibrate touch</button></div></div>
     <div class="book"><h3>Screen and light</h3>
+      <div class="field"><span>Theme${c.connected ? "" : " · preview only while offline"}</span><div class="themes" role="group" aria-label="Theme">${THEMES.map(([id, title]) => `<button data-theme-set="${id}" aria-pressed="${state.theme === id}"><span class="dev chip" data-theme="${id}"><span class="key" style="--t:#4f8cff"></span></span>${title}</button>`).join("")}</div></div>
       <label class="field"><span>Screen brightness · ${pct(look && look.brightness)}</span><input type="range" id="d-bright" min="13" max="255" value="${look ? look.brightness : 200}" ${dis}></label>
       <div class="field"><span>Status LED</span><div class="seg" role="group" aria-label="LED pattern">${LED_PATTERNS.map((p) => `<button data-led="${p}" aria-pressed="${!!look && look.led === p}" ${dis}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div></div>
       <div class="field"><span>LED colour · solid and breathe</span><div class="swatches">${TINTS.map((t) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="LED colour ${t.join(",")}" ${dis}></button>`).join("")}</div></div>
@@ -381,6 +400,12 @@ async function renderDevice() {
   $("d-ledb").onchange = (e) => cmd(`ledbright ${e.target.value}`);
   $("d-click").onchange = (e) => cmd(`click ${e.target.checked ? "on" : "off"}`);
   el.querySelectorAll("[data-led]").forEach((b) => { b.onclick = () => cmd(`led ${b.dataset.led}`); });
+  el.querySelectorAll("[data-theme-set]").forEach((b) => { b.onclick = async () => {
+    state.theme = b.dataset.themeSet;
+    state.settings = await api.setSettings({ preview_theme: state.theme });
+    if (state.conn.connected) await api.command(`theme ${state.theme}`);
+    renderDevice();
+  }; });
   el.querySelectorAll("[data-ledc]").forEach((b) => { b.onclick = () => cmd(`led ${look && look.led === "breathe" ? "breathe" : "solid"} ${b.dataset.ledc}`); });
   el.querySelectorAll("[data-use]").forEach((b) => { b.onclick = () => cmd(`ble use ${b.dataset.use}`); });
   el.querySelectorAll("[data-forget]").forEach((b) => { b.onclick = async () => { if (!confirm("Forget this Bluetooth host?")) return; await api.bleForget(+b.dataset.forget); renderDevice(); }; });
@@ -458,7 +483,12 @@ api.onEvent(({ type, data }) => {
       const was = state.conn.connected;
       state.conn = { ...state.conn, ...data };
       renderTop();
-      if (!was && data.connected) loadSlot(data.activeSlot || state.slot).then(() => { state.slot = data.activeSlot || state.slot; renderStudio(); });
+      if (!was && data.connected) loadSlot(data.activeSlot || state.slot).then(async () => {
+        state.slot = data.activeSlot || state.slot;
+        const look = await api.lookState();
+        if (look && look.theme) state.theme = look.theme;
+        renderStudio();
+      });
       if (!data.connected) setSave("off", "Offline · edits are backed up on this PC");
       if (state.view === "device") renderDevice();
       break;
@@ -489,11 +519,16 @@ api.onEvent(({ type, data }) => {
 /* ============ boot ============ */
 (async () => {
   state.settings = await api.getSettings();
+  state.theme = state.settings.preview_theme || "glass";
   state.conn = { ...state.conn, ...(await api.state()) };
   if (!state.conn.connected) setSave("off", state.conn.noSerial ? "Serial disabled" : "Offline · edits are backed up on this PC");
   renderStudio();
   if (state.conn.view) showView(state.conn.view);
-  if (state.conn.connected) await loadSlot(state.conn.activeSlot || 1);
+  if (state.conn.connected) {
+    await loadSlot(state.conn.activeSlot || 1);
+    const look = await api.lookState();
+    if (look && look.theme) { state.theme = look.theme; renderStudio(); }
+  }
   // Self-check for the smoke test: the shared icon map loaded and the preview drew the screen.
   api.ready({ icons: ICON_NAMES.length, screen: !!document.querySelector("#st-screen .dev"), missing: ACTION_META ? Object.values(ACTION_META).map((m) => m.icon).filter((n) => !window.KEY_ICONS?.[n]) : [] });
 })();
