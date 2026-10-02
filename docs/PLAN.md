@@ -248,7 +248,7 @@ Macropad v2.1 runs on an ESP32-S2 with 12 mechanical keys over USB HID, and ship
 ### 6.1 Stack
 | Layer | Choice | Why |
 |---|---|---|
-| Build | PlatformIO, `espressif32` platform pinned to Arduino core 2.0.17 | Vendor-tested; FreeTouchDeck broke on 3.x |
+| Build | `arduino-cli`, Arduino-ESP32 core 3.2.1 (decided in M0; `tools/kp.py build`) | Same core as v2.1, so modules port unchanged; LovyanGFX 1.2.21 and NimBLE-Arduino 2.5.0 run on it |
 | BLE | NimBLE-Arduino 2.x with an HID device class (keyboard + consumer + mouse + telephony); NUS service in M4 | Roughly 2× the free heap of Bluedroid; fixes sleep/wake reconnects |
 | Graphics | LovyanGFX: `Panel_ST7796` with the vendor init table, `Touch_XPT2046` on the shared bus, DMA | The UI is a grid of pre-rendered tiles plus a few widgets, so direct drawing is enough. LVGL 8.3 is deferred until the UI needs real forms |
 | Storage | LittleFS (2 MB), NVS | As in v2.1; power-safe; content-addressed tile files |
