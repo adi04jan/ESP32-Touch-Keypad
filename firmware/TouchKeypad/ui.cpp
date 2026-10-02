@@ -9,6 +9,7 @@
 #include "ble_hid.h"
 #include "touch.h"
 #include "leds.h"
+#include "power.h"
 #include "hid_maps.h"
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -81,6 +82,7 @@ static int pressedBtn = -1;          // player control or sheet button under the
 static int brightness = 200, dimAfterS = DIM_DEFAULT_S, dimState = 0;   // 0 lit, 1 dim, 2 off
 static uint32_t lastAct = 0;
 static uint32_t timeEpoch = 0, timeBase = 0;
+static int litLevel() { return powerOnUsb() ? brightness : min(brightness, 160); }   // battery: about 60 % at most
 static int tzMin = 0, lastMinute = -1;
 
 static struct { char title[65], album[65], artist[65], app[33]; int pos, len; bool playing; uint32_t at; bool have; } np;
@@ -242,7 +244,16 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
     case KS_PAPER: {   // a card on a darker card: pressing slides it onto the one behind
       float o = max(2.0f, roundf(w * 0.05f)), d = down ? o * (0.55f + 0.45f * p) : 0;
       C3 card = mix(tint, th.g1, 46), back = mix(tint, th.txt, 125);
+      // Only an o-wide strip of the card behind shows, right of and below the front card:
+      // draw just those two (disjoint) strips, not the whole card under it.
+      int clip[4];
+      gfxClipGet(clip);
+      gfxClipAnd((int)floorf(x + w - r), (int)floorf(y + o - 1), (int)ceilf(x + w + o + 1), (int)floorf(y + h - r));
       rrFill(x + o, y + o, w, h, r, solidFill(back), A);
+      gfxClipSet(clip);
+      gfxClipAnd((int)floorf(x + o - 1), (int)floorf(y + h - r), (int)ceilf(x + w + o + 1), (int)ceilf(y + h + o + 1));
+      rrFill(x + o, y + o, w, h, r, solidFill(back), A);
+      gfxClipSet(clip);
       Fill f = solidFill(card); f.top = mix(card, WHITE, 30);
       rrFill(x + d, y + d, w, h, r, f, A);
       rrRing(x + d + 0.5f, y + d + 0.5f, w - 1, h - 1, r - 0.5f, 1.4f, th.txt, A * 200 / 255);
@@ -392,7 +403,9 @@ static void drawCell(int c, uint32_t now) {
   if (ca[c].pop0) {
     float t = (int32_t)(now - ca[c].pop0) / (float)POP_MS;
     if (t < 0) return;   // its turn in the page wave has not come yet
-    if (t < 1) { float e = easeOut(t); a = e; s = 0.82f + 0.18f * e; }
+    // Opaque after the first ~45 % (the scale carries the rest): translucent pixels take
+    // the slow blend path, and a whole fading wave of them cost frames.
+    if (t < 1) { float e = easeOut(t); a = clamp01(e * 2.2f); s = 0.82f + 0.18f * e; }
   }
   int A = (int)(a * 255);
   float kx = cx + 15, ky = cy + 4;
@@ -472,6 +485,30 @@ static void drawCell(int c, uint32_t now) {
 }
 
 // ---------------------------------------------------------------- status band and stations
+// The power state at (cx, cy): a battery filled to its level (amber below 30 %, red below
+// 15 %), with a bolt while USB charges it; the plug when USB runs it with no cell reading.
+// Returns the width the level text took left of it, so the host label moves over.
+static int drawBattery(int cx, int cy) {
+  bool usb = powerOnUsb();
+  int pct = powerBatteryPct();
+  if (pct < 0) { glyph(iconFind("plug-zap", true), true, cx, cy, 18, usb ? GREEN : TXT3); return 0; }
+  C3 ink = usb ? GREEN : pct <= 15 ? RED : pct <= 30 ? AMBER : TXT2;
+  float x = cx - 12, y = cy - 6, w = 21, h = 12;
+  rrRing(x + 0.5f, y + 0.5f, w - 1, h - 1, 3, T->crisp ? 2 : 1.3f, ink);
+  fillRect((int)(x + w), cy - 2, 2, 5, ink);
+  if (pct > 0) rrFill(x + 2.5f, y + 2.5f, max(1.0f, (w - 5) * pct / 100), h - 5, 1.2f, solidFill(ink));
+  if (usb) {   // the bolt, knocked out of the fill, then drawn
+    C3 g = gfxGroundAt(cy);
+    seg(cx + 2, cy - 7, cx - 3, cy + 1, 3.2f, g); seg(cx - 3, cy + 1, cx + 3, cy - 1, 3.2f, g); seg(cx + 3, cy - 1, cx - 2, cy + 7, 3.2f, g);
+    seg(cx + 2, cy - 7, cx - 3, cy + 1, 1.4f, ink); seg(cx - 3, cy + 1, cx + 3, cy - 1, 1.4f, ink); seg(cx + 3, cy - 1, cx - 2, cy + 7, 1.4f, ink);
+    return 0;
+  }
+  char b[6];
+  snprintf(b, sizeof b, "%d%%", pct);
+  text(fRead, cx - 15, 19, b, ink, 255, AL_R);
+  return textW(fRead, b) + 8;
+}
+
 static void drawStatus() {
   if (!gfxHits(0, 0, SCR_W, STATUS_H)) return;
   fillRect(0, 28, SCR_W, T->crisp ? 2 : 1, HAIR, T->hairA);
@@ -498,15 +535,15 @@ static void drawStatus() {
 
   rrFill(454, 2, 24, 24, 12, ctlFill());
   glyph(iconFind("settings", true), true, 466, 14, 18, TXT);
-  glyph(iconFind("plug-zap", true), true, 440, 14, 18, TXT3);
+  int right = 424 - drawBattery(440, 14);
   bool pairing = blePairing(), up = hidConnected();
   String host = pairing ? String("Pairing") : up ? String(hostName) : String("No host");
   host = ellipsize(fRead, host.c_str(), 120);
   C3 hc = pairing ? MAG : up ? GREEN : AMBER;
   int tw = textW(fRead, host.c_str());
-  text(fRead, 424 - tw, 19, host.c_str(), hc);
-  glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, 424 - tw - 12, 14, 18, hc);
-  if (hidDry()) tag(424 - tw - 26, 6, "DRY", RED, false, RED, inkOn(RED), 255);
+  text(fRead, right - tw, 19, host.c_str(), hc);
+  glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, right - tw - 12, 14, 18, hc);
+  if (hidDry()) tag(right - tw - 26, 6, "DRY", RED, false, RED, inkOn(RED), 255);
 }
 
 static void drawStations() {
@@ -771,13 +808,16 @@ static void drawPane() {
       text(fBody, PANE_X, 167, "Touch calibration", TXT);
       button(PANE_X + PANE_W - 130, 140, 130, 44, "Calibrate", "crosshair", 0, pressedBtn == 40);
       size_t used = info.used, total = info.total;
-      const char *dt[4] = { "Firmware", "Free memory", "Storage", "Bluetooth" };
-      char dd[4][40];
+      const char *dt[5] = { "Firmware", "Free memory", "Storage", "Bluetooth", "Power" };
+      char dd[5][40];
       snprintf(dd[0], 40, "%s", FW_VERSION);
       snprintf(dd[1], 40, "%u KB", (unsigned)(info.heap / 1024));
       snprintf(dd[2], 40, "%.1f of %.1f MB", used / 1048576.0f, total / 1048576.0f);
       snprintf(dd[3], 40, "%s", info.mac);
-      for (int i = 0; i < 4; i++) {
+      int pct = powerBatteryPct();
+      if (powerOnUsb()) snprintf(dd[4], 40, pct < 0 ? "USB" : pct < 100 ? "USB, charging (%d%%)" : "USB, battery full", pct);
+      else snprintf(dd[4], 40, "Battery %d%%", pct);
+      for (int i = 0; i < 5; i++) {
         text(fBody, PANE_X, 212 + i * 23, dt[i], TXT2);
         text(fBody, PANE_X + 130, 212 + i * 23, dd[i], TXT);
       }
@@ -1069,10 +1109,16 @@ static bool animate(uint32_t now) {
 void uiTick() {
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
-  if (dimAfterS && mode != M_PAIR && mode != M_CAL) {
+  // On USB the owner's dim setting and full power; on battery dim within 20 s, the screen
+  // off after a minute (CPU slowed, LED dark), and deep sleep after the chosen minutes.
+  bool usb = powerOnUsb();
+  uint32_t dimMs = usb ? dimAfterS * 1000UL : min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;
+  uint32_t offMs = usb ? OFF_AFTER_MS : BAT_OFF_MS;
+  if (dimMs && mode != M_PAIR && mode != M_CAL) {
     uint32_t idle = now - lastAct;
-    if (dimState == 0 && idle > dimAfterS * 1000UL) { dimState = 1; displaySetBacklight(brightness * DIM_LEVEL_PCT / 100); }
-    else if (dimState == 1 && idle > OFF_AFTER_MS) { dimState = 2; displaySetBacklight(0); }
+    if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); }
+    else if (dimState == 1 && idle > offMs) { dimState = 2; displaySetBacklight(0); if (!usb) powerSave(true); }
+    else if (dimState == 2 && !usb && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
   }
   if (now - lastFrame < 16) return;
   bool live = animate(now);
@@ -1163,8 +1209,18 @@ bool uiWake() {
   lastAct = millis();
   if (!dimState) return false;
   dimState = 0;
-  displaySetBacklight(brightness);
+  powerSave(false);
+  displaySetBacklight(litLevel());
   return true;
+}
+
+const char *uiScreenState() { return dimState == 0 ? "lit" : dimState == 1 ? "dim" : "off"; }
+
+void uiPowerChanged() {
+  if (powerOnUsb()) powerSave(false);
+  dimState = dimState ? 1 : 0;   // re-evaluate against the new policy from a lit screen
+  uiWake();
+  mark(0, 0, SCR_W, STATUS_H);
 }
 
 void uiSetBrightness(int level) {
@@ -1173,7 +1229,7 @@ void uiSetBrightness(int level) {
   p.begin("kp", false);
   p.putUChar("bright", brightness);
   p.end();
-  if (!dimState) displaySetBacklight(brightness);
+  if (!dimState) displaySetBacklight(litLevel());
 }
 int uiBrightness() { return brightness; }
 

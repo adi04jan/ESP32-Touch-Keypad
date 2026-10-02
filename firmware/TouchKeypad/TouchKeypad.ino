@@ -28,6 +28,7 @@
 #include "ble_hid.h"
 #include "leds.h"
 #include "cli.h"
+#include "power.h"
 
 void setup() {
   Serial.setRxBufferSize(SERIAL_RX_BUF);
@@ -50,6 +51,7 @@ void setup() {
   touchBegin();
   uiBegin();       // allocates the cell sprite before NimBLE takes its share
   hidBegin();
+  powerBegin();    // after the HID service: it publishes the battery level
 
   esp_task_wdt_config_t wdt = { .timeout_ms = WDT_TIMEOUT_MS, .idle_core_mask = 0, .trigger_panic = true };
   esp_task_wdt_reconfigure(&wdt);
@@ -67,5 +69,6 @@ void loop() {
   blePoll();
   if (!cliUploading()) uiTick();
   ledsTick();
+  powerTick();
   delay(1);
 }

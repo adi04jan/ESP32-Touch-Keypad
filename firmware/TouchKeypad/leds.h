@@ -14,6 +14,7 @@ void ledsTint(uint8_t r, uint8_t g, uint8_t b);      // 2 s
 void ledsFlash(uint8_t r, uint8_t g, uint8_t b);     // 300 ms pulse
 void ledsBreathe(uint8_t r, uint8_t g, uint8_t b);   // 5 s breathe
 void ledsError(bool on);
+void ledsDark(bool on);                              // battery, screen off: LED off (errors still show)
 
 void ledsSetPattern(uint8_t p);                      // saved
 uint8_t ledsPattern();

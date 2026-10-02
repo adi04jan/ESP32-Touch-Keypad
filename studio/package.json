@@ -1,7 +1,7 @@
 {
   "name": "touch-keypad-studio",
   "productName": "Macropad Studio (Touch Keypad)",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Windows host app for the ESP32 Touch Keypad: profile editor, media player feed, host bridge, firmware installer.",
   "main": "main.js",
   "author": "Aditya Biswas <adi04jan@gmail.com>",

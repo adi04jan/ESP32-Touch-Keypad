@@ -127,7 +127,7 @@ void hidBegin() {
   hid->setPnp(0x02, 0x303A, 0x80C6, 0x0300);
   hid->setHidInfo(0x00, 0x01);
   hid->setReportMap((uint8_t *)reportMap, sizeof(reportMap));
-  hid->setBatteryLevel(100);                    // USB powered; battery sampling is M5
+  hid->setBatteryLevel(100);                    // power.cpp updates it once it has a reading
   server->start();
 
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
@@ -426,4 +426,8 @@ bool bleSetHostName(const char *name) {
   p.end();
   uiMarkStatus();
   return true;
+}
+
+void bleSetBattery(uint8_t pct) {
+  if (hid) hid->setBatteryLevel(pct, linkUp);   // Windows shows it in Bluetooth settings
 }

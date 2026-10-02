@@ -7,6 +7,7 @@
 #include "display.h"
 #include "ble_hid.h"
 #include "leds.h"
+#include "power.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include "mbedtls/base64.h"
@@ -250,9 +251,9 @@ static bool runCommand(char *s) {
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
-    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s\n",
+    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
-                  uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()));
+                  uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
   } else if (cmd == "ls") {
     listFiles(*arg ? arg : "/");
   } else if (cmd == "cat") {
@@ -377,6 +378,16 @@ static bool runCommand(char *s) {
   } else if (cmd == "ledbright") {
     if (*arg) ledsSetBrightness(constrain(atoi(arg), 0, 255));
     Serial.printf("ledbright %d\n", ledsBrightness());
+  } else if (cmd == "power") {
+    float k;
+    if (!strcmp(arg, "sim battery")) powerSim(0);
+    else if (!strcmp(arg, "sim usb")) powerSim(1);
+    else if (!strcmp(arg, "sim off")) powerSim(-1);
+    else if (sscanf(arg, "sleep %d", &a) == 1) powerSetSleepMin(constrain(a, 0, 120));
+    else if (sscanf(arg, "divider %f", &k) == 1) powerSetDivider(k);
+    else if (*arg) { Serial.println("power [sim battery|usb|off | sleep <min, 0 never> | divider <k>]"); return true; }
+    Serial.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f cpu:%d screen:%s\n", powerOnUsb(), powerBatteryMv(),
+                  powerBatteryPct(), powerCharging(), powerSleepMin(), powerSimMode(), powerDivider(), (int)getCpuFrequencyMhz(), uiScreenState());
   } else if (cmd == "theme") {
     if (!strcmp(arg, "default")) uiThemeReset();
     int t = *arg && strcmp(arg, "default") ? uiThemeFind(arg) : uiTheme();

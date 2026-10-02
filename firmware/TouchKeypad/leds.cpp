@@ -6,7 +6,7 @@
 enum { FX_NONE, FX_TINT, FX_FLASH, FX_BREATHE };
 static uint8_t fx = FX_NONE, fxR, fxG, fxB;
 static uint32_t fxUntil = 0;
-static bool error = false;
+static bool error = false, dark = false;
 static uint8_t pattern = LED_RAINBOW, bright = 153, col[3] = { 155, 123, 255 };
 static uint8_t shown[3];
 static bool click = true;
@@ -79,6 +79,8 @@ static void hsv(float h, uint8_t *r, uint8_t *g, uint8_t *b) {   // full saturat
   }
 }
 
+void ledsDark(bool on) { dark = on; }
+
 void ledsTick() {
   static uint32_t last = 0;
   uint32_t now = millis();
@@ -86,6 +88,7 @@ void ledsTick() {
   last = now;
   bool blink = (now / 500) & 1;
   if (error) { out(255, 0, 0); return; }
+  if (dark) { out(0, 0, 0); return; }
   if (blePairing()) { out(blink ? 255 : 60, 0, blink ? 255 : 60); return; }
   if (fx && (long)(now - fxUntil) < 0) {
     float k = 1.0f;

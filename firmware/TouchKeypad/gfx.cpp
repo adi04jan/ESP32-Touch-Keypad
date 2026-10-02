@@ -20,9 +20,10 @@ static int shadowK = 255;
 // Gentle gradients (a white tile, a night sky) otherwise band, and on near
 // whites red and blue drop a step on different rows from green, which tints
 // the band pink. The pixel theme keeps its exact palette.
+static inline int div255(int x) { return (x + 1 + (x >> 8)) >> 8; }   // x / 255 for x < 65535, no divide
 static inline void dith(C3 c, uint16_t &a, uint16_t &b) {
   if (crisp) { a = b = pk(c); return; }
-  int r2 = (c.r * 62 + 127) / 255, g2 = (c.g * 126 + 127) / 255, b2 = (c.b * 62 + 127) / 255;
+  int r2 = div255(c.r * 62 + 127), g2 = div255(c.g * 126 + 127), b2 = div255(c.b * 62 + 127);
   uint16_t va = (r2 >> 1) << 11 | (g2 >> 1) << 5 | (b2 >> 1);
   uint16_t vb = ((r2 + 1) >> 1) << 11 | ((g2 + 1) >> 1) << 5 | ((b2 + 1) >> 1);
   a = __builtin_bswap16(va);
@@ -49,11 +50,28 @@ C3 gfxGroundAt(int y) { return groundC[y < 0 ? 0 : y >= SCR_H ? SCR_H - 1 : y]; 
 void gfxSetCrisp(bool on) { crisp = on; }
 void gfxSetShadow(const C3 &c, int strength) { shadowC = c; shadowK = strength; }
 
+// One dithered span of row y, two pixels per 32-bit store (a per-pixel parity test
+// made every filled shape ~2x slower).
+static inline void ditherSpan(uint16_t *row, int x0, int x1, int y, uint16_t va, uint16_t vb) {
+  int n = x1 - x0;
+  if (n <= 0) return;
+  uint16_t *p = row + x0;
+  bool odd = (x0 + y) & 1;
+  uint16_t v0 = odd ? vb : va, v1 = odd ? va : vb;
+  if ((uintptr_t)p & 2) { *p++ = v0; uint16_t t = v0; v0 = v1; v1 = t; n--; }
+  uint32_t vv = v0 | (uint32_t)v1 << 16, *q = (uint32_t *)p;
+  for (int i = n >> 1; i; i--) *q++ = vv;
+  if (n & 1) *(uint16_t *)q = v0;
+}
+
 void gfxChunk(uint16_t *buf, int x, int y, int w, int h) {
   K = buf; KX = x; KY = y; KW = w; KH = h;
   gfxUnclip();
 }
 void gfxUnclip() { CX0 = KX; CY0 = KY; CX1 = KX + KW; CY1 = KY + KH; }
+void gfxClipAnd(int x0, int y0, int x1, int y1) { CX0 = max(CX0, x0); CY0 = max(CY0, y0); CX1 = min(CX1, x1); CY1 = min(CY1, y1); }
+void gfxClipGet(int c[4]) { c[0] = CX0; c[1] = CY0; c[2] = CX1; c[3] = CY1; }
+void gfxClipSet(const int c[4]) { CX0 = c[0]; CY0 = c[1]; CX1 = c[2]; CY1 = c[3]; }
 void gfxClip(int x0, int y0, int x1, int y1) {
   CX0 = max(KX, x0); CY0 = max(KY, y0); CX1 = min(KX + KW, x1); CY1 = min(KY + KH, y1);
 }
@@ -164,7 +182,7 @@ IRAM_ATTR void rrFill(float x, float y, float w, float h, float r, const Fill &f
         if (alpha >= 255) {
           uint16_t va, vb;
           dith(base, va, vb);
-          for (int px = ix0; px < ix1; px++) row[px] = ((px + py) & 1) ? vb : va;
+          ditherSpan(row, ix0, ix1, py, va, vb);
         }
         else { uint16_t fg = to565(base); for (int px = ix0; px < ix1; px++) blendP(row[px], fg, alpha); }
       } else ix0 = ix1 = x1;

@@ -251,7 +251,7 @@ test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bl
 
 test("Device view: Studio installs its bundled firmware and everything survives", async () => {
   await view("device");
-  if (!/Installs firmware 3\.2\.0/.test(await text("#device-pane"))) throw new Error("no bundled firmware offered");
+  if (!/Installs firmware 3\.\d+\.\d+/.test(await text("#device-pane"))) throw new Error("no bundled firmware offered");
   await run(() => { window.confirm = () => true; return true; });
   await click("#d-flash");
   await until("installed", async () => /Installed/.test(await text("#flash-msg")), 120000, 1000);

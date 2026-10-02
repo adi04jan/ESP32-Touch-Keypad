@@ -35,6 +35,9 @@ void gfxSetShadow(const C3 &c, int strength);       // drop colour and strength 
 void gfxChunk(uint16_t *buf, int x, int y, int w, int h);
 void gfxClip(int x0, int y0, int x1, int y1);       // narrow the clip inside the chunk (x1, y1 exclusive)
 void gfxUnclip();
+void gfxClipAnd(int x0, int y0, int x1, int y1);    // narrow the current clip further
+void gfxClipGet(int c[4]);                          // save and put back a clip
+void gfxClipSet(const int c[4]);
 bool gfxHits(int x, int y, int w, int h);           // rectangle meets the clip
 void gfxGround();                                   // the screen's vertical gradient
 void gfxFill(const C3 &c);                          // whole clip, one colour
