@@ -529,6 +529,7 @@ void uiSetDim(int seconds) {
   p.begin("kp", false);
   p.putUShort("dim", dimAfterS);
   p.end();
+  uiWake();
 }
 
 static void releasePress() {

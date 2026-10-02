@@ -20,21 +20,21 @@ static const auto NEST = DeserializationOption::NestingLimit(24);
 // Shipped default for profile 1: a usable first page plus a Now Playing page.
 static const char DEFAULT_PROFILE1[] PROGMEM = R"JSON({"schema_version":2,"profile_name":"Daily","default_delay":20,"pages":[
 {"name":"Main","keys":[
-{"id":1,"name":"Copy","led_color":[54,198,255],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","C"]}]},
-{"id":2,"name":"Paste","led_color":[61,220,132],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","V"]}]},
-{"id":3,"name":"Undo","led_color":[226,176,74],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","Z"]}]},
-{"id":4,"name":"Mute","led_color":[255,90,95],"actions":[{"type":"media","value":"MUTE"}]},
-{"id":5,"name":"Media","led_color":[160,120,255],"actions":[{"type":"page","value":2}]},
-{"id":6,"name":"Previous","led_color":[47,107,115],"actions":[{"type":"media","value":"PREVIOUS"}]},
-{"id":7,"name":"Play","led_color":[194,65,43],"actions":[{"type":"media","value":"PLAY_PAUSE"}],"hold_actions":[{"type":"media","value":"STOP"}]},
-{"id":8,"name":"Next","led_color":[47,107,115],"actions":[{"type":"media","value":"NEXT"}]},
-{"id":9,"name":"Vol down","led_color":[122,31,43],"actions":[{"type":"media","value":"VOLUME_DOWN"}]},
-{"id":10,"name":"Vol up","led_color":[47,107,79],"actions":[{"type":"media","value":"VOLUME_UP"}]},
+{"id":1,"name":"Copy","icon":"copy","led_color":[54,198,255],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","C"]}]},
+{"id":2,"name":"Paste","icon":"clipboard-paste","led_color":[61,220,132],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","V"]}]},
+{"id":3,"name":"Undo","icon":"undo-2","led_color":[226,176,74],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","Z"]}]},
+{"id":4,"name":"Mute","icon":"volume-x","led_color":[255,90,95],"actions":[{"type":"media","value":"MUTE"}]},
+{"id":5,"name":"Media","icon":"music","led_color":[160,120,255],"actions":[{"type":"page","value":2}]},
+{"id":6,"name":"Previous","icon":"skip-back","led_color":[47,107,115],"actions":[{"type":"media","value":"PREVIOUS"}]},
+{"id":7,"name":"Play","icon":"play","led_color":[194,65,43],"actions":[{"type":"media","value":"PLAY_PAUSE"}],"hold_actions":[{"type":"media","value":"STOP"}]},
+{"id":8,"name":"Next","icon":"skip-forward","led_color":[47,107,115],"actions":[{"type":"media","value":"NEXT"}]},
+{"id":9,"name":"Vol down","icon":"volume-1","led_color":[122,31,43],"actions":[{"type":"media","value":"VOLUME_DOWN"}]},
+{"id":10,"name":"Vol up","icon":"volume-2","led_color":[47,107,79],"actions":[{"type":"media","value":"VOLUME_UP"}]},
 null,null,null,null,null]},
-{"name":"Media","keys":[
-{"id":1,"name":"Now Playing","widget":"now_playing","span":[3,2],"actions":[{"type":"media","value":"PLAY_PAUSE"}]},
+{"name":"Media","icon":"music","keys":[
+{"id":1,"name":"Now Playing","icon":"music","widget":"now_playing","span":[3,2],"actions":[{"type":"media","value":"PLAY_PAUSE"}]},
 null,null,
-{"id":4,"name":"Back","led_color":[130,136,150],"actions":[{"type":"back"}]},
+{"id":4,"name":"Back","icon":"undo-2","led_color":[130,136,150],"actions":[{"type":"back"}]},
 null,null,null,null,null,null,null,null,null,null,null]}]})JSON";
 
 static String profilePath(int id) { return "/profile" + String(id) + ".json"; }
