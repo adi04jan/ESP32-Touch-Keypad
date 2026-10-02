@@ -41,7 +41,13 @@ function openTarget(target) {
   // apps on PATH, files, folders: let `start` resolve them
   spawn("cmd.exe", ["/c", "start", '""', target], { detached: true, windowsHide: true, stdio: "ignore" }).unref();
 }
-function runCommand(cmdline) { spawn(cmdline, { shell: true, detached: true, windowsHide: true, stdio: "ignore" }).unref(); }
+// Not detached: a detached shell has no console, so console programs it starts (cmd /c, git,
+// python ...) open their own and their output never reaches a redirect. Hidden is enough.
+function runCommand(cmdline) {
+  const c = spawn(cmdline, { shell: true, windowsHide: true, stdio: "ignore" });
+  c.on("error", (e) => log(`host: run failed: ${e.message}\n`));
+  c.unref();
+}
 
 function initServices() {
   const dataDir = process.env.STUDIO_DATA_DIR || (app.isPackaged ? app.getPath("userData") : __dirname);
@@ -161,8 +167,8 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     initServices();
     createWindow();
-    createTray();
-    schedulePoll();
+    schedulePoll();   // before the tray: nothing cosmetic may stop the keypad search
+    try { createTray(); } catch (e) { console.error(`[tray] ${e.message}`); }
     if (SMOKE) setTimeout(() => { console.error("STUDIO_BOOT_FAIL timeout"); smokeExit(1); }, 20000);
   });
 }

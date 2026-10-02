@@ -25,7 +25,8 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "services/**/*"
+      "services/**/*",
+      "assets/**/*"
     ],
     "extraResources": [{ "from": "fw-bundle", "to": "firmware" }],
     "win": { "target": "nsis", "icon": "assets/icon.ico" },

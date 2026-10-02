@@ -73,13 +73,14 @@ const mmss = (s) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padSta
 const isPlayerPage = (page) => !!(page.keys[0] && page.keys[0].widget);
 // Profiles live on the keypad: without it Studio only previews (an offline edit would be
 // replaced by the keypad's profile on connect, or overwrite it with a blank one).
-const editable = () => !!(state.conn.connected || state.conn.smoke);
+// While a slot loads from the keypad its editor waits: an edit made then was replaced by the arriving copy.
+const editable = () => !!(state.conn.connected || state.conn.smoke) && !state.loading;
 const newer = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 
 /* ============ state ============ */
 const state = {
   slots: Object.fromEntries(Array.from({ length: NUM_PROFILES }, (_, i) => [i + 1, blankProfile(i + 1)])),
-  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight", empty: {},
+  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight", empty: {}, loading: null,
   conn: { connected: false }, settings: {}, np: { title: "", album: "", artist: "", app: "", pos: 0, len: 0, playing: false }, art: null,
 };
 const prof = () => state.slots[state.slot];
@@ -205,6 +206,10 @@ function iconGrid(k) {
 }
 function renderSide() {
   const page = pg();
+  if (state.loading) {
+    side.innerHTML = `<div class="field"><span>Keys</span><h2>Loading profile ${state.loading}…</h2></div><p class="hint">Reading it from the keypad.</p>`;
+    return;
+  }
   if (!editable()) {
     side.innerHTML = `<div class="field"><span>Keys</span><h2>Keypad not connected</h2></div>
       <p class="hint">Profiles live on the keypad, so they open here once it is plugged in. Until then this is a preview: the themes and the screen look exactly like the keypad's.</p>`;
@@ -435,8 +440,11 @@ async function peekSlots() {
 }
 
 async function loadSlot(n) {
-  const p = await api.loadProfile(n);
-  if (!p) { cli("sys", `! Could not read profile${n}.json; editing a local copy.`); return; }
+  state.loading = n;
+  if (n === state.slot) renderStudio();
+  let p = null;
+  try { p = await api.loadProfile(n); } finally { state.loading = null; }
+  if (!p) { cli("sys", `! Could not read profile${n}.json; editing a local copy.`); if (n === state.slot) renderStudio(); return; }
   state.slots[n] = p;
   state.empty[n] = false;
   hist.base[n] = JSON.stringify(p);
@@ -610,6 +618,7 @@ api.onEvent(({ type, data }) => {
       if (data.slot !== state.slot) break;
       const m = { pending: ["busy", "Saving…"], saving: ["busy", "Writing to the keypad…"], saved: ["", "Saved to the keypad"], offline: ["off", "Backed up on PC · offline"], error: ["err", "Not saved"] }[data.state];
       if (m) setSave(...m);
+      if (data.state === "saved" && state.empty[data.slot]) { state.empty[data.slot] = false; renderTop(); }
       $("st-errors").innerHTML = data.state === "error" ? (data.errors || []).map((x) => `<li>${esc(x)}</li>`).join("") : "";
       break;
     }
