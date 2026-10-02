@@ -107,7 +107,7 @@ static class Program
     static int Window(string outFile, int seconds)
     {
         ApplicationConfiguration.Initialize();
-        var form = new Form { Text = "Touch Keypad E2E sink", Width = 640, Height = 320, TopMost = true, StartPosition = FormStartPosition.CenterScreen };
+        var form = new SinkForm { Text = "Touch Keypad E2E sink", Width = 640, Height = 320, TopMost = true, StartPosition = FormStartPosition.CenterScreen };
         var box = new TextBox { Multiline = true, Dock = DockStyle.Fill, Font = new Font("Consolas", 14), AcceptsReturn = true, AcceptsTab = true };
         form.Controls.Add(box);
         File.WriteAllText(outFile, "");
@@ -127,6 +127,18 @@ static class Program
         keybd_event(0x12, 0, 2, UIntPtr.Zero);
         ShowWindow(h, 9);
         SetForegroundWindow(h);
+    }
+
+    // The synthetic Alt tap in ForceForeground would put the window in menu mode and
+    // swallow the next key as a mnemonic; ignore the keyboard menu request.
+    sealed class SinkForm : Form
+    {
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_SYSCOMMAND = 0x0112, SC_KEYMENU = 0xF100;
+            if (m.Msg == WM_SYSCOMMAND && ((int)m.WParam & 0xFFF0) == SC_KEYMENU) return;
+            base.WndProc(ref m);
+        }
     }
 
     [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);

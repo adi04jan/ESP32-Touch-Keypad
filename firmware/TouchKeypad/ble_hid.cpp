@@ -63,9 +63,10 @@ static int slotOf(const NimBLEAddress &a) {
   return -1;
 }
 
+// The static passkey stays at NimBLE's default (123456) so NimBLE asks
+// onPassKeyDisplay() for the key on every pairing.
 static uint32_t newPasskey() {
   passkey = 100000 + esp_random() % 900000;
-  NimBLEDevice::setSecurityPasskey(passkey);
   return passkey;
 }
 
@@ -79,11 +80,10 @@ class ServerCb : public NimBLEServerCallbacks {
     post(EV_DOWN, slotOf(info.getIdAddress()), reason);
   }
   uint32_t onPassKeyDisplay() override {
-    // Outside a pairing window (with bonds present) the key is never shown,
-    // so a stranger cannot complete MITM pairing.
-    uint32_t pk = newPasskey();
-    if (pairOpen || bondsAtConnect == 0) post(EV_PASSKEY, -1, pk);
-    return pk;
+    if (pairOpen) return passkey;                 // the key already on the ticket
+    uint32_t pk = 100000 + esp_random() % 900000;
+    if (bondsAtConnect == 0) { passkey = pk; post(EV_PASSKEY, -1, pk); }   // first host: open the window
+    return pk;   // otherwise never shown, so a stranger cannot complete MITM pairing
   }
   void onConfirmPassKey(NimBLEConnInfo &info, uint32_t pin) override {
     NimBLEDevice::injectConfirmPasskey(info, pairOpen || bondsAtConnect == 0);
@@ -285,6 +285,7 @@ void blePoll() {
   while (xQueueReceive(evq, &e, 0) == pdTRUE) {
     switch (e.type) {
       case EV_PASSKEY:
+        if (!pairOpen) { pairOpen = true; pairStart = millis(); Serial.println("EVT:BLE pair open"); }
         Serial.printf("EVT:PASSKEY %06lu\n", (unsigned long)e.val);
         uiPairShow(e.val);
         break;
@@ -354,5 +355,10 @@ bool bleForget(int n) {
   NimBLEAddress a = NimBLEDevice::getBondedAddress(n);
   for (uint16_t h : server->getPeerDevices())
     if (server->getPeerInfoByHandle(h).getIdAddress() == a) server->disconnect(h);
-  return NimBLEDevice::deleteBond(a);
+  // The controller's resolving list can't change while advertising, and the
+  // host refuses the unpair then; blePoll() restarts advertising.
+  NimBLEDevice::getAdvertising()->stop();
+  bool ok = NimBLEDevice::deleteBond(a);
+  uiMarkStatus();
+  return ok;
 }

@@ -236,10 +236,18 @@ class Device:
                     chunks.append(base64.b64decode(l))
         raise DeviceError("shot timed out")
 
-    def shot(self, path=None):
-        """Capture the screen; returns a PIL Image (and saves it when path is given)."""
+    def shot(self, path=None, tries=3):
+        """Capture the screen; returns a PIL Image (and saves it when path is given).
+        Retries when a line arrives damaged (the PC side can drop bytes while it is busy)."""
         from PIL import Image
-        w, h, data = self.shot_raw()
+        for attempt in range(tries):
+            try:
+                w, h, data = self.shot_raw()
+                break
+            except DeviceError:
+                if attempt == tries - 1:
+                    raise
+                self.drain(0.5)
         img = Image.frombytes("RGB", (w, h), rgb565_to_rgb(data))
         if path:
             img.save(path)
