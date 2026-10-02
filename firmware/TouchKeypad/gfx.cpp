@@ -8,17 +8,46 @@
 static uint16_t *K;               // chunk pixels
 static int KX, KY, KW, KH;        // chunk rectangle
 static int CX0, CY0, CX1, CY1;    // clip, inside the chunk
-static uint16_t ground[SCR_H];
+static uint16_t ground[SCR_H], groundB[SCR_H];   // the two checkerboard values of each row
 static C3 groundC[SCR_H];
 
 static const C3 WHITE = { 255, 255, 255 };
+static bool crisp = false;
+static C3 shadowC = { 0, 0, 0 };
+static int shadowK = 255;
 
-void gfxBegin(const C3 &top, const C3 &bottom) {
+// Two swapped-RGB565 values whose checkerboard averages c to half a 565 step.
+// Gentle gradients (a white tile, a night sky) otherwise band, and on near
+// whites red and blue drop a step on different rows from green, which tints
+// the band pink. The pixel theme keeps its exact palette.
+static inline void dith(C3 c, uint16_t &a, uint16_t &b) {
+  if (crisp) { a = b = pk(c); return; }
+  int r2 = (c.r * 62 + 127) / 255, g2 = (c.g * 126 + 127) / 255, b2 = (c.b * 62 + 127) / 255;
+  uint16_t va = (r2 >> 1) << 11 | (g2 >> 1) << 5 | (b2 >> 1);
+  uint16_t vb = ((r2 + 1) >> 1) << 11 | ((g2 + 1) >> 1) << 5 | ((b2 + 1) >> 1);
+  a = __builtin_bswap16(va);
+  b = __builtin_bswap16(vb);
+}
+
+void gfxBegin(const C3 &top, const C3 &mid, const C3 &bottom, uint8_t texture) {
+  const int half = (SCR_H - 1) / 2;
   for (int y = 0; y < SCR_H; y++) {
-    groundC[y] = mix(top, bottom, y * 255 / (SCR_H - 1));
-    ground[y] = pk(groundC[y]);
+    C3 c = y <= half ? mix(top, mid, y * 255 / half) : mix(mid, bottom, (y - half) * 255 / (SCR_H - 1 - half));
+    if (texture == 1) {   // laid paper: faint uneven rows
+      uint32_t h = (uint32_t)y * 2654435761u;
+      int d = (int)((h >> 28) & 7) - 3;
+      c = d >= 0 ? mix(c, WHITE, d * 3) : mix(c, C3{ 60, 40, 20 }, -d * 4);
+    } else if (texture == 2 && y % 3 == 2) {   // LCD: a darker gap every third row
+      c = mix(c, C3{ 15, 56, 15 }, 22);
+    }
+    groundC[y] = c;
+    if (texture == 2) ground[y] = groundB[y] = pk(c);
+    else dith(c, ground[y], groundB[y]);
   }
 }
+C3 gfxGroundAt(int y) { return groundC[y < 0 ? 0 : y >= SCR_H ? SCR_H - 1 : y]; }
+void gfxSetCrisp(bool on) { crisp = on; }
+void gfxSetShadow(const C3 &c, int strength) { shadowC = c; shadowK = strength; }
 
 void gfxChunk(uint16_t *buf, int x, int y, int w, int h) {
   K = buf; KX = x; KY = y; KW = w; KH = h;
@@ -43,6 +72,7 @@ static inline uint16_t &P(int x, int y) { return K[(y - KY) * KW + (x - KX)]; }
 // one multiply for all three channels. `fg` is plain (unswapped) RGB565.
 static inline uint16_t to565(C3 c) { return ((c.r & 0xF8) << 8) | ((c.g & 0xFC) << 3) | (c.b >> 3); }
 static inline void blendP(uint16_t &d, uint16_t fg, int a) {
+  if (crisp) a = a >= 128 ? 255 : 0;
   if (a <= 0) return;
   if (a >= 255) { d = __builtin_bswap16(fg); return; }
   uint32_t bg = __builtin_bswap16(d), a5 = (a + 4) >> 3;
@@ -54,12 +84,13 @@ static inline void blend(int x, int y, C3 c, int a) { blendP(P(x, y), to565(c), 
 
 IRAM_ATTR void gfxGround() {
   for (int y = CY0; y < CY1; y++) {
-    uint16_t v = ground[y], *p = &P(CX0, y);
-    int n = CX1 - CX0;
-    if (((uintptr_t)p & 2) && n) { *p++ = v; n--; }
-    uint32_t vv = v | (uint32_t)v << 16, *q = (uint32_t *)p;
+    uint16_t *p = &P(CX0, y);
+    int x = CX0, n = CX1 - CX0;
+    if (((uintptr_t)p & 2) && n) { *p++ = ((x + y) & 1) ? groundB[y] : ground[y]; x++; n--; }
+    uint16_t v0 = ((x + y) & 1) ? groundB[y] : ground[y], v1 = ((x + y) & 1) ? ground[y] : groundB[y];
+    uint32_t vv = v0 | (uint32_t)v1 << 16, *q = (uint32_t *)p;   // little endian: the low half is the left pixel
     for (int i = 0; i < n / 2; i++) *q++ = vv;
-    if (n & 1) *(uint16_t *)q = v;
+    if (n & 1) *(uint16_t *)q = v0;
   }
 }
 
@@ -130,7 +161,11 @@ IRAM_ATTR void rrFill(float x, float y, float w, float h, float r, const Fill &f
       ix1 = min(x1, (int)floorf(cx + ih - 0.5f) + 1);
       if (ix0 < ix1) {
         uint16_t *row = &P(0, py);
-        if (alpha >= 255) { uint16_t v = pk(base); for (int px = ix0; px < ix1; px++) row[px] = v; }
+        if (alpha >= 255) {
+          uint16_t va, vb;
+          dith(base, va, vb);
+          for (int px = ix0; px < ix1; px++) row[px] = ((px + py) & 1) ? vb : va;
+        }
         else { uint16_t fg = to565(base); for (int px = ix0; px < ix1; px++) blendP(row[px], fg, alpha); }
       } else ix0 = ix1 = x1;
     }
@@ -222,7 +257,8 @@ IRAM_ATTR void seg(float ax, float ay, float bx, float by, float width, C3 c, in
 }
 
 IRAM_ATTR void softShadow(float x, float y, float w, float h, int alpha) {
-  static const C3 BLACK = { 0, 0, 0 };
+  if (crisp) return;   // the pixel theme draws hard shadows itself
+  alpha = alpha * shadowK / 255;
   for (int i = 0; i < 12; i++) {
     float k = 1 - i / 12.0f;
     int a = (int)(alpha * 0.6f * k * k);
@@ -233,7 +269,7 @@ IRAM_ATTR void softShadow(float x, float y, float w, float h, int alpha) {
     float l = x + inset, rr = x + w - inset;
     for (int px = x0; px < x1; px++) {
       float edge = min(px + 0.5f - l, rr - px - 0.5f) * (1 / 6.0f);
-      blend(px, py, BLACK, edge >= 1 ? a : (int)(a * edge));
+      blend(px, py, shadowC, edge >= 1 ? a : (int)(a * edge));
     }
   }
 }

@@ -234,7 +234,10 @@ class Device:
                         raise DeviceError(f"shot size {len(data)} != {w * h * 2}")
                     return w, h, data
                 elif w is not None and B64_LINE.match(l):   # skip interleaved log lines
-                    chunks.append(base64.b64decode(l))
+                    try:
+                        chunks.append(base64.b64decode(l))
+                    except ValueError as e:   # a damaged line: shot() retries the capture
+                        raise DeviceError(f"shot line damaged: {e}")
         raise DeviceError("shot timed out")
 
     def shot(self, path=None, tries=3):

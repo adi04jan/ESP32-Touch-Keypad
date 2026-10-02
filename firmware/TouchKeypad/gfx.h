@@ -27,7 +27,11 @@ static inline C3 mix(C3 a, C3 b, int t) {   // t 0..255; multiply-shift, no divi
 }
 
 // ---- canvas
-void gfxBegin(const C3 &top, const C3 &bottom);   // ground gradient table
+// Ground gradient table: three stops, plus a row texture (0 none, 1 laid paper, 2 LCD rows).
+void gfxBegin(const C3 &top, const C3 &mid, const C3 &bottom, uint8_t texture = 0);
+C3 gfxGroundAt(int y);                              // the ground colour of row y
+void gfxSetCrisp(bool on);                          // no antialiasing: every blend snaps to 0 or 255 (pixel theme)
+void gfxSetShadow(const C3 &c, int strength);       // drop colour and strength (255 = full) for softShadow
 void gfxChunk(uint16_t *buf, int x, int y, int w, int h);
 void gfxClip(int x0, int y0, int x1, int y1);       // narrow the clip inside the chunk (x1, y1 exclusive)
 void gfxUnclip();

@@ -40,6 +40,11 @@ bool uiSheetOpen();
 void uiSetBrightness(int level);     // 0-255, live + NVS
 int  uiBrightness();
 void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS; wakes the screen
+void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
+int  uiTheme();
+int  uiThemeCount();
+const char *uiThemeId(int i);
+int  uiThemeFind(const char *id);    // by id, title or 1-based number; -1 if none
 void uiCalibrate();                  // touch calibration screen (also on first boot and BOOT held 2 s)
 void uiCalibrateCancel();
 bool uiCalibrating();

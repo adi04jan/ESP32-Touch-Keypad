@@ -1,10 +1,10 @@
-"""Hardware tests for the Touch Keypad firmware (3.1) over USB serial.
+"""Hardware tests for the Touch Keypad firmware (3.2) over USB serial.
 
     python -m pytest tools/tests -v          # board on the first CH340, or KP_PORT=COMx
 
 HID runs dry (reports logged as EVT:HID, nothing reaches a host). The tests use
 profile slot 8, switch back to profile 1 at the end, and put the touch
-calibration back exactly as they found it.
+calibration and the theme back exactly as they found them.
 """
 import json
 import re
@@ -83,6 +83,7 @@ def dev():
     d.ready()
     d.cmd("calibrate cancel")
     cal = d.cmd("touchcal")[0]
+    theme = re.search(r"theme:(\w+)", d.cmd("status")[0])
     d.ok("setdim 0")
     d.ok("hid dry on")
     r = d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
@@ -95,6 +96,7 @@ def dev():
     m = re.match(r"cal:(\d) (.*)", cal)
     d.cmd(f"touchcal set {m.group(2)}" if m and m.group(1) == "1" else "touchcal clear")
     d.cmd("led rainbow")
+    d.cmd(f"theme {theme.group(1) if theme else 'glass'}")
     d.cmd("setprofile 1")
     d.cmd("setdim 120")
     d.close()
@@ -110,6 +112,9 @@ def d(dev):
         dev.cmd("ble cancel")
         dev.cmd("calibrate cancel")
         dev.cmd("sheet close")
+    if "theme:glass" not in st:   # pixel checks below are written against Glass
+        dev.cmd("theme glass")
+        time.sleep(0.4)
     if "page:1 " not in dev.cmd("status")[0]:
         dev.ok("page 1")
     time.sleep(0.5)
@@ -147,7 +152,7 @@ def fps(d, action, wait=0.8):
 # ---------------------------------------------------------------- protocol
 def test_status_identifies_touch_keypad(d):
     st = d.cmd("status")[0]
-    assert "model:touch" in st and "ver:3.1" in st and "pages:3" in st and "ui:home" in st and re.search(r"cal:[01]", st)
+    assert "model:touch" in st and "ver:3.2" in st and "theme:" in st and "pages:3" in st and "ui:home" in st and re.search(r"cal:[01]", st)
 
 
 def test_default_profiles_are_installed(dev):
@@ -291,7 +296,8 @@ def test_station_tap_changes_page(d):
 def test_screen_layout(d):
     img = d.shot()
     assert img.size == (480, 320)
-    assert sum(img.getpixel((5, 250))) < 60                       # graphite ground
+    g = img.getpixel((5, 250))
+    assert sum(g) < 90 and g[2] > g[0] + 8, g                   # deep navy ground, lifted off black for the TFT
     x, y = key_box(1)
     glass = img.getpixel((x + 33, y + 12))
     assert glass[0] > glass[1] + 40 and glass[0] > glass[2] + 40     # red-tinted glass key
@@ -442,12 +448,94 @@ def test_heap_stable_over_200_taps(d):
     assert free() >= before - 2048
 
 
-def test_profile_survives_reboot(dev):
+def test_profile_and_theme_survive_reboot(dev):
+    dev.ok("theme aurora")
     dev.write_line("reboot")
     time.sleep(1.5)
     dev.reopen()
     dev.ready(20)
     dev.cmd("calibrate cancel")
-    assert f"Profile:{SLOT}" in dev.cmd("status")[0]
+    st = dev.cmd("status")[0]
+    assert f"Profile:{SLOT}" in st and "theme:aurora" in st, st
+    dev.ok("theme glass")
     dev.ok("setdim 0")
     dev.ok("hid dry on")
+
+
+# ---------------------------------------------------------------- themes
+THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro"]
+# The bottom stop of each theme's ground (themes.h): the corner below the grid shows it.
+GROUND_BOTTOM = {"glass": (10, 17, 25), "paper": (229, 214, 182), "daylight": (233, 240, 248),
+                 "aurora": (12, 91, 98), "synth": (207, 204, 196), "retro": (147, 180, 14)}
+
+
+def luma(px):
+    return (px[0] * 77 + px[1] * 150 + px[2] * 29) >> 8
+
+
+def test_theme_command_lists_switches_and_reports(d):
+    assert d.cmd("theme") == ["theme glass"]
+    assert d.cmd("theme nope") == ["theme " + " ".join(THEMES)]
+    since = len(d.events)
+    assert d.cmd("theme Aurora") == ["theme aurora"]     # titles work too
+    d.wait_event(r"^EVT:THEME aurora$", 3, since)
+    assert "theme:aurora" in d.cmd("status")[0]
+    assert d.cmd("theme 5") == ["theme synth"]          # and 1-based numbers
+
+
+@pytest.mark.parametrize("name", THEMES)
+def test_each_theme_paints_its_ground_and_keys(d, name):
+    d.ok(f"theme {name}")
+    time.sleep(0.6)                                      # the wipe takes 320 ms
+    img = d.shot()
+    g = img.getpixel((6, 316))
+    assert close(g, GROUND_BOTTOM[name], 16), (name, g)
+    kx, ky = key_box(2)
+    face = img.getpixel((kx + 7, ky + 40))               # inside the key, clear of the glyph
+    lum = luma(face)
+    if name == "daylight":
+        assert lum > 225, face                           # a white tile
+    elif name == "synth":
+        assert 215 < lum < 245 and max(face) - min(face) < 16, face   # matte warm grey
+    elif name == "retro":
+        assert close(face, (139, 172, 15), 8), face     # the second-lightest DMG green, exact
+    elif name == "paper":
+        assert face != g and 90 < lum < 235 and face[0] > face[2], face   # a card in the key's warm tint
+    elif name == "aurora":
+        assert lum > luma(img.getpixel((kx - 6, ky + 40))) + 18, face     # a pane lighter than the sky
+    else:
+        assert face[0] > face[2] + 30, face             # glass lit in the key's red tint
+
+
+@pytest.mark.parametrize("name", THEMES)
+def test_each_theme_animates_at_60fps(d, name):
+    d.ok(f"theme {name}")
+    time.sleep(0.6)
+    frames, rate, _ = fps(d, lambda: d.ok("page 3"))     # grid -> grid wave
+    assert frames >= 12 and rate >= FPS_FLOOR, (name, frames, rate)
+    d.ok("page 1")
+    time.sleep(0.6)
+    frames, rate, _ = fps(d, lambda: d.touch(*cell_xy(2), 700))
+    assert frames >= 20 and rate >= FPS_FLOOR, (name, frames, rate)
+
+
+def test_theme_wipe_runs_at_60fps(d):
+    frames, rate, _ = fps(d, lambda: d.ok("theme daylight"), wait=0.6)
+    assert frames >= 14 and rate >= FPS_FLOOR, (frames, rate)
+
+
+def test_sheet_theme_chip_switches_the_theme(d):
+    d.ok("sheet")
+    d.wait_event(r"^EVT:UI sheet$")
+    time.sleep(0.5)
+    d.touch(60, 64)                                      # Display tab
+    time.sleep(0.3)
+    w = (338 - 5 * 6) / 6
+    since = len(d.events)
+    d.touch(int(128 + 4 * (w + 6) + w / 2), 272)          # the Synth chip
+    d.wait_event(r"^EVT:THEME synth$", 3, since)
+    time.sleep(0.6)
+    img = d.shot()
+    assert "theme:synth" in d.cmd("status")[0]
+    assert luma(img.getpixel((300, 40))) > 200            # the sheet is now the light grey ply
+    d.ok("sheet close")

@@ -250,9 +250,9 @@ static bool runCommand(char *s) {
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
-    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d\n",
+    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
-                  uiModeName(), touchCalibrated() ? 1 : 0);
+                  uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()));
   } else if (cmd == "ls") {
     listFiles(*arg ? arg : "/");
   } else if (cmd == "cat") {
@@ -377,6 +377,16 @@ static bool runCommand(char *s) {
   } else if (cmd == "ledbright") {
     if (*arg) ledsSetBrightness(constrain(atoi(arg), 0, 255));
     Serial.printf("ledbright %d\n", ledsBrightness());
+  } else if (cmd == "theme") {
+    int t = *arg ? uiThemeFind(arg) : uiTheme();
+    if (t < 0) {
+      Serial.print("theme");
+      for (int i = 0; i < uiThemeCount(); i++) Serial.printf(" %s", uiThemeId(i));
+      Serial.println();
+    } else {
+      if (*arg) uiSetTheme(t);
+      Serial.printf("theme %s\n", uiThemeId(t));
+    }
   } else if (cmd == "click") {
     if (*arg) feedbackSetClick(!strcmp(arg, "on"));
     Serial.printf("click %s\n", feedbackClickOn() ? "on" : "off");

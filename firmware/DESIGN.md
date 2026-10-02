@@ -194,10 +194,27 @@ Segments 44 px; the current one is magenta text on a magenta-tinted fill with a 
 ### Overlays
 Toast: a 40 px pill under the status band with the profile line dot. Volume: a 260×76 panel with a 16-segment level and the number.
 
+## Themes
+
+Six whole-device themes (3.2), one setting for the whole keypad (Settings → Display, Studio's Device view, `theme <id>`), Glass by default. Each is a table of the roles above plus a key style, in `firmware/TouchKeypad/themes.h`; Studio's preview mirrors them in `studio/renderer/styles.css`.
+
+**The Backlight Rule.** The panel is a TFT: its black glows grey under the backlight. Dark themes sit on deep coloured grounds (Glass navy, Aurora indigo to teal), never on near-black fields; light themes carry their contrast with ink, not with black. Gradients are dithered in a 2×2 checkerboard at half an RGB565 step, so skies and white tiles do not band (the pixel theme keeps its exact palette).
+
+| Theme | From | Ground | Key | Current / selectable |
+|---|---|---|---|---|
+| Glass | Apple Watch | navy #121c28 → #0a1119 | lit glass in the tint, white glyph | magenta / cyan |
+| Paper | the toy-theatre papercraft this screen replaced | cream #f4ecda → kraft #e5d6b6, faint laid rows | a cut card in the tint over a darker card, ink outline; a press slides it onto the card behind | crimson #a52f3d / teal #23697a |
+| Daylight | iOS Control Centre, Car Thing | sky #c7daf1 → #e9f0f8 | frosted white tile, the glyph in the tint (darkened to read); an engaged toggle fills with the tint | pink #c23a8c / blue #0a6fd6 |
+| Aurora | the northern lights | indigo #1e1450 → blue #1c2d6e → teal #0c5b62 | a translucent pane computed from the sky behind it, a luminous rim in the tint | pink #ff7cd8 / cyan #6ae6f8 |
+| Synth | Teenage Engineering OP-1 | warm grey #dedbd5 → #cfccc4 | flat matte key on a darker side, the tint as a dot, mono capital labels; a press sinks it | orange #ff5a1f / blue #2160d0 |
+| Retro | Game Boy DMG LCD | #9bbc0f with darker LCD rows | a pixel box with a hard shadow, crisp (no antialiasing); press drops it into the shadow, engaged inverts it | the four greens only |
+
+Every theme keeps the State Word Rule in its own colours; Retro, with four greens, carries state by fill and shape (inverted boxes, rings, tags). Switching wipes the new theme down the screen in 320 ms.
+
 ## Do's and Don'ts
 
 ### Do:
-- **Do** render every key as lit glass in its tint, with a white glyph.
+- **Do** render every key in the current theme's key style, in its tint (Retro: its greens).
 - **Do** keep system colour semantic and pair it with a word or shape.
 - **Do** animate inside one cell at a time: press, rings, pop-in, glyph animation.
 - **Do** use tabular figures for every time and number.

@@ -1,6 +1,7 @@
 #pragma GCC optimize("O2")
 #include "ui.h"
 #include "gfx.h"
+#include "themes.h"
 #include "board.h"
 #include "display.h"
 #include "profiles.h"
@@ -15,17 +16,39 @@
 #include <time.h>
 #include <functional>
 
-// ---------------------------------------------------------------- palette (firmware/DESIGN.md)
-static const C3 G0 = HEXC(0x0e141b), G1 = HEXC(0x06090c), PLY = HEXC(0x131a22), PLY2 = HEXC(0x0e141a),
-  WELL = HEXC(0x090d12), CTL = HEXC(0x19212a), CTL_TOP = HEXC(0x242e39), CTL_BOT = HEXC(0x151c24), TRACK = HEXC(0x1f2832),
-  HAIR = HEXC(0xd6e4f3), TXT = HEXC(0xe9eff5), TXT2 = HEXC(0x9aa6b4), TXT3 = HEXC(0x66737f), LBL = HEXC(0xc9d3dd),
-  CYAN = HEXC(0x4cc9ea), MAG = HEXC(0xe56fd6), GREEN = HEXC(0x52d68f), AMBER = HEXC(0xf2b746), RED = HEXC(0xff6359),
-  WHITE = HEXC(0xffffff), BLACK = HEXC(0x000000), SLATE = HEXC(0x8a98ab), CAL_BG = HEXC(0x05070a), DIMRET = HEXC(0x2b3540),
-  TAG_BG = HEXC(0x071318), TAG_BG2 = HEXC(0x0b1015), CARD = HEXC(0x172029), SEGC = HEXC(0x182029), ON_INK = HEXC(0x062012),
-  SW_OFF = HEXC(0x222b35), PILL_TOP = HEXC(0x1f2833), SEG_OFF = HEXC(0x29323c), OFF_LED = HEXC(0x1f262e);
+// ---------------------------------------------------------------- palette: the current theme's roles (themes.h)
+static uint8_t themeIdx = 0;
+static const Theme *T = &THEMES[0];
+static const C3 WHITE = HEXC(0xffffff), BLACK = HEXC(0x000000);
+#define PLY (T->ply)
+#define PLY2 (T->ply2)
+#define WELL (T->well)
+#define CTL (T->ctl)
+#define CTL_TOP (T->ctlTop)
+#define CTL_BOT (T->ctlBot)
+#define TRACK (T->track)
+#define HAIR (T->hair)
+#define TXT (T->txt)
+#define TXT2 (T->txt2)
+#define TXT3 (T->txt3)
+#define LBL (T->lbl)
+#define CYAN (T->cyan)
+#define MAG (T->mag)
+#define GREEN (T->green)
+#define AMBER (T->amber)
+#define RED (T->red)
+#define SLATE (T->slate)
+#define CAL_BG (T->calBg)
+#define DIMRET (T->dimRet)
+#define TAG_BG (T->tagBg)
+#define CARD (T->card)
+#define SEGC (T->seg)
+#define ON_INK (T->onAccent)
+#define SW_OFF (T->swOff)
+#define SEG_OFF (T->segOff)
 
 #define KEY 66
-#define KEY_R 19.0f
+#define KEY_R (T->keyR)
 #define LINE_Y 300
 #define POP_MS 120
 #define POP_STEP 28
@@ -83,9 +106,9 @@ static struct { size_t used, total; uint32_t heap; char mac[20]; int bonds; bool
 static char hostName[24] = "";
 
 static uint32_t pairKey = 0;
-static uint32_t wipe0 = 0;           // keys <-> player: the new page wipes in from the top
+static uint32_t wipe0 = 0;           // keys <-> player, or a new theme: the new screen wipes in from the top
 static bool wiping = false;
-static int wipeDrawn = STATUS_H;
+static int wipeDrawn = STATUS_H, wipeFrom = STATUS_H, wipeTo = LINE_Y, wipeMs = 220;
 
 static int8_t calStep = -1;          // 0-3 corners, 4 verify, 5 test pad
 static int calRaw[4][2];
@@ -126,7 +149,12 @@ static JsonVariant keyAt(int c) { return pageDoc["keys"][c]; }
 static bool playerPage() { JsonVariant k = keyAt(0); return !k.isNull() && k["widget"].is<const char *>(); }
 static bool toggled(int c) { return currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
 static C3 tintOf(JsonVariant k) { return { (uint8_t)(k["led_color"][0] | 138), (uint8_t)(k["led_color"][1] | 152), (uint8_t)(k["led_color"][2] | 171) }; }
-static C3 lineC() { return { profileColor[0], profileColor[1], profileColor[2] }; }
+static C3 lineC() {   // the profile's line colour, made to read on this theme's ground
+  C3 c = { profileColor[0], profileColor[1], profileColor[2] };
+  if (T->ks == KS_PIXEL) return T->txt2;   // four greens only
+  for (int i = 0; T->light && i < 4 && ((c.r * 77 + c.g * 150 + c.b * 29) >> 8) > 140; i++) c = mix(c, BLACK, 50);
+  return c;
+}
 static void emitKey(int c, char st) { Serial.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st); }
 static void emitMode() { Serial.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
 static int npPos() {
@@ -135,17 +163,44 @@ static int npPos() {
 }
 static void clockStr(char *b, int s) { if (s < 0) s = 0; sprintf(b, "%d:%02d", s / 60, s % 60); }
 
-static Fill pillFill() { Fill f = solidFill(CTL); f.top = PILL_TOP; f.bot = CTL_BOT; f.hi = WHITE; f.hiA = 41; f.edge = HAIR; f.edgeA = 38; return f; }
-static Fill ctlFill() { Fill f = solidFill(CTL); f.top = CTL_TOP; f.bot = HEXC(0x19212a); f.hi = WHITE; f.hiA = 36; f.edge = HAIR; f.edgeA = 38; return f; }
+static int luma(C3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+static C3 inkOn(C3 fill) { return luma(fill) > 150 ? TXT : T->ks == KS_PIXEL ? T->g1 : WHITE; }   // readable ink on a filled shape
+static C3 litHi() { return T->ks == KS_PIXEL ? T->g1 : WHITE; }                                   // "white" in this theme's palette
+// The ground of theme th at row y, from its stops (themes need it before their table is live).
+static C3 groundOf(const Theme &th, float y) {
+  int t = constrain((int)(y * 255 / (SCR_H - 1)), 0, 255);
+  return t < 128 ? mix(th.g0, th.g1, t * 2) : mix(th.g1, th.g2, (t - 128) * 2);
+}
+
+static Fill ctlFill() {
+  Fill f = solidFill(CTL); f.top = CTL_TOP; f.bot = CTL_BOT; f.hi = WHITE; f.hiA = T->light ? 0 : 36;
+  f.edge = HAIR; f.edgeA = T->light ? T->hairA : 38;
+  return f;
+}
+static Fill pillFill() { Fill f = ctlFill(); if (!T->light) { f.top = mix(CTL_TOP, CTL, 100); f.hiA = 41; } return f; }
+static Fill cardFill() {
+  Fill f = solidFill(CARD); f.hi = WHITE; f.hiA = T->light ? 0 : 20;
+  f.edge = HAIR; f.edgeA = T->light ? T->hairA : 20;
+  return f;
+}
 
 static void button(int x, int y, int w, int h, const char *label, const char *icon, uint8_t kind, bool down, int alpha = 255) {
-  // kind 0 normal, 1 primary (cyan glass), 2 quiet destructive
-  Fill f = kind == 1 ? glassFill(CYAN, down ? 60 : 0) : ctlFill();
+  // kind 0 normal, 1 primary (cyan), 2 quiet destructive
+  Fill f = ctlFill();
+  if (kind == 1) {
+    if (T->ks == KS_GLASS) f = glassFill(CYAN, down ? 60 : 0);
+    else { f = solidFill(down ? mix(CYAN, BLACK, 40) : CYAN); if (!T->crisp) f.top = mix(f.top, WHITE, 36); }
+  }
   if (kind == 2) f = solidFill(PLY);
-  if (down && kind == 0) { f.top = mix(f.top, WHITE, 30); f.bot = mix(f.bot, WHITE, 20); }
-  rrFill(x, y, w, h, 12, f, alpha);
-  if (kind == 2) rrRing(x + 0.5f, y + 0.5f, w - 1, h - 1, 11.5f, 1, mix(PLY, RED, 102), alpha);
-  C3 ink = kind == 2 ? RED : kind == 1 ? WHITE : TXT;
+  if (down && kind == 0) {
+    C3 to = T->light ? T->hair : WHITE;
+    f.top = mix(f.top, to, T->light ? 26 : 30); f.bot = mix(f.bot, to, T->light ? 20 : 20);
+    if (T->crisp) f = solidFill(T->track);
+  }
+  rrFill(x, y, w, h, T->crisp ? 4 : 12, f, alpha);
+  if (kind == 2) rrRing(x + 0.5f, y + 0.5f, w - 1, h - 1, T->crisp ? 4 : 11.5f, T->crisp ? 2 : 1, T->crisp ? RED : mix(PLY, RED, 102), alpha);
+  if (kind == 1 && T->crisp) rrRing(x + 1, y + 1, w - 2, h - 2, 3, 2, TXT, alpha);
+  C3 ink = kind == 2 ? RED : kind == 1 ? (T->ks == KS_GLASS ? WHITE : inkOn(CYAN)) : TXT;
   int tw = textW(fBodyB, label), gw = icon ? 18 + 7 : 0, x0 = x + (w - tw - gw) / 2;
   if (icon) glyph(iconFind(icon, true), true, x0 + 9, y + h / 2, 18, ink, alpha);
   text(fBodyB, x0 + gw, y + h / 2 + 5, label, ink, alpha);
@@ -164,8 +219,119 @@ static void slider(int x, int y, int w, float f) {   // 44 px tall control, trac
   if (f > 0) rrFill(tx, ty, tw * f, 6, 3, solidFill(CYAN));
   float cx = tx + tw * f;
   softShadow(cx - 13, y + 9, 26, 26, 160);
-  Fill th = solidFill(WHITE); th.bot = HEXC(0xd5dde5);
+  Fill th = solidFill(T->knob); th.bot = T->knobBot;
+  if (T->light && luma(T->knob) > 200) { th.edge = HAIR; th.edgeA = 70; }
   rrFill(cx - 13, y + 9, 26, 26, 13, th);
+}
+
+// ---------------------------------------------------------------- key styles (themes.h)
+// A key body in theme th's style: (x, y, w, h, r) is the box, tint its colour,
+// pr the press (0..1, below 0 when not pressed), on an engaged toggle.
+// Each style draws its own depth (drop, layer, lip or hard shadow).
+static void keyBody(const Theme &th, float x, float y, float w, float h, float r, C3 tint, float pr, bool on, int A) {
+  bool down = pr >= 0;
+  float p = down ? pr : 0;
+  switch (th.ks) {
+    case KS_GLASS: {
+      Fill f = glassFill(tint, down ? (int)(18 + p * 52) : 0);
+      if (down) f.whiteEdge = (int)(p * 130);
+      softShadow(x, y, w, h, down ? A / 2 : A);
+      rrFill(x, y, w, h, r, f, A);
+      break;
+    }
+    case KS_PAPER: {   // a card on a darker card: pressing slides it onto the one behind
+      float o = max(2.0f, roundf(w * 0.05f)), d = down ? o * (0.55f + 0.45f * p) : 0;
+      C3 card = mix(tint, th.g1, 46), back = mix(tint, th.txt, 125);
+      rrFill(x + o, y + o, w, h, r, solidFill(back), A);
+      Fill f = solidFill(card); f.top = mix(card, WHITE, 30);
+      rrFill(x + d, y + d, w, h, r, f, A);
+      rrRing(x + d + 0.5f, y + d + 0.5f, w - 1, h - 1, r - 0.5f, 1.4f, th.txt, A * 200 / 255);
+      break;
+    }
+    case KS_FROST: {   // white tile; on fills it with the tint, a press tints it
+      softShadow(x, y, w, h, down ? A / 2 : A);
+      Fill f;
+      if (on) { f = solidFill(tint); f.top = mix(tint, WHITE, 60); f.edge = mix(tint, BLACK, 70); f.edgeA = 150; }
+      else { f = solidFill(HEXC(0xedf2f7)); f.top = WHITE; f.edge = th.wellEdge; f.edgeA = 230; }
+      if (down) { f.top = mix(f.top, tint, (int)(26 + 50 * p)); f.bot = mix(f.bot, tint, (int)(36 + 60 * p)); }
+      f.hiA = 0;   // one even border all round, as on iOS tiles
+      rrFill(x, y, w, h, r, f, A);
+      break;
+    }
+    case KS_PANE: {    // translucent over the sky, a luminous rim in the tint
+      C3 g0 = groundOf(th, y), g1 = groundOf(th, y + h);
+      Fill f = solidFill(g0);
+      if (on) { f.top = mix(g0, tint, 200); f.bot = mix(g1, tint, 150); }
+      else { int k = down ? (int)(70 + 60 * p) : 40; f.top = mix(g0, WHITE, k + 16); f.bot = mix(g1, WHITE, k - 16); }
+      f.edge = mix(tint, WHITE, 100); f.edgeA = 235; f.hi = mix(tint, WHITE, 200); f.hiA = 235;
+      f.whiteEdge = down ? (int)(p * 110) : 0;
+      softShadow(x, y, w, h, A * 3 / 4);
+      rrFill(x, y, w, h, r, f, A);
+      break;
+    }
+    case KS_FLAT: {    // matte key on its darker side; a press sinks it; the tint is a dot
+      float lip = max(2.0f, roundf(w * 0.045f)), sink = down ? lip * (0.55f + 0.45f * p) : 0;
+      rrFill(x, y + lip, w, h, r, solidFill(HEXC(0xa39e95)), A);
+      Fill f = solidFill(down ? HEXC(0xe0ded8) : HEXC(0xe8e6e1)); f.top = down ? HEXC(0xebe9e5) : HEXC(0xf7f6f3);
+      f.edge = HEXC(0x99948b); f.edgeA = 255;
+      rrFill(x, y + sink, w, h, r, f, A);
+      if (r < w * 0.4f) {
+        float dr = max(2.5f, w * 0.055f), dx = x + w * 0.19f, dy = y + sink + h * 0.19f;
+        if (on) ringC(dx, dy, dr + 2.6f, 1.6f, tint, A);
+        circle(dx, dy, dr, tint, A);
+      }
+      break;
+    }
+    case KS_PIXEL: {   // a box with a hard shadow; a press drops it into the shadow
+      float o = max(2.0f, roundf(w * 0.045f)), d = down ? o : 0;
+      x = roundf(x); y = roundf(y); w = roundf(w); h = roundf(h);
+      rrFill(x + o, y + o, w, h, r, solidFill(th.txt2), A);
+      rrFill(x + d, y + d, w, h, r, solidFill(on ? th.txt : down ? th.txt2 : th.track), A);
+      rrRing(x + d + 1, y + d + 1, w - 2, h - 2, max(1.0f, r - 1), 2, th.txt, A);
+      break;
+    }
+  }
+}
+
+// Glyph ink on a key, and whether the glyph gets a one-pixel drop.
+static C3 keyInk(const Theme &th, C3 tint, bool down, bool on) {
+  switch (th.ks) {
+    case KS_PAPER: return luma(mix(tint, th.g1, 46)) > 165 ? th.txt : th.ink;
+    case KS_FROST: {
+      if (on) return luma(tint) > 175 ? th.txt : WHITE;
+      C3 c = tint;
+      for (int i = 0; i < 6 && luma(c) > 118; i++) c = mix(c, BLACK, 45);
+      return c;
+    }
+    case KS_PANE: return on || down ? WHITE : mix(tint, WHITE, 130);
+    case KS_FLAT: return th.ink;
+    case KS_PIXEL: return on || down ? th.g1 : th.txt;
+    default: return WHITE;
+  }
+}
+static bool keyInkDrop(const Theme &th) { return th.ks == KS_GLASS || th.ks == KS_PANE; }
+static float keySink(const Theme &th, float w, float pr) {   // how far the face moves down when pressed
+  if (pr < 0) return 0;
+  if (th.ks == KS_FLAT) return max(2.0f, roundf(w * 0.045f)) * (0.55f + 0.45f * pr);
+  if (th.ks == KS_PAPER) return max(2.0f, roundf(w * 0.05f)) * (0.55f + 0.45f * pr);
+  if (th.ks == KS_PIXEL) return max(2.0f, roundf(w * 0.045f));
+  return 0;
+}
+
+static void keyWell(const Theme &th, float x, float y, float sz, float r, int A) {
+  switch (th.ks) {
+    case KS_GLASS: { Fill w = solidFill(th.well); w.hi = BLACK; w.hiA = 150; w.edge = th.wellEdge; w.edgeA = 120; rrFill(x, y, sz, sz, r, w, A); break; }
+    case KS_PANE: {
+      Fill w = solidFill(mix(groundOf(th, y + sz), WHITE, 14)); w.top = mix(groundOf(th, y), WHITE, 22);
+      w.edge = th.wellEdge; w.edgeA = 120; rrFill(x, y, sz, sz, r, w, A);
+      break;
+    }
+    case KS_PIXEL: rrRing(roundf(x) + 1, roundf(y) + 1, roundf(sz) - 2, roundf(sz) - 2, r, 2, th.track, A); break;
+    default: {   // a recess: the upper band in the darker edge reads as its inner wall
+      Fill w = solidFill(th.well); w.hi = th.wellEdge; w.hiA = 150; w.edge = th.wellEdge; w.edgeA = 70;
+      rrFill(x, y, sz, sz, r, w, A);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- keys
@@ -199,13 +365,13 @@ static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
   return img != nullptr;
 }
 
-static void eqBars(float cx, float cy, float s, C3 sh, int alpha, uint32_t now) {
+static void eqBars(float cx, float cy, float s, C3 ink, C3 sh, bool drop, int alpha, uint32_t now) {
   static const float speed[4] = { 0.0063f, 0.0090f, 0.0070f, 0.0105f }, phase[4] = { 0, 1.7f, 3.1f, 4.4f };
   for (int i = 0; i < 4; i++) {
     float h = (0.2f + 0.8f * (0.5f + 0.5f * sinf(now * speed[i] + phase[i]))) * 30 * s;
     float x = cx - 18 * s + i * 10 * s, y = cy + 15 * s - h;
-    rrFill(x, y + 1, 6 * s, h, 3 * s, solidFill(sh), alpha * 110 / 255);
-    rrFill(x, y, 6 * s, h, 3 * s, solidFill(WHITE), alpha);
+    if (drop) rrFill(x, y + 1, 6 * s, h, 3 * s, solidFill(sh), alpha * 110 / 255);
+    rrFill(x, y, 6 * s, h, T->crisp ? 0 : 3 * s, solidFill(ink), alpha);
   }
 }
 
@@ -233,43 +399,49 @@ static void drawCell(int c, uint32_t now) {
   JsonVariant k = keyAt(c);
   if (k.isNull()) {
     float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2;
-    Fill w = solidFill(WELL);
-    w.hi = BLACK; w.hiA = 150; w.edge = HEXC(0x1a2129); w.edgeA = 120;
-    rrFill(x, y, sz, sz, KEY_R * s, w, A);
+    keyWell(*T, x, y, sz, KEY_R * s, A);
     return;
   }
+  const Theme &th = *T;
   bool down = pressed == c;
-  float pr = down ? clamp01((now - press0) / 600.0f) : 0;
-  if (down) s *= 0.94f - pr * 0.04f;
-  else if (released == c && now - release0 < 260) s *= relScale + (1 - relScale) * easeBack((now - release0) / 260.0f);
-  C3 tint = tintOf(k);
+  bool sinks = th.ks == KS_PAPER || th.ks == KS_FLAT || th.ks == KS_PIXEL;   // these press by moving, not shrinking
+  float pr = down ? clamp01((now - press0) / 600.0f) : -1;
+  if (!sinks) {
+    if (down) s *= 0.94f - pr * 0.04f;
+    else if (released == c && now - release0 < 260) s *= relScale + (1 - relScale) * easeBack((now - release0) / 260.0f);
+  }
+  C3 tint = th.ks == KS_PIXEL ? th.track : tintOf(k);
   bool on = (k["toggle"] | false) && toggled(c);
-  Fill f = glassFill(tint, down ? (int)(18 + pr * 52) : 0);
-  if (down) f.whiteEdge = (int)(pr * 130);
-  float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2, mx = kx + KEY / 2, my = ky + KEY / 2;
-  softShadow(x, y, sz, sz, down ? A / 2 : A);
-  rrFill(x, y, sz, sz, KEY_R * s, f, A);
-  if (on) rrRing(x + 1.5f, y + 1.5f, sz - 3, sz - 3, KEY_R * s - 1.5f, 2, GREEN, A);
+  float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2;
+  float sink = keySink(th, sz, pr), mx = kx + KEY / 2 + (th.ks == KS_PAPER || th.ks == KS_PIXEL ? sink : 0), my = ky + KEY / 2 + sink;
+  keyBody(th, x, y, sz, sz, KEY_R * s, tint, pr, on, A);
+  if (on && (th.ks == KS_GLASS || th.ks == KS_PAPER || th.ks == KS_FLAT))
+    rrRing(x + 1.5f + (th.ks == KS_PAPER ? sink : 0), y + 1.5f + sink, sz - 3, sz - 3, KEY_R * s - 1.5f, 2, GREEN, A);
 
   const char *anim = k["anim"] | "";
-  C3 sh = mix(tint, BLACK, 150);
-  if (!strcmp(anim, "eq") && np.playing) eqBars(mx, my, s, sh, A, now);
+  C3 ink = keyInk(th, tint, down, on), sh = mix(tint, BLACK, 150);
+  bool drop = keyInkDrop(th);
+  if (!strcmp(anim, "eq") && np.playing) eqBars(mx, my, s, ink, sh, drop, A, now);
   else {
     if (!strcmp(anim, "pulse") && !on) {
       float t = (now % 1600) / 1600.0f;
-      ringC(mx, my, (11 + 13 * easeOut(t)) * s, 2, mix(tint, WHITE, 180), (int)(A * 0.9f * (1 - t)));
+      C3 pc = th.ks == KS_GLASS ? mix(tint, WHITE, 180) : ink;
+      ringC(mx, my, (11 + 13 * easeOut(t)) * s, 2, pc, (int)(A * 0.9f * (1 - t)));
     }
-    C3 gc = (!strcmp(anim, "rec") && on && (now / 600) % 2) ? RED : WHITE;
+    C3 gc = (!strcmp(anim, "rec") && on && (now / 600) % 2) ? (th.ks == KS_PIXEL ? th.track : RED) : ink;
     const char *icon = k["icon"] | "", *tile = k["tile"] | "";
-    if (*icon && iconFind(icon, false)) glyphLit(icon, false, roundf(mx), roundf(my), 36, gc, sh, A);   // native size: no resampling per frame
-    else if (strlen(tile) == 8 && drawTile(tile, x, y, sz, A)) {}
+    if (*icon && iconFind(icon, false)) {   // native size: no resampling per frame
+      if (drop) glyphLit(icon, false, roundf(mx), roundf(my), 36, gc, sh, A);
+      else glyph(iconFind(icon, false), false, roundf(mx), roundf(my), 36, gc, A);
+    }
+    else if (strlen(tile) == 8 && drawTile(tile, x, y + sink, sz, A)) {}
     else {
       const char *name = k["name"] | "";
       char ini[3] = { 0 };
       int n = 0;
       for (const char *p = name; *p && n < 2; p++)
         if ((p == name || p[-1] == ' ') && isalnum((uint8_t)*p)) ini[n++] = *p;
-      text(fTitle, (int)mx, (int)(my + 7), ini, WHITE, A, AL_C);
+      text(fTitle, (int)mx, (int)(my + 7), ini, ink, A, AL_C);
     }
   }
 
@@ -278,10 +450,18 @@ static void drawCell(int c, uint32_t now) {
   bool hasHold = k["hold_actions"].size() > 0, holding = down && hasHold && !holdFired;
   if (on) tag(cx + 87, cy, "ON", GREEN, false, GREEN, ON_INK, A);
   else if (host) tag(cx + 87, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
-  else if (hasHold && !holding) tag(cx + 87, cy, "HOLD", TAG_BG2, true, mix(TAG_BG2, HAIR, 38), TXT2, A);
+  else if (hasHold && !holding) tag(cx + 87, cy, "HOLD", TAG_BG, true, mix(TAG_BG, HAIR, th.light ? 120 : 38), TXT2, A);
 
-  String lbl = ellipsize(fLabel, k["name"] | "", 92);
-  text(fLabel, cx + 48, (int)(ky + KEY + 5 + fLabel.asc), lbl.c_str(), LBL, A, AL_C);
+  if (th.ks == KS_FLAT) {   // OP-1 labels: small mono capitals
+    char up[24];
+    strlcpy(up, k["name"] | "", sizeof up);
+    for (char *p = up; *p; p++) *p = toupper((uint8_t)*p);
+    String lbl = ellipsize(fRead, up, 92);
+    text(fRead, cx + 48, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
+  } else {
+    String lbl = ellipsize(fLabel, k["name"] | "", 92);
+    text(fLabel, cx + 48, (int)(ky + KEY + 5 + fLabel.asc), lbl.c_str(), LBL, A, AL_C);
+  }
 
   if (ca[c].ring && now - ca[c].ring0 < 700) {
     float t = (now - ca[c].ring0) / 700.0f, sc = 0.9f + 0.18f * easeOut(t), rs = 72 * sc;
@@ -294,7 +474,7 @@ static void drawCell(int c, uint32_t now) {
 // ---------------------------------------------------------------- status band and stations
 static void drawStatus() {
   if (!gfxHits(0, 0, SCR_W, STATUS_H)) return;
-  fillRect(0, 28, SCR_W, 1, HAIR, 20);
+  fillRect(0, 28, SCR_W, T->crisp ? 2 : 1, HAIR, T->hairA);
   int x = 12;
   if (timeEpoch) {
     time_t t = timeEpoch + tzMin * 60 + (millis() - timeBase) / 1000;
@@ -326,18 +506,18 @@ static void drawStatus() {
   int tw = textW(fRead, host.c_str());
   text(fRead, 424 - tw, 19, host.c_str(), hc);
   glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, 424 - tw - 12, 14, 18, hc);
-  if (hidDry()) tag(424 - tw - 26, 6, "DRY", RED, false, RED, WHITE, 255);
+  if (hidDry()) tag(424 - tw - 26, 6, "DRY", RED, false, RED, inkOn(RED), 255);
 }
 
 static void drawStations() {
   if (pageCount < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
-  C3 line = lineC();
+  C3 line = lineC(), gnd = gfxGroundAt(310);
   int total = (pageCount - 1) * 30, x0 = 240 - total / 2;
-  fillRect(x0, 309, total, 2, mix(line, BLACK, 77));
+  fillRect(x0, 309, total, 2, T->crisp ? line : mix(line, BLACK, 77));
   for (int i = 0; i < pageCount; i++) {
     int x = x0 + i * 30;
-    if (i == currentPage) { circle(x, 310, 8, G1); circle(x, 310, 6, line); circle(x, 310, 3, WHITE); }
-    else { circle(x, 310, 4, G1); ringC(x, 310, 3, 2, line); }
+    if (i == currentPage) { circle(x, 310, 8, gnd); circle(x, 310, 6, line); circle(x, 310, 3, litHi()); }
+    else { circle(x, 310, 4, gnd); ringC(x, 310, 3, 2, line); }
   }
 }
 
@@ -353,14 +533,18 @@ static void drawPlayer(uint32_t now) {
   if (!gfxHits(0, STATUS_H, SCR_W, LINE_Y - STATUS_H)) return;
   // art
   if (gfxHits(10, 40, 140, 142)) {
-    softShadow(16, 44, 128, 128, 255);
-    if (artOk) blitImage(art, 128, 128, 16, 44, 128, 128, 16);
-    else {
-      Fill f = glassFill(HEXC(0x6b4fd8));
-      rrFill(16, 44, 128, 128, 16, f);
-      glyphLit("music", false, 80, 108, 36, WHITE, HEXC(0x241a4a));
+    float ar = T->crisp ? 4 : T->keyR < 12 ? 10 : 16;
+    if (artOk) {
+      softShadow(16, 44, 128, 128, 255);
+      blitImage(art, 128, 128, 16, 44, 128, 128, ar);
+      if (T->light) rrRing(16.5f, 44.5f, 127, 127, ar - 0.5f, T->crisp ? 2 : 1, HAIR, T->hairA);
+    } else {
+      keyBody(*T, 16, 44, 128, 128, ar, T->art, -1, false, 255);
+      C3 ink = keyInk(*T, T->art, false, false);
+      if (keyInkDrop(*T)) glyphLit("music", false, 80, 108, 36, ink, mix(T->art, BLACK, 150));
+      else glyph(iconFind("music", false), false, 80, 108, 36, ink);
     }
-    rrRing(16.5f, 44.5f, 127, 127, 15.5f, 1, WHITE, 40);
+    if (!T->light) rrRing(16.5f, 44.5f, 127, 127, ar - 0.5f, 1, WHITE, 40);
   }
   // title (up to two lines), album, artist + source
   int base = 66;
@@ -370,12 +554,12 @@ static void drawPlayer(uint32_t now) {
     int cut = -1;
     for (int i = 0; title[i]; i++) if (title[i] == ' ') { String h = t.substring(0, i); if (textW(fHead, h.c_str()) <= SEEK_W) cut = i; else break; }
     if (cut > 0) {
-      text(fHead, SEEK_X, base, t.substring(0, cut).c_str(), WHITE);
+      text(fHead, SEEK_X, base, t.substring(0, cut).c_str(), TXT);
       base += 28;
       t = ellipsize(fHead, t.substring(cut + 1).c_str(), SEEK_W);
     } else t = ellipsize(fHead, title, SEEK_W);
   }
-  text(fHead, SEEK_X, base, t.c_str(), WHITE);
+  text(fHead, SEEK_X, base, t.c_str(), TXT);
   base += 24;
   if (np.have && np.album[0]) { text(fBody, SEEK_X, base, ellipsize(fBody, np.album, SEEK_W).c_str(), TXT); base += 22; }
   const char *artist = np.have ? np.artist : "Studio sends the track here";
@@ -395,9 +579,10 @@ static void drawPlayer(uint32_t now) {
   // seek
   float p = np.len > 0 ? clamp01(npPos() / (float)np.len) : 0;
   rrFill(SEEK_X, 153, SEEK_W, 6, 3, solidFill(TRACK));
-  if (p > 0) { Fill fl = solidFill(CYAN); fl.top = mix(CYAN, BLACK, 100); rrFill(SEEK_X, 153, SEEK_W * p, 6, 3, fl); }
+  if (p > 0) { Fill fl = solidFill(CYAN); if (!T->crisp) fl.top = mix(CYAN, BLACK, 100); rrFill(SEEK_X, 153, SEEK_W * p, 6, 3, fl); }
   softShadow(SEEK_X + SEEK_W * p - 7, 149, 14, 14, 200);
-  circle(SEEK_X + SEEK_W * p, 156, 7, WHITE);
+  circle(SEEK_X + SEEK_W * p, 156, 7, T->knob);
+  if (T->light && luma(T->knob) > 200) ringC(SEEK_X + SEEK_W * p, 156, 7, 1, HAIR, 80);
   char a[12], b[13];
   clockStr(a, npPos());
   b[0] = 0;
@@ -407,15 +592,26 @@ static void drawPlayer(uint32_t now) {
   text(fLabel, SEEK_X + SEEK_W, 190, b, TXT2, 255, AL_R);
   // controls
   for (int i = 0; i < 6; i++) {
-    float r = BTN_R[i] * (pressedBtn == i ? 0.92f : 1);
+    bool dn = pressedBtn == i;
+    float r = BTN_R[i] * (dn && T->ks != KS_PAPER && T->ks != KS_FLAT && T->ks != KS_PIXEL ? 0.92f : 1);
     C3 t = i == 3 ? CYAN : SLATE;
-    softShadow(BTN_X[i] - r, BTN_Y - r, 2 * r, 2 * r, 255);
-    Fill f = glassFill(t, pressedBtn == i ? 50 : 0);
-    if (i != 3) { f.top = mix(HEXC(0x10161d), t, 102); f.bot = mix(HEXC(0x070a0e), t, 36); }
-    rrFill(BTN_X[i] - r, BTN_Y - r, 2 * r, 2 * r, r, f);
     const char *ic = i == 3 ? (np.playing ? "pause" : "play") : BTN_ICON[i];
-    float gs = i == 3 ? 36 : i == 0 ? 24 : 28;
-    glyphLit(ic, false, BTN_X[i], BTN_Y, gs, WHITE, mix(t, BLACK, 150));
+    float gs = i == 3 ? 36 : i == 0 ? 24 : 28, bx = BTN_X[i] - r, by = BTN_Y - r;
+    if (T->ks == KS_GLASS) {   // the original: slate controls darker than keys, the play key lit
+      softShadow(bx, by, 2 * r, 2 * r, 255);
+      Fill f = glassFill(t, dn ? 50 : 0);
+      if (i != 3) { f.top = mix(HEXC(0x10161d), t, 102); f.bot = mix(HEXC(0x070a0e), t, 36); }
+      rrFill(bx, by, 2 * r, 2 * r, r, f);
+      glyphLit(ic, false, BTN_X[i], BTN_Y, gs, WHITE, mix(t, BLACK, 150));
+      continue;
+    }
+    bool fill = i == 3 && T->ks != KS_FLAT;   // the play key is the filled one
+    float pr = dn ? 0.6f : -1, sink = keySink(*T, 2 * r, pr);
+    keyBody(*T, bx, by, 2 * r, 2 * r, r, T->ks == KS_PIXEL ? T->track : t, pr, fill, 255);
+    C3 ink = i == 3 && T->ks == KS_FLAT ? MAG : keyInk(*T, t, dn, fill);
+    float gx = BTN_X[i] + (T->ks == KS_PAPER || T->ks == KS_PIXEL ? sink : 0), gy = BTN_Y + sink;
+    if (keyInkDrop(*T)) glyphLit(ic, false, gx, gy, gs, ink, mix(t, BLACK, 150));
+    else glyph(iconFind(ic, false), false, gx, gy, gs, ink);
   }
 }
 
@@ -447,9 +643,28 @@ static void seg5(int y, int cur, const char *const *labels) {
   for (int i = 0; i < 5; i++) {
     float x = PANE_X + i * (w + 4);
     bool on = i == cur;
-    rrFill(x, y, w, 44, 11, solidFill(on ? mix(HEXC(0x10161d), MAG, 36) : SEGC));
-    rrRing(x + 0.5f, y + 0.5f, w - 1, 43, 10.5f, 1, on ? MAG : mix(SEGC, HAIR, 20));
-    text(fBodyB, (int)(x + w / 2), y + 27, labels[i], on ? MAG : TXT2, 255, AL_C);
+    rrFill(x, y, w, 44, T->crisp ? 4 : 11, solidFill(on ? (T->crisp ? TXT : mix(PLY, MAG, T->light ? 30 : 36)) : SEGC));
+    rrRing(x + 0.5f, y + 0.5f, w - 1, 43, T->crisp ? 4 : 10.5f, T->crisp ? 2 : 1, on ? MAG : mix(SEGC, HAIR, T->light ? T->hairA : 20));
+    text(fBodyB, (int)(x + w / 2), y + 27, labels[i], on ? (T->crisp ? T->g1 : MAG) : TXT2, 255, AL_C);
+  }
+}
+
+// Settings → Display: one chip per theme, each a small live sample of that theme.
+#define THEME_Y 254
+#define THEME_H 36
+static void themeChips() {
+  float w = (PANE_W - (THEME_COUNT - 1) * 6) / (float)THEME_COUNT;
+  for (int i = 0; i < THEME_COUNT; i++) {
+    const Theme &th = THEMES[i];
+    float x = PANE_X + i * (w + 6);
+    bool cur = i == themeIdx;
+    Fill g = solidFill(th.g1); g.top = th.g0; g.bot = th.g2;
+    g.edge = th.light ? th.hair : WHITE; g.edgeA = th.light ? 50 : 30;
+    rrFill(x, THEME_Y, w, THEME_H, T->crisp ? 4 : 10, g);
+    float ks = 24, kx = x + (w - ks) / 2 - 1, ky = THEME_Y + 5;
+    keyBody(th, kx, ky, ks, ks, th.keyR * ks / KEY, th.ks == KS_PIXEL ? th.track : HEXC(0x4f8cff), -1, false, 255);
+    if (cur) rrRing(x - 2, THEME_Y - 2, w + 4, THEME_H + 4, T->crisp ? 5 : 12, 2, MAG);
+    text(fLabel, (int)(x + w / 2), THEME_Y + THEME_H + 15, th.title, cur ? MAG : TXT2, 255, AL_C);
   }
 }
 
@@ -466,6 +681,8 @@ static void drawPane() {
       int cur = 4;
       for (int i = 0; i < 5; i++) if (DIM_OPTS[i] == dimAfterS) cur = i;
       seg5(182, cur, DIM_TXT);
+      text(fBody, PANE_X, 246, "Theme", TXT);
+      themeChips();
       break;
     }
     case 1: {
@@ -475,9 +692,8 @@ static void drawPane() {
         int y = 92 + (i / 4) * 108;
         bool cur = i + 1 == currentProfile;
         if (slots[i].ok) {
-          Fill f = solidFill(CARD); f.hi = WHITE; f.hiA = 20; f.edge = HAIR; f.edgeA = 20;
-          rrFill(x, y, w, 100, 12, f);
-          rrFill(x + 10, y + 10, 22, 4, 2, solidFill({ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
+          rrFill(x, y, w, 100, T->crisp ? 4 : 12, cardFill());
+          rrFill(x + 10, y + 10, 22, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
           text(fBodyB, (int)x + 10, y + 38, ellipsize(fBodyB, slots[i].name, (int)w - 16).c_str(), TXT);
           sprintf(v, "%d page%s", slots[i].pages, slots[i].pages == 1 ? "" : "s");
           text(fRead, (int)x + 10, y + 56, cur ? "Active" : v, cur ? MAG : TXT2);
@@ -496,8 +712,7 @@ static void drawPane() {
         int y = 92 + i * 58;
         if (i < info.bonds) {
           bool up = info.up[i];
-          rrFill(PANE_X, y, PANE_W, 52, 12, solidFill(CARD));
-          rrRing(PANE_X + 0.5f, y + 0.5f, PANE_W - 1, 51, 11.5f, 1, mix(CARD, HAIR, 20));
+          rrFill(PANE_X, y, PANE_W, 52, T->crisp ? 4 : 12, cardFill());
           glyph(iconFind("bluetooth", true), true, PANE_X + 22, y + 26, 20, TXT);
           text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, info.names[i], 140).c_str(), TXT);
           text(fRead, PANE_X + 42, y + 40, up ? "Connected" : "Saved", up ? GREEN : TXT2);
@@ -521,15 +736,15 @@ static void drawPane() {
       for (int i = 0; i < 5; i++) {
         float x = PANE_X + i * (w + 6), cx = x + w / 2;
         bool cur = ledsPattern() == i;
-        rrFill(x, 92, w, 76, 12, solidFill(CARD));
+        rrFill(x, 92, w, 76, T->crisp ? 4 : 12, cardFill());
         if (cur) rrRing(x + 1, 93, w - 2, 74, 11, 2, MAG);
         if (i == 0) {
           static const C3 RB[6] = { HEXC(0xff5f57), HEXC(0xf2b746), HEXC(0x52d68f), HEXC(0x4cc9ea), HEXC(0x9b7bff), HEXC(0xff6fae) };
           for (int k = 5; k >= 0; k--) rrRing(cx - 7, 115, 14, 14, 7, 14, RB[k], 255, (k + 1) / 6.0f);
-        } else if (i == 1) { circle(cx, 122, 14, mix(HEXC(0x2a2149), lc, 120)); circle(cx, 122, 9, lc); }
+        } else if (i == 1) { circle(cx, 122, 14, mix(T->light ? CARD : HEXC(0x2a2149), lc, 120)); circle(cx, 122, 9, lc); }
         else if (i == 2) circle(cx, 122, 14, lc);
-        else if (i == 3) { circle(cx, 122, 14, HEXC(0x0b1a20)); circle(cx, 122, 5, CYAN); }
-        else circle(cx, 122, 14, OFF_LED);
+        else if (i == 3) { circle(cx, 122, 14, T->light ? SEG_OFF : HEXC(0x0b1a20)); circle(cx, 122, 5, CYAN); }
+        else circle(cx, 122, 14, SEG_OFF);
         text(fBodyB, (int)cx, 158, PAT[i], cur ? MAG : TXT2, 255, AL_C);
       }
       sprintf(v, "%d%%", (ledsBrightness() * 100 + 127) / 255);
@@ -540,7 +755,7 @@ static void drawPane() {
         for (int i = 0; i < 8; i++) {
           float cx = PANE_X + 15 + i * 40;
           bool sel = SWATCH[i].r == col[0] && SWATCH[i].g == col[1] && SWATCH[i].b == col[2];
-          if (sel) ringC(cx, 263, 18, 2, WHITE);
+          if (sel) ringC(cx, 263, 18, 2, TXT);
           circle(cx, 263, 15, SWATCH[i]);
         }
       break;
@@ -548,9 +763,10 @@ static void drawPane() {
     default: {
       text(fBody, PANE_X, 119, "Key click", TXT);
       bool on = feedbackClickOn();
-      rrFill(414, 99, 52, 30, 15, solidFill(on ? mix(HEXC(0x0a0f13), GREEN, 178) : SW_OFF));
+      rrFill(414, 99, 52, 30, 15, solidFill(on ? (T->light ? GREEN : mix(HEXC(0x0a0f13), GREEN, 178)) : SW_OFF));
       softShadow(on ? 439 : 417, 102, 24, 24, 160);
-      Fill knob = solidFill(WHITE); knob.bot = HEXC(0xcfd8e0);
+      Fill knob = solidFill(T->knob); knob.bot = T->knobBot;
+      if (on && T->crisp) knob = solidFill(T->g1);
       rrFill(on ? 439 : 417, 102, 24, 24, 12, knob);
       text(fBody, PANE_X, 167, "Touch calibration", TXT);
       button(PANE_X + PANE_W - 130, 140, 130, 44, "Calibrate", "crosshair", 0, pressedBtn == 40);
@@ -579,16 +795,19 @@ static int sheetTop(uint32_t now) {
 static void drawSheet(int top) {
   if (top >= SCR_H || !gfxHits(0, top, SCR_W, SCR_H - top)) return;
   gfxClip(0, top, SCR_W, SCR_H);
-  Fill f = solidFill(PLY); f.top = PLY; f.bot = PLY2; f.hi = WHITE; f.hiA = 33;
-  rrFill(0, STATUS_H, SCR_W, SCR_H - STATUS_H + 20, 16, f);
+  Fill f = solidFill(PLY); f.top = PLY; f.bot = PLY2; f.hi = WHITE; f.hiA = T->light ? 0 : 33;
+  if (T->light) { f.edge = HAIR; f.edgeA = T->hairA; }
+  rrFill(0, STATUS_H, SCR_W, SCR_H - STATUS_H + 20, T->crisp ? 4 : 16, f);
+  if (T->crisp) fillRect(0, STATUS_H, SCR_W, 2, TXT);
   for (int i = 0; i < 5; i++) {
     int ty = 40 + i * 52;
     bool cur = i == sheetTab;
-    if (cur) rrFill(8, ty, 108, 48, 12, solidFill(mix(PLY, MAG, 41)));
-    glyph(iconFind(TAB_ICON[i], true), true, 28, ty + 24, 20, cur ? MAG : TXT2);
-    text(fBodyB, 47, ty + 29, TAB_NAME[i], cur ? MAG : TXT2);
+    C3 ti = cur ? (T->crisp ? T->g1 : MAG) : TXT2;
+    if (cur) rrFill(8, ty, 108, 48, T->crisp ? 4 : 12, solidFill(T->crisp ? TXT : mix(PLY, MAG, T->light ? 34 : 41)));
+    glyph(iconFind(TAB_ICON[i], true), true, 28, ty + 24, 20, ti);
+    text(fBodyB, 47, ty + 29, TAB_NAME[i], ti);
   }
-  text(fTitle, PANE_X, 71, sheetTab == 3 ? "Status LED" : TAB_NAME[sheetTab], WHITE);
+  text(fTitle, PANE_X, 71, sheetTab == 3 ? "Status LED" : TAB_NAME[sheetTab], TXT);
   button(390, 42, 76, 44, "Done", nullptr, 0, pressedBtn == 1);
   drawPane();
   gfxUnclip();
@@ -597,17 +816,17 @@ static void drawSheet(int top) {
 // ---------------------------------------------------------------- pairing, calibration
 static void drawPair() {
   if (!gfxHits(0, STATUS_H, SCR_W, SCR_H - STATUS_H)) return;
-  text(fTitle, 240, 68, "Pair a host", WHITE, 255, AL_C);
+  text(fTitle, 240, 68, "Pair a host", TXT, 255, AL_C);
   text(fBody, 240, 96, "On your computer open Bluetooth, add a device,", TXT2, 255, AL_C);
   text(fBody, 240, 118, "choose Touch Keypad, then type this code.", TXT2, 255, AL_C);
   char a[4], b[4];
   snprintf(a, 4, "%03lu", (unsigned long)(pairKey / 1000));
   snprintf(b, 4, "%03lu", (unsigned long)(pairKey % 1000));
   int wa = textW(fDigits, a), wb = textW(fDigits, b), x = 240 - (wa + 18 + wb) / 2;
-  text(fDigits, x, 188, a, WHITE);
-  text(fDigits, x + wa + 18, 188, b, WHITE);
+  text(fDigits, x, 188, a, TXT);
+  text(fDigits, x + wa + 18, 188, b, TXT);
   uint32_t left = blePairLeftMs();
-  rrFill(150, 210, 220, 4, 2, solidFill(HEXC(0x222a33)));
+  rrFill(150, 210, 220, 4, 2, solidFill(TRACK));
   rrFill(150, 210, 220.0f * left / PAIR_WINDOW_MS, 4, 2, solidFill(MAG));
   char s[8];
   clockStr(s, (left + 999) / 1000);
@@ -648,7 +867,7 @@ static void drawCal() {
     else reticle(CAL_PT[i][0], CAL_PT[i][1], i == calStep ? CYAN : DIMRET);
   }
   if (calStep == 4) reticle(CAL_VX, CAL_VY, CYAN);
-  text(fTitle, 240, 116, "Touch calibration", WHITE, 255, AL_C);
+  text(fTitle, 240, 116, "Touch calibration", TXT, 255, AL_C);
   if (calNote == 1) {
     text(fBody, 240, 142, "Those taps did not line up.", AMBER, 255, AL_C);
     text(fBody, 240, 164, "Once more, a little slower.", AMBER, 255, AL_C);
@@ -659,7 +878,7 @@ static void drawCal() {
     text(fBody, 240, 142, "Now tap the centre target", TXT2, 255, AL_C);
     text(fBody, 240, 164, "to check the fit.", TXT2, 255, AL_C);
   } else {
-    text(fBody, 240, 142, "Press and hold the cyan target", TXT2, 255, AL_C);
+    text(fBody, 240, 142, "Press and hold the lit target", TXT2, 255, AL_C);
     text(fBody, 240, 164, "until it turns green.", TXT2, 255, AL_C);
   }
   char s[12];
@@ -718,8 +937,9 @@ static void drawHud(uint32_t now) {
     float sx = x + 56 * s, sw = 148 * s, segW = (sw - 45 * s) / 16;
     int lit = muted ? 0 : (hudLevel * 16 + 50) / 100;
     for (int i = 0; i < 16; i++) {
-      Fill f = solidFill(i < lit ? WHITE : SEG_OFF);
-      if (i < lit) f.bot = HEXC(0xcfd9e2);
+      C3 on = T->light ? TXT : WHITE;
+      Fill f = solidFill(i < lit ? on : SEG_OFF);
+      if (i < lit && !T->light) f.bot = HEXC(0xcfd9e2);
       rrFill(sx + i * (segW + 3 * s), 152, segW, 16 * s, 2, f, A);
     }
     char n[8];
@@ -805,8 +1025,8 @@ static bool animate(uint32_t now) {
     if (pressedBtn >= 0 || released >= 100) { mark(0, BTN_Y - 46, SCR_W, 92); live = true; if (released >= 100 && now - release0 > 200) released = -1; }
   }
   if (wiping) {
-    float e = easeQuad((now - wipe0) / 220.0f);
-    int y = STATUS_H + (int)((LINE_Y - STATUS_H) * e);
+    float e = easeQuad((now - wipe0) / (float)wipeMs);
+    int y = wipeFrom + (int)((wipeTo - wipeFrom) * e);
     if (y > wipeDrawn) { mark(0, wipeDrawn, SCR_W, y - wipeDrawn); wipeDrawn = y; }
     if (e >= 1) wiping = false;
     live = true;
@@ -904,14 +1124,24 @@ void uiPerf(bool reset) {
                 perf.frames ? perf.sumUs / 1000.0f / perf.frames : 0.0f, perf.maxUs / 1000.0f, avgGap > 0 ? 1000.0f / avgGap : 0.0f);
 }
 
+// ---------------------------------------------------------------- themes
+static void applyTheme(int i) {
+  themeIdx = i;
+  T = &THEMES[i];
+  gfxSetCrisp(T->crisp);   // first: the ground table is dithered unless crisp
+  gfxBegin(T->g0, T->g1, T->g2, T->texture);
+  gfxSetShadow(T->shadow, T->shadowA);
+}
+
 // ---------------------------------------------------------------- public: lifecycle
 void uiBegin() {
   Preferences p;
   p.begin("kp", true);
   brightness = p.getUChar("bright", 200);
   dimAfterS = p.getUShort("dim", DIM_DEFAULT_S);
+  themeIdx = constrain(p.getUChar("theme", 0), 0, THEME_COUNT - 1);
   p.end();
-  gfxBegin(G0, G1);
+  applyTheme(themeIdx);
   fontsBegin();
   lastAct = millis();
   displaySetBacklight(profileBrightness >= 0 ? profileBrightness : brightness);
@@ -956,6 +1186,34 @@ void uiSetDim(int seconds) {
   uiWake();
 }
 
+void uiSetTheme(int i, bool save) {
+  if (i < 0 || i >= THEME_COUNT) return;
+  if (save) {
+    Preferences p;
+    p.begin("kp", false);
+    p.putUChar("theme", i);
+    p.end();
+  }
+  if (i == themeIdx && T == &THEMES[i]) return;
+  applyTheme(i);
+  Serial.printf("EVT:THEME %s\n", T->id);
+  // the new theme wipes down over the old one, a band of rows per frame
+  for (int c = 0; c < NUM_CELLS; c++) ca[c].pop0 = 0;
+  wiping = true;
+  wipe0 = millis();
+  wipeDrawn = wipeFrom = 0;
+  wipeTo = SCR_H;
+  wipeMs = 320;
+}
+int uiTheme() { return themeIdx; }
+int uiThemeCount() { return THEME_COUNT; }
+const char *uiThemeId(int i) { return i >= 0 && i < THEME_COUNT ? THEMES[i].id : ""; }
+int uiThemeFind(const char *id) {
+  for (int i = 0; i < THEME_COUNT; i++) if (!strcasecmp(id, THEMES[i].id) || !strcasecmp(id, THEMES[i].title)) return i;
+  int n = atoi(id);
+  return n >= 1 && n <= THEME_COUNT && isdigit((uint8_t)*id) ? n - 1 : -1;
+}
+
 // ---------------------------------------------------------------- public: pages and profiles
 static void startWave() {
   uint32_t now = millis();
@@ -976,7 +1234,9 @@ static void startWipe() {
   pressed = released = -1;
   wiping = true;
   wipe0 = millis();
-  wipeDrawn = STATUS_H;
+  wipeDrawn = wipeFrom = STATUS_H;
+  wipeTo = LINE_Y;
+  wipeMs = 220;
   mark(0, 0, SCR_W, STATUS_H);
   mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
 }
@@ -1232,6 +1492,8 @@ static void sheetTap(int x, int y) {
         int i = (x - PANE_X) * 5 / PANE_W;
         uiSetDim(DIM_OPTS[constrain(i, 0, 4)]);
         mark(PANE_X - 4, 176, PANE_W + 8, 56);
+      } else if (inRect(x, y, PANE_X - 4, THEME_Y - 6, PANE_W + 8, THEME_H + 26)) {
+        uiSetTheme(constrain((x - PANE_X) * THEME_COUNT / PANE_W, 0, THEME_COUNT - 1));
       }
       break;
     case 1:
