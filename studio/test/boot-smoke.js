@@ -17,7 +17,7 @@ child.stderr.on("data", (d) => { out += d; process.stderr.write(d); });
 const kill = setTimeout(() => { console.error("smoke: timed out"); child.kill(); process.exit(1); }, 40000);
 child.on("exit", (code) => {
   clearTimeout(kill);
-  const ok = code === 0 && /STUDIO_BOOT_OK/.test(out) && !/\[renderer\]/.test(out);
+  const ok = code === 0 && /STUDIO_BOOT_OK/.test(out) && /"undo":true/.test(out) && !/\[renderer\]/.test(out);
   console.log(ok ? "smoke: OK" : `smoke: FAILED (exit ${code})`);
   process.exit(ok ? 0 : 1);
 });

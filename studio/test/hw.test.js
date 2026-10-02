@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 5000) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error("timed out waiting"); await sleep(20); } };
 const cellXY = (id) => [((id - 1) % 5) * 96 + 48, 30 + Math.floor((id - 1) / 5) * 90 + 40];
 
-let link, dev, settings;
+let link, dev, settings, found = null;   // what the keypad was doing before the tests, put back after
 const rx = [], keys = [], pages = [], profiles = [];
 
 function profile(key2) {
@@ -45,7 +45,10 @@ test.before(async () => {
 
 test.after(async () => {
   if (!HW || !link.isOpen()) return;
-  await dev.setActiveProfile(1);
+  if (found && found.slot7) await link.uploadJson(`profile${SLOT}.json`, JSON.parse(found.slot7));
+  else await link.command(`rm /profile${SLOT}.json`);
+  await link.command(`setprofile ${found ? found.profile : 1}`);
+  await link.command(`hid dry ${found && found.dry ? "on" : "off"}`);
   await link.command("setdim 120");
   link.disconnect();
 });
@@ -55,6 +58,8 @@ test("detect finds the keypad by CH340 + model:touch", { skip: !HW }, async () =
   assert.ok(r.ok, r.error);
   assert.equal(r.status.model, "touch");
   assert.match(r.status.ver, /^3\./);
+  const cat = await link.readFile(`profile${SLOT}.json`);
+  found = { profile: +r.status.profile || 1, dry: r.status.dry === "1", slot7: /^\s*\{/.test(cat) ? cat : null };
   await link.command("hid dry on");
   await link.command("setdim 0");
 });

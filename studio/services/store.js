@@ -19,7 +19,8 @@ const DEFAULTS = {
   obs_password: "",
   nowplaying_enabled: true,
   art_enabled: true,             // album art to the keypad's player page
-  preview_theme: "daylight",     // the editor preview's theme while no keypad is connected
+  preview_theme: "daylight",
+  console_open: false,           // the device console starts folded away     // the editor preview's theme while no keypad is connected
   settime_enabled: true,
 };
 

@@ -198,7 +198,7 @@ ipcMain.handle("device:connect", async (_e, portPath) => {
   try { return await device.connect(portPath || undefined); } finally { connecting = false; }
 });
 ipcMain.handle("device:disconnect", () => { manualDisconnect = true; device.disconnect(); return true; });
-ipcMain.handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null }));
+ipcMain.handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null, appVersion: app.getVersion(), smoke: SMOKE }));
 ipcMain.handle("device:status", () => device.refreshStatus());
 ipcMain.handle("device:fsinfo", () => device.fsinfo());
 ipcMain.handle("device:command", (_e, cmd) => link.command(String(cmd)));

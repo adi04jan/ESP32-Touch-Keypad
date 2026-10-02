@@ -140,12 +140,13 @@ class SerialLink extends EventEmitter {
   }
 
   // Send a command; resolve with its output once the prompt returns ("" on timeout / offline).
-  command(cmd, timeoutMs = CAPTURE_TIMEOUT_MS) {
+  // quiet: Studio's own readouts, kept out of the console's tx echo.
+  command(cmd, timeoutMs = CAPTURE_TIMEOUT_MS, quiet = false) {
     return this._runExclusive(() => new Promise((resolve) => {
       if (!this.isOpen()) return resolve("");
       this._readResolve = resolve;
       this._capture(timeoutMs, () => this.emit("log", `Device did not answer '${cmd.split(" ")[0]}' in time.\n`));
-      this.emit("tx", cmd);
+      if (!quiet) this.emit("tx", cmd);
       this.send(cmd);
     }));
   }

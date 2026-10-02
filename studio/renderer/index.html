@@ -13,15 +13,14 @@
     <svg class="logo" viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="5" width="32" height="24" rx="5" fill="#0b0e12" stroke="#3a4552"/><rect x="5" y="9" width="7" height="7" rx="2.2" fill="#4f8cff"/><rect x="13.5" y="9" width="7" height="7" rx="2.2" fill="#3fc6e0"/><rect x="22" y="9" width="7" height="7" rx="2.2" fill="#52d68f"/><rect x="5" y="18" width="7" height="7" rx="2.2" fill="#f2b746"/><rect x="13.5" y="18" width="7" height="7" rx="2.2" fill="#e56fd6"/><rect x="22" y="18" width="7" height="7" rx="2.2" fill="#8a98ab"/></svg>
     <button data-view="editor" aria-current="true" aria-label="Editor" title="Editor"><svg class="lc"><use href="#i-pen-line"/></svg></button>
     <button data-view="device" aria-label="Device" title="Device"><svg class="lc"><use href="#i-cpu"/></svg></button>
-    <button data-view="ai" aria-label="AI shortcuts" title="AI shortcuts"><svg class="lc"><use href="#i-sparkles"/></svg></button>
     <button data-view="settings" aria-label="Settings" title="Settings"><svg class="lc"><use href="#i-settings"/></svg></button>
   </nav>
-  <div class="st-main">
+  <main class="st-main">
     <div class="st-top">
-      <h3 id="view-title">Editor</h3>
+      <h1 id="view-title">Editor</h1>
       <span class="slots" id="st-slots" role="group" aria-label="Profile slot"></span>
-      <span class="pill off" id="conn-pill"><span class="dotc"></span><span>Offline</span></span>
-      <span class="save-ind" id="save-ind"><span class="dotc"></span><span>Auto-saves live</span></span>
+      <span class="pill off" id="conn-pill" role="status" aria-live="polite"><span class="dotc"></span><span>Offline</span></span>
+      <span class="save-ind" id="save-ind" role="status" aria-live="polite"><span class="dotc"></span><span>Auto-saves live</span></span>
     </div>
 
     <section class="view" data-view="editor">
@@ -29,7 +28,7 @@
         <div class="st-center">
           <div class="row" style="justify-content:space-between">
             <div class="pagetabs" id="st-pages"></div>
-            <span class="hint">Click a key to edit · drag keys to swap</span>
+            <span class="hint">Click a key to edit · drag to swap · arrows move · Ctrl+C / Ctrl+V copy a key · Delete clears · Ctrl+Z undo</span>
           </div>
           <div class="mini"><div class="screen" id="st-screen"></div></div>
           <div class="pagebar">
@@ -49,19 +48,14 @@
     </section>
 
     <section class="view" data-view="device" hidden><div class="pane" id="device-pane"></div></section>
-    <section class="view" data-view="ai" hidden>
-      <div class="pane"><div class="book placeholder"><h3>AI shortcuts</h3>
-        <p>The AI shortcut pipeline (Ollama, OpenAI, Gemini) from Macropad Studio 2.1 has not been ported to the Touch Keypad yet. It needs the 15-cell, multi-page capability flag in the shared schema first.</p>
-        <p class="hint">Open item; see studio/README.md.</p></div></div>
-    </section>
     <section class="view" data-view="settings" hidden><div class="pane" id="settings-pane"></div></section>
 
-    <div class="st-console">
-      <div class="row" style="justify-content:space-between"><span class="hint"><b>Device console</b></span><span class="hint">Line CLI over USB serial · events in red</span></div>
+    <details class="st-console" id="console-box">
+      <summary><span class="hint"><b>Device console</b></span><span class="hint" id="console-last"></span><span class="hint">Line CLI over USB serial · events in magenta</span></summary>
       <pre class="console" id="st-log"></pre>
       <form id="cli-form"><input id="cli-in" placeholder="Type a CLI command, e.g. status" autocomplete="off" aria-label="CLI command"><button>Send</button></form>
-    </div>
-  </div>
+    </details>
+  </main>
 </div>
 <script src="keyicons.js"></script>
 <script src="app.js"></script>

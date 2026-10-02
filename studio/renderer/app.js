@@ -90,7 +90,13 @@ function cli(cls, msg) {
   stLog.appendChild(d);
   while (stLog.childNodes.length > 400) stLog.firstChild.remove();
   stLog.scrollTop = stLog.scrollHeight;
+  $("console-last").textContent = msg;
 }
+$("console-box").addEventListener("toggle", async () => {
+  const open = $("console-box").open;
+  if (open) { stLog.scrollTop = stLog.scrollHeight; $("cli-in").focus(); }
+  if (state.settings.console_open !== open) state.settings = await api.setSettings({ console_open: open });
+});
 $("cli-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const v = $("cli-in").value.trim();
@@ -169,7 +175,7 @@ function iconGrid(k) {
 function renderSide() {
   const page = pg();
   if (isPlayerPage(page)) {
-    side.innerHTML = `<div class="field"><span>Page</span><h3>Media player</h3></div>
+    side.innerHTML = `<div class="field"><span>Page</span><h2>Media player</h2></div>
       <p class="hint">This page is the keypad's player: album art, track, running times, tap-to-seek and transport keys. Studio feeds it from the Windows media session; its keys send media commands over Bluetooth.</p>
       <button class="danger" id="rm-w">${ico("trash-2")} Turn back into a key page</button>`;
     $("rm-w").onclick = () => { page.keys[0] = null; changed(["structure"]); };
@@ -322,8 +328,51 @@ $("pg-del").addEventListener("click", () => {
   changed(["structure"]);
 });
 
+/* ============ history (undo / redo) and key clipboard ============ */
+// Each edit pushes the slot's previous version; typing in one field within 800 ms is one step.
+const hist = { undo: [], redo: [], base: {}, at: 0, clip: null };
+function track(fromInput) {
+  const now = Date.now(), cur = JSON.stringify(prof()), base = hist.base[state.slot];
+  if (base && base !== cur && !(fromInput && now - hist.at < 800)) {
+    hist.undo.push({ slot: state.slot, json: base });
+    if (hist.undo.length > 100) hist.undo.shift();
+    hist.redo = [];
+  }
+  hist.at = fromInput ? now : 0;
+  hist.base[state.slot] = cur;
+}
+function restore(from, to) {
+  const e = from.pop();
+  if (!e) return;
+  to.push({ slot: e.slot, json: JSON.stringify(state.slots[e.slot]) });
+  state.slot = e.slot;
+  state.slots[e.slot] = JSON.parse(e.json);
+  hist.base[e.slot] = e.json;
+  state.page = Math.min(state.page, prof().pages.length - 1);
+  setSave("busy", "Saving…");
+  renderStudio();
+  api.edit({ slot: state.slot, profile: prof(), page: state.page + 1, keyId: null, kinds: ["structure"] });
+}
+document.addEventListener("keydown", (e) => {
+  if (state.view !== "editor" || e.target.closest("input, textarea, select")) return;
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), page = pg();
+  if (mod && k === "z" && !e.shiftKey) { e.preventDefault(); restore(hist.undo, hist.redo); return; }
+  if (mod && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); restore(hist.redo, hist.undo); return; }
+  if (isPlayerPage(page)) return;
+  const key = selKey();
+  if (mod && k === "c" && key) { e.preventDefault(); hist.clip = structuredClone(key); cli("sys", `Copied key \"${key.name}\".`); return; }
+  if (mod && k === "v" && hist.clip) { e.preventDefault(); page.keys[state.sel] = { ...structuredClone(hist.clip), id: state.sel + 1 }; changed(["structure"]); return; }
+  if ((e.key === "Delete" || e.key === "Backspace") && key) { e.preventDefault(); page.keys[state.sel] = null; changed(["structure"]); return; }
+  const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -5, ArrowDown: 5 }[e.key];
+  if (move && !mod) {
+    const next = state.sel + move;
+    if (next >= 0 && next < 15 && (Math.abs(move) === 5 || Math.floor(next / 5) === Math.floor(state.sel / 5))) { e.preventDefault(); state.sel = next; state.mode = "actions"; renderStudio(); }
+  }
+});
+
 /* ============ edits -> main (live push 300 ms, autosave 1500 ms, backup first) ============ */
 function changed(kinds, fromInput = false) {
+  track(fromInput);
   const k = isPlayerPage(pg()) ? null : selKey();
   setSave("busy", "Saving…");
   renderStudio(fromInput);
@@ -335,12 +384,13 @@ async function loadSlot(n) {
   const p = await api.loadProfile(n);
   if (!p) { cli("sys", `! Could not read profile${n}.json; editing a local copy.`); return; }
   state.slots[n] = p;
+  hist.base[n] = JSON.stringify(p);
   if (n === state.slot) { state.page = Math.min(state.page, p.pages.length - 1); renderStudio(); }
   renderTop();
 }
 
 /* ============ views ============ */
-const TITLES = { editor: "Editor", device: "Device", ai: "AI shortcuts", settings: "Settings" };
+const TITLES = { editor: "Editor", device: "Device", settings: "Settings" };
 function showView(v) {
   state.view = v;
   document.querySelectorAll(".rail2 [data-view]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.view === v)));
@@ -361,7 +411,7 @@ async function renderDevice() {
   const dis = c.connected ? "" : "disabled";
   const pct = (v) => (look ? `${Math.round(v / 2.55)}%` : "—");
   el.innerHTML = `
-    <div class="book"><h3>Connection</h3>
+    <div class="book"><h2>Connection</h2>
       <label class="field"><span>Port</span><select id="d-port">${ports.map((p) => `<option value="${esc(p.path)}" ${p.path === c.path ? "selected" : ""}>${esc(p.label)}${p.ch340 ? " (CH340)" : ""}</option>`).join("") || "<option value=''>No serial ports</option>"}</select></label>
       <div class="row"><button class="primary" id="d-detect">${ico("search")} Find keypad</button><button id="d-connect">${ico("plug")} Connect to port</button><button class="ghost" id="d-disc" ${dis}>${ico("unplug")} Disconnect</button></div>
       <label class="check"><input type="checkbox" id="d-auto" ${state.settings.auto_connect ? "checked" : ""}> Connect automatically when the keypad is plugged in</label>
@@ -369,22 +419,22 @@ async function renderDevice() {
         <dt>Bluetooth</dt><dd>${+st.ble > 0 ? "host connected" : c.connected ? "advertising" : "—"}</dd><dt>Touch</dt><dd>${st.cal === "1" ? "calibrated" : c.connected ? "not calibrated" : "—"}</dd>
         <dt>Storage</dt><dd>${fs ? `${Math.round(fs.used / 1024)} KB of ${Math.round(fs.total / 1024)} KB` : "—"}</dd></dl>
       <div class="row"><button id="d-refresh" ${dis}>${ico("refresh-cw")} Refresh</button><button id="d-cal" ${dis}>${ico("crosshair")} Calibrate touch</button></div></div>
-    <div class="book"><h3>Screen and light</h3>
+    <div class="book"><h2>Screen and light</h2>
       <div class="field"><span>Theme${c.connected ? "" : " · preview only while offline"}</span><div class="themes" role="group" aria-label="Theme">${THEMES.map(([id, title]) => `<button data-theme-set="${id}" aria-pressed="${state.theme === id}"><span class="dev chip" data-theme="${id}"><span class="key" style="--t:#4f8cff"></span></span>${title}</button>`).join("")}</div></div>
       <label class="field"><span>Screen brightness · ${pct(look && look.brightness)}</span><input type="range" id="d-bright" min="13" max="255" value="${look ? look.brightness : 200}" ${dis}></label>
       <div class="field"><span>Status LED</span><div class="seg" role="group" aria-label="LED pattern">${LED_PATTERNS.map((p) => `<button data-led="${p}" aria-pressed="${!!look && look.led === p}" ${dis}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div></div>
       <div class="field"><span>LED colour · solid and breathe</span><div class="swatches">${TINTS.map((t) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="LED colour ${t.join(",")}" ${dis}></button>`).join("")}</div></div>
       <label class="field"><span>LED brightness · ${pct(look && look.ledBright)}</span><input type="range" id="d-ledb" min="0" max="255" value="${look ? look.ledBright : 153}" ${dis}></label>
       <label class="check"><input type="checkbox" id="d-click" ${look && look.click ? "checked" : ""} ${dis}> Key click</label></div>
-    <div class="book"><h3>Bluetooth hosts</h3>
+    <div class="book"><h2>Bluetooth hosts</h2>
       ${ble.slots.length ? `<table><thead><tr><th>Host</th><th>State</th><th></th></tr></thead><tbody>${ble.slots.map((b) => `<tr><td>${esc(b.name)}</td><td>${b.state === "connected" ? `<span class="pill ok">connected</span>` : "paired"}</td><td><span class="row" style="flex-wrap:nowrap; justify-content:flex-end">${b.state !== "connected" ? `<button data-use="${b.slot}">Use</button>` : ""}<button class="danger" data-forget="${b.slot}">${ico("trash-2")} Forget</button></span></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">${c.connected ? "No host paired yet." : "Connect the keypad to see its hosts."}</p>`}
       <div class="row"><button id="d-pair" ${dis}>${ico("link")} Pair a new host</button></div>
       <p class="hint">Pairing shows a six-digit code on the keypad; type it on the computer. The keypad remembers three hosts. Forgetting removes the bond on the keypad; remove it on the computer too.</p></div>
-    <div class="book"><h3>Firmware</h3>
+    <div class="book"><h2>Firmware</h2>
       <p>${esc(flash.note)}</p>
       ${flash.available ? `<div class="row"><button class="primary" id="d-flash">${ico("download")} Install firmware ${esc(flash.version || "")}</button></div><div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
-    <div class="book wide"><h3>Backups</h3>
+    <div class="book wide"><h2>Backups</h2>
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import">${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>
       <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}">Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
@@ -434,25 +484,28 @@ async function renderSettings() {
   const failed = new Set(br.failed.map((f) => f.slot));
   const ctxRows = contexts.map((c) => `<tr><td>${esc(c)}</td><td><select data-ctx="${esc(c)}" aria-label="Profile for ${esc(c)}"><option value="">—</option>${Array.from({ length: NUM_PROFILES }, (_, i) => `<option value="${i + 1}" ${s.context_profiles[c] === i + 1 ? "selected" : ""}>${i + 1} · ${esc(state.slots[i + 1].profile_name)}</option>`).join("")}</select></td></tr>`).join("");
   el.innerHTML = `
-    <div class="book wide"><h3>Host bridge</h3>
+    <div class="book wide"><h2>Host bridge</h2>
       <p class="hint">A <b>Host Action</b> key sends a reserved F13–F24 combo over Bluetooth; Studio catches it and runs the command. Commands: <code>open &lt;url, file or app&gt;</code>, <code>run &lt;command line&gt;</code>, <code>obs.scene &lt;scene&gt;</code>. Studio must be running (it stays in the tray).</p>
       ${Object.keys(br.slots).length ? `<table><thead><tr><th>Slot</th><th>Combo</th><th>Command</th><th>Status</th><th></th></tr></thead><tbody>${br.combos.map((c) => `<tr><td>${c.slot}</td><td><code>${esc(c.label)}</code></td><td><code>${esc(br.slots[c.slot])}</code></td><td>${failed.has(c.slot) ? `<span class="pill warn">taken by another app</span>` : `<span class="pill ok">listening</span>`}</td><td><button data-test="${esc(br.slots[c.slot])}">Test</button></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">No host actions saved yet.</p>`}
       ${br.conflicts.length ? `<p><b>Conflicts in this profile:</b></p><ul class="errors">${br.conflicts.map((x) => `<li>${esc(x.where)} sends ${esc(x.label)}, which is reserved for host actions</li>`).join("")}</ul>` : ""}
     </div>
-    <div class="book"><h3>Media player</h3>
+    <div class="book"><h2>Media player</h2>
       <label class="check"><input type="checkbox" data-set="nowplaying_enabled" ${s.nowplaying_enabled ? "checked" : ""}> Send what's playing on this PC to the keypad's player page</label>
       <label class="check"><input type="checkbox" data-set="art_enabled" ${s.art_enabled !== false ? "checked" : ""}> Include album art</label>
       <p class="hint">Uses the Windows media session: Spotify, browsers and most players publish to it. Seeking on the keypad moves the track here.</p></div>
-    <div class="book"><h3>OBS</h3>
+    <div class="book"><h2>OBS</h2>
       <label class="check"><input type="checkbox" data-set="obs_enabled" ${s.obs_enabled ? "checked" : ""}> Switch OBS scenes (OBS WebSocket v5)</label>
       <label class="field"><span>WebSocket URL</span><input data-set="obs_url" value="${esc(s.obs_url)}"></label>
       <label class="field"><span>Password</span><input type="password" data-set="obs_password" value="${esc(s.obs_password)}"></label></div>
-    <div class="book"><h3>Keypad link</h3>
+    <div class="book"><h2>Keypad link</h2>
       <label class="check"><input type="checkbox" data-set="settime_enabled" ${s.settime_enabled ? "checked" : ""}> Set the keypad clock on connect</label>
       <label class="check"><input type="checkbox" data-set="auto_connect" ${s.auto_connect ? "checked" : ""}> Connect automatically</label>
       <label class="field"><span>Baud rate</span><select data-set="baud">${[921600, 460800, 115200].map((b) => `<option ${s.baud === b ? "selected" : ""}>${b}</option>`).join("")}</select></label></div>
-    <div class="book"><h3>Switch profile by app</h3>
+    <div class="book"><h2>About</h2>
+      <dl class="kv"><dt>Macropad Studio</dt><dd>${esc(state.conn.appVersion || "—")}</dd><dt>Keypad firmware</dt><dd>${esc((state.conn.status && state.conn.status.ver) || "not connected")}</dd><dt>Firmware Studio installs</dt><dd>${esc((await api.flashInfo()).version || "—")}</dd></dl>
+      <p class="hint">Keys work as a Bluetooth keyboard with nothing installed; Studio adds editing, host actions, the media player feed and firmware installs. Docs: README.md, docs/PROTOCOL.md, firmware/DESIGN.md.</p></div>
+    <div class="book"><h2>Switch profile by app</h2>
       <label class="check"><input type="checkbox" data-set="auto_switch_enabled" ${s.auto_switch_enabled ? "checked" : ""}> When the focused app changes, switch the keypad's profile</label>
       <table><thead><tr><th>App</th><th>Profile</th></tr></thead><tbody>${ctxRows}</tbody></table></div>`;
   el.querySelectorAll("[data-set]").forEach((inp) => {
@@ -490,7 +543,7 @@ api.onEvent(({ type, data }) => {
         renderStudio();
       });
       if (!data.connected) setSave("off", "Offline · edits are backed up on this PC");
-      if (state.view === "device") renderDevice();
+      if (state.view === "device") { clearTimeout(state.devTimer); state.devTimer = setTimeout(renderDevice, 400); }
       break;
     }
     case "save-state": {
@@ -520,6 +573,8 @@ api.onEvent(({ type, data }) => {
 (async () => {
   state.settings = await api.getSettings();
   state.theme = state.settings.preview_theme || "daylight";
+  $("console-box").open = !!state.settings.console_open;
+  hist.base[state.slot] = JSON.stringify(prof());
   state.conn = { ...state.conn, ...(await api.state()) };
   if (!state.conn.connected) setSave("off", state.conn.noSerial ? "Serial disabled" : "Offline · edits are backed up on this PC");
   renderStudio();
@@ -530,5 +585,15 @@ api.onEvent(({ type, data }) => {
     if (look && look.theme) { state.theme = look.theme; renderStudio(); }
   }
   // Self-check for the smoke test: the shared icon map loaded and the preview drew the screen.
-  api.ready({ icons: ICON_NAMES.length, screen: !!document.querySelector("#st-screen .dev"), missing: ACTION_META ? Object.values(ACTION_META).map((m) => m.icon).filter((n) => !window.KEY_ICONS?.[n]) : [] });
+  let undoOk = null;
+  if (state.conn.smoke) {   // smoke only: an edit, undone, leaves the profile byte-identical; redo brings it back
+    const before = JSON.stringify(prof());
+    prof().profile_name += " (edit)"; changed(["structure"]);
+    const edited = JSON.stringify(prof());
+    restore(hist.undo, hist.redo);
+    const undone = JSON.stringify(prof()) === before;
+    restore(hist.redo, hist.undo);
+    undoOk = undone && JSON.stringify(prof()) === edited;
+  }
+  api.ready({ undo: undoOk, icons: ICON_NAMES.length, screen: !!document.querySelector("#st-screen .dev"), missing: ACTION_META ? Object.values(ACTION_META).map((m) => m.icon).filter((n) => !window.KEY_ICONS?.[n]) : [] });
 })();

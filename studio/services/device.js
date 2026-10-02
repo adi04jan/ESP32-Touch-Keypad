@@ -234,7 +234,7 @@ class Device extends EventEmitter {
     const missing = [...need].filter((n) => this._tileBytes(n));
     if (need.size > missing.length) this.emit("log", `${need.size - missing.length} tile(s) are neither on the device nor cached here; they will show blank.\n`);
     if (!missing.length) return { ok: true, uploaded: 0 };
-    const fsInfo = (await this.link.command("fsinfo")).match(/FS_INFO:(\d+),(\d+)/);
+    const fsInfo = (await this.link.command("fsinfo", undefined, true)).match(/FS_INFO:(\d+),(\d+)/);
     if (fsInfo) {
       const free = +fsInfo[1] - +fsInfo[2], want = missing.length * tiles.TILE_BYTES;
       if (free - want < FS_RESERVE) return { ok: false, error: `device storage low: ${free} B free, tiles need ${want} B` };
@@ -246,7 +246,7 @@ class Device extends EventEmitter {
   // ---- device panel ----
   // `ble list`: "<n> <address> connected|bonded <name>" per bond, then a hosts: summary.
   async bleList() {
-    const raw = await this.link.command("ble list");
+    const raw = await this.link.command("ble list", undefined, true);
     const slots = [];
     for (const line of raw.split("\n")) {
       const m = line.trim().match(/^(\d+)\s+(\S+)\s+(connected|bonded)(?:\s+(.+))?$/i);
@@ -260,15 +260,15 @@ class Device extends EventEmitter {
   // Screen brightness, LED pattern/colour/brightness and key click, read without changing anything.
   async look() {
     if (!this.link.isOpen()) return null;
-    const led = (await this.link.command("led")).match(/led (\w+) color (\d+) (\d+) (\d+) brightness (\d+)/);
-    const br = (await this.link.command("setbrightness")).match(/brightness (\d+)/);
-    const ck = (await this.link.command("click")).match(/click (on|off)/);
-    const th = (await this.link.command("theme")).match(/^theme (\w+)$/m);
+    const led = (await this.link.command("led", undefined, true)).match(/led (\w+) color (\d+) (\d+) (\d+) brightness (\d+)/);
+    const br = (await this.link.command("setbrightness", undefined, true)).match(/brightness (\d+)/);
+    const ck = (await this.link.command("click", undefined, true)).match(/click (on|off)/);
+    const th = (await this.link.command("theme", undefined, true)).match(/^theme (\w+)$/m);
     return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on", theme: th ? th[1] : "" };
   }
 
   async fsinfo() {
-    const m = (await this.link.command("fsinfo")).match(/FS_INFO:(\d+),(\d+)/);
+    const m = (await this.link.command("fsinfo", undefined, true)).match(/FS_INFO:(\d+),(\d+)/);
     return m ? { total: +m[1], used: +m[2] } : null;
   }
 
