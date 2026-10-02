@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
 OUT = HERE.parents[1] / "firmware" / "TouchKeypad" / "fonts_gen.h"
 
-TEXT = "".join(chr(c) for c in range(0x20, 0x7F)) + "·…›–°×"
+TEXT = "".join(chr(c) for c in range(0x20, 0x7F)) + "·…›–−°×"   # · … › – − ° ×
 DIGITS = " 0123456789:%-+."
 
 # name, file, pixel size, glyph set

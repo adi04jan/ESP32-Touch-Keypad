@@ -7,8 +7,8 @@
 
 MacroEngine macroEngine;
 
-void MacroEngine::start(JsonVariantConst key, bool hold, int keyCell) {
-  JsonArrayConst acts = key[hold ? "hold_actions" : "actions"].as<JsonArrayConst>();
+void MacroEngine::start(JsonVariantConst key, bool hold, int keyCell, const char *field) {
+  JsonArrayConst acts = key[field ? field : hold ? "hold_actions" : "actions"].as<JsonArrayConst>();
   if (acts.isNull() || acts.size() == 0) return;
   abort();
   macroDoc.clear();
@@ -84,6 +84,7 @@ void MacroEngine::execAction(JsonObjectConst act, unsigned long now) {
     if (!inner.isNull() && depth < MACRO_MAX_DEPTH) stack[depth++] = { inner, 0, count - 1 };
   } else if (!strcmp(type, "media")) {
     ok = hidSendMedia(mediaNameToCode(act["value"] | ""));
+    uiMediaKey(act["value"] | "");
   } else if (!strcmp(type, "mouse_move")) {
     ok = hidMouseMove(act["x"] | 0, act["y"] | 0, act["wheel"] | 0);
   } else if (!strcmp(type, "mouse_click")) {

@@ -5,6 +5,8 @@
 #include <Preferences.h>
 #include <vector>
 #include <algorithm>
+#include "defaults_gen.h"
+#include "esp_rom_crc.h"
 
 JsonDocument pageDoc;
 bool profileLoaded = false;
@@ -14,28 +16,9 @@ int  pageCount = 1;
 int  profileDelay = 20;
 int  profileBrightness = -1;
 char profileName[32] = "";
+uint8_t profileColor[3] = { 79, 140, 255 };
 
 static const auto NEST = DeserializationOption::NestingLimit(24);
-
-// Shipped default for profile 1: a usable first page plus a Now Playing page.
-static const char DEFAULT_PROFILE1[] PROGMEM = R"JSON({"schema_version":2,"profile_name":"Daily","default_delay":20,"pages":[
-{"name":"Main","keys":[
-{"id":1,"name":"Copy","icon":"copy","led_color":[54,198,255],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","C"]}]},
-{"id":2,"name":"Paste","icon":"clipboard-paste","led_color":[61,220,132],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","V"]}]},
-{"id":3,"name":"Undo","icon":"undo-2","led_color":[226,176,74],"actions":[{"type":"keycombo","keys":["LEFT_CTRL","Z"]}]},
-{"id":4,"name":"Mute","icon":"volume-x","led_color":[255,90,95],"actions":[{"type":"media","value":"MUTE"}]},
-{"id":5,"name":"Media","icon":"music","led_color":[160,120,255],"actions":[{"type":"page","value":2}]},
-{"id":6,"name":"Previous","icon":"skip-back","led_color":[47,107,115],"actions":[{"type":"media","value":"PREVIOUS"}]},
-{"id":7,"name":"Play","icon":"play","led_color":[194,65,43],"actions":[{"type":"media","value":"PLAY_PAUSE"}],"hold_actions":[{"type":"media","value":"STOP"}]},
-{"id":8,"name":"Next","icon":"skip-forward","led_color":[47,107,115],"actions":[{"type":"media","value":"NEXT"}]},
-{"id":9,"name":"Vol down","icon":"volume-1","led_color":[122,31,43],"actions":[{"type":"media","value":"VOLUME_DOWN"}]},
-{"id":10,"name":"Vol up","icon":"volume-2","led_color":[47,107,79],"actions":[{"type":"media","value":"VOLUME_UP"}]},
-null,null,null,null,null]},
-{"name":"Media","icon":"music","keys":[
-{"id":1,"name":"Now Playing","icon":"music","widget":"now_playing","span":[3,2],"actions":[{"type":"media","value":"PLAY_PAUSE"}]},
-null,null,
-{"id":4,"name":"Back","icon":"undo-2","led_color":[130,136,150],"actions":[{"type":"back"}]},
-null,null,null,null,null,null,null,null,null,null,null]}]})JSON";
 
 static String profilePath(int id) { return "/profile" + String(id) + ".json"; }
 
@@ -48,12 +31,39 @@ bool isProfilePath(const char *path, int *id) {
 }
 
 static bool writeDefault(int id) {
-  if (id == 1) return writeFileStr(profilePath(1).c_str(), FPSTR(DEFAULT_PROFILE1));
+  if (id <= DEFAULT_PROFILE_COUNT) return writeFileStr(profilePath(id).c_str(), FPSTR(DEFAULT_PROFILES[id - 1]));
   String s = "{\"schema_version\":2,\"profile_name\":\"Profile " + String(id) +
-             "\",\"default_delay\":20,\"pages\":[{\"name\":\"Main\",\"keys\":[";
+             "\",\"color\":[138,152,171],\"default_delay\":20,\"pages\":[{\"name\":\"Main\",\"keys\":[";
   for (int i = 0; i < NUM_CELLS; i++) s += i ? ",null" : "null";
   s += "]}]}";
   return writeFileStr(profilePath(id).c_str(), s);
+}
+
+static uint32_t fileCrc(const String &path) {
+  File f = LittleFS.open(path, "r");
+  if (!f) return 0;
+  uint32_t crc = 0;
+  uint8_t buf[256];
+  while (f.available()) { int n = f.read(buf, sizeof buf); crc = esp_rom_crc32_le(crc, buf, n); }
+  f.close();
+  return crc;
+}
+
+// The shipped profiles go in on the first boot of this firmware family. A
+// later firmware with changed defaults replaces a default profile only if
+// the file is still the one it installed, so a user's edits are never lost.
+void profilesInstallDefaults() {
+  Preferences p;
+  p.begin("kp", false);
+  bool first = !p.isKey("defv");
+  bool changed = p.getUInt("defv", 0) != DEFAULTS_VERSION;
+  for (int id = 1; changed && id <= DEFAULT_PROFILE_COUNT; id++) {
+    String path = profilePath(id), key = "dcrc" + String(id);
+    if (!first && LittleFS.exists(path) && fileCrc(path) != p.getUInt(key.c_str(), 0)) continue;
+    if (writeDefault(id)) { p.putUInt(key.c_str(), fileCrc(path)); Serial.printf("Installed default profile %d\n", id); }
+  }
+  if (changed) p.putUInt("defv", DEFAULTS_VERSION);
+  p.end();
 }
 
 // v1 (keys[12], no pages) -> v2: the keys become page 1, padded to 15 cells.
@@ -87,6 +97,7 @@ bool loadProfile(int id) {
   filter["profile_name"] = true;
   filter["default_delay"] = true;
   filter["brightness"] = true;
+  filter["color"] = true;
   filter["pages"][0]["name"] = true;
   filter["keys"] = true;   // v1 files only (small)
   File f = LittleFS.open(path, "r");
@@ -112,6 +123,9 @@ bool loadProfile(int id) {
   profileDelay = meta["default_delay"] | 20;
   profileBrightness = meta["brightness"] | -1;
   strlcpy(profileName, meta["profile_name"] | "Profile", sizeof profileName);
+  profileColor[0] = meta["color"][0] | 79;
+  profileColor[1] = meta["color"][1] | 140;
+  profileColor[2] = meta["color"][2] | 255;
   if (!loadPage(0)) return false;
   profileLoaded = true;
 
@@ -238,4 +252,22 @@ void gcTiles() {
   dir.close();
   for (auto &nm : del) LittleFS.remove("/t/" + nm);
   if (!del.empty()) Serial.printf("Removed %u unreferenced tiles\n", (unsigned)del.size());
+}
+
+// Name, page count and colour of a slot without loading it (the settings sheet).
+bool profileMeta(int id, char *name, size_t len, int *pages, uint8_t col[3]) {
+  File f = LittleFS.open(profilePath(id), "r");
+  if (!f) return false;
+  f.setTimeout(0);
+  JsonDocument filter, doc;
+  filter["profile_name"] = true;
+  filter["color"] = true;
+  filter["pages"][0]["name"] = true;
+  DeserializationError e = deserializeJson(doc, f, DeserializationOption::Filter(filter), NEST);
+  f.close();
+  if (e) return false;
+  strlcpy(name, doc["profile_name"] | "Profile", len);
+  *pages = doc["pages"].size();
+  for (int i = 0; i < 3; i++) col[i] = doc["color"][i] | 138;
+  return true;
 }

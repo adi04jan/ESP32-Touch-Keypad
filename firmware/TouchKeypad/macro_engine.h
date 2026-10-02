@@ -10,7 +10,8 @@
 
 class MacroEngine {
  public:
-  void start(JsonVariantConst key, bool hold, int cell);
+  // field overrides actions / hold_actions (toggle keys turning off may use "off_actions").
+  void start(JsonVariantConst key, bool hold, int cell, const char *field = nullptr);
   void tick();
   void abort();
   bool isRunning() const { return running; }

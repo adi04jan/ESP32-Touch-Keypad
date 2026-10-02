@@ -3,6 +3,7 @@
  * Writes:
  *   firmware/TouchKeypad/icons_gen.h   4-bit alpha masks: 40 px key glyphs, 20 px UI glyphs
  *   studio/renderer/keyicons.js        the same set as SVG markup, for Studio and docs/device
+ *   (key masks are drawn at 36 px, the key glyph size in firmware/DESIGN.md)
  * The firmware tints a mask with the key colour and lights it with a glow it
  * blurs at draw time, so one mask serves every colour. */
 "use strict";
@@ -13,7 +14,7 @@ const { Resvg } = require("@resvg/resvg-js");
 const ROOT = path.resolve(__dirname, "../..");
 const LUCIDE = path.join(__dirname, "node_modules/lucide-static/icons");
 const BRAND = path.join(__dirname, "node_modules/simple-icons/icons");
-const KEY_PX = 40, UI_PX = 20, STROKE = 2.2;
+const KEY_PX = 36, UI_PX = 20, STROKE = 2.2;
 const pkgVersion = (p) => JSON.parse(fs.readFileSync(path.join(__dirname, "node_modules", p, "package.json"), "utf8")).version;
 
 const KEY_ICONS = `

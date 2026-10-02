@@ -3,13 +3,14 @@
      board.h         pins, layout, limits
      display.*       LovyanGFX ST7796S + XPT2046, screen capture
      touch.*         polling, calibration, tap / hold / swipe (and CLI injection)
-     ui.*            status strip, tile grid, page dots, widgets, sheet, pairing ticket
+     ui.*            the glass screen: keys, player, sheet, pairing, calibration, 60 Hz animation
+     gfx.*           raster core: chunk canvas, antialiased shapes, glyph masks, VLW text
      profiles.*      schema v2 profiles, one page in RAM
      storage.*       LittleFS atomic writes + backups
      macro_engine.*  cooperative macro runner (from v2.1)
      ble_hid.*       NimBLE HID keyboard / consumer / mouse / telephony, pairing
      hid_maps.*      key name tables
-     leds.*          RGB status LED
+     leds.*          RGB status LED patterns and the key click
      cli.*           serial CLI and uploads (PLAN.md §8, docs/PROTOCOL.md)
 
    loop() never blocks: macros are scheduled, the UI redraws one cell per pass,
@@ -38,6 +39,7 @@ void setup() {
   displayBegin();
   ledsBegin();
   if (fsBegin()) Serial.println("LittleFS mounted");
+  profilesInstallDefaults();
 
   Preferences p;
   p.begin("kp", true);

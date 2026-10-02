@@ -17,6 +17,7 @@ extern int  pageCount;
 extern int  profileDelay;      // default_delay
 extern int  profileBrightness; // -1 if the profile has none
 extern char profileName[32];
+extern uint8_t profileColor[3]; // the profile's line colour (pages are its stations)
 
 bool loadProfile(int id);      // emits EVT:PROFILE
 bool loadProfileSafe(int id);  // on failure restore the default and retry
@@ -24,3 +25,5 @@ bool loadPage(int idx);
 bool validateProfile(const char *path, String &err);   // syntax + shape, low RAM
 void gcTiles();                // delete /t files no profile references
 bool isProfilePath(const char *path, int *id = nullptr);
+void profilesInstallDefaults(); // profiles 1-3 from defaults_gen.h (see profiles.cpp)
+bool profileMeta(int id, char *name, size_t len, int *pages, uint8_t col[3]);

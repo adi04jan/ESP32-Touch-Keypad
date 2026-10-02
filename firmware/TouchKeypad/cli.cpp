@@ -6,6 +6,7 @@
 #include "touch.h"
 #include "display.h"
 #include "ble_hid.h"
+#include "leds.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include "mbedtls/base64.h"
@@ -24,7 +25,7 @@ static struct {
   uint8_t *buf;
   size_t size, cap, want;
   uint32_t crc, wantCrc, last;
-  bool failed, tooBig;
+  bool failed, tooBig, art;
 } up;
 
 bool cliUploading() { return up.on; }
@@ -40,7 +41,8 @@ static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   normPath(path, up.path, sizeof up.path);
   if (strstr(up.path, "..") || strlen(path) > 56) { Serial.println("ERR bad path"); return false; }
   up.cap = bin ? want : 8192;
-  up.buf = (uint8_t *)malloc(up.cap);
+  up.art = bin && !strcmp(up.path, "/ram:art");   // album art goes straight to the player's buffer
+  up.buf = up.art ? uiArtBuffer(want) : (uint8_t *)malloc(up.cap);
   if (!up.buf) { Serial.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
   up.on = true;
   up.bin = bin;
@@ -55,7 +57,7 @@ static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
 }
 
 static void uploadEnd() {
-  free(up.buf);
+  if (!up.art) free(up.buf);
   up.buf = nullptr;
   up.on = false;
 }
@@ -107,6 +109,15 @@ static void uploadLine(char *s, size_t n) {
 
 static void uploadFinish() {
   String tmp = String(up.path) + ".tmp";
+  if (up.art) {
+    bool ok = !up.failed && up.size == up.want && up.crc == up.wantCrc;
+    uiArtDone(ok);
+    if (ok) Serial.println("SAVED ram:art");
+    else Serial.printf("ERR art %u of %u bytes, crc %08lx\n", (unsigned)up.size, (unsigned)up.want, (unsigned long)up.crc);
+    uploadEnd();
+    prompt();
+    return;
+  }
   if (up.bin) {
     if (up.failed || up.size != up.want) Serial.printf("ERR size mismatch %u != %u\n", (unsigned)up.size, (unsigned)up.want);
     else if (up.crc != up.wantCrc) Serial.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc);
@@ -195,7 +206,33 @@ static void cmdBle(const char *arg) {
   else if (sscanf(arg, "forget %d", &n) == 1) Serial.println(bleForget(n) ? "forgot " + String(n) : "ERR no host " + String(n));
   else if (!strcmp(arg, "pair")) { blePairOpen(); Serial.println("pair open"); }
   else if (!strcmp(arg, "cancel")) { blePairCancel(); Serial.println("pair closed"); }
-  else Serial.println("ble list | ble forget <n> | ble pair | ble cancel");
+  else if (sscanf(arg, "use %d", &n) == 1) Serial.println(bleUse(n) ? "using " + String(n) : "ERR no host " + String(n));
+  else Serial.println("ble list | ble forget <n> | ble use <n> | ble pair | ble cancel");
+}
+
+static void cmdTouchcal(const char *arg) {
+  float m[6];
+  if (!strncmp(arg, "set", 3) && sscanf(arg + 3, "%f %f %f %f %f %f", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) == 6) touchSetCal(m, true);
+  else if (!strcmp(arg, "clear")) touchClearCal();
+  else if (*arg) { Serial.println("touchcal | touchcal set <a b c d e f> | touchcal clear"); return; }
+  touchGetCal(m);
+  Serial.printf("cal:%d %.6f %.6f %.3f %.6f %.6f %.3f\n", touchCalibrated(), m[0], m[1], m[2], m[3], m[4], m[5]);
+}
+
+static void cmdLed(const char *arg) {
+  char name[12] = "";
+  int r, g, b;
+  int n = sscanf(arg, "%11s %d %d %d", name, &r, &g, &b);
+  int p = n >= 1 ? ledsPatternFromName(name) : -2;
+  if (p == -1) { Serial.println("led rainbow|breathe|solid|status|off [r g b]"); return; }
+  if (p >= 0) ledsSetPattern(p);
+  if (n == 4) ledsSetColor(constrain(r, 0, 255), constrain(g, 0, 255), constrain(b, 0, 255));
+  uint8_t c[3], now[3];
+  ledsGetColor(c);
+  ledsCurrent(now);
+  uiMarkAll();
+  Serial.printf("led %s color %d %d %d brightness %d showing %d %d %d\n", ledsPatternName(ledsPattern()), c[0], c[1], c[2],
+                ledsBrightness(), now[0], now[1], now[2]);
 }
 
 // Returns false when the command prints its own prompt later (touch injection).
@@ -213,8 +250,9 @@ static bool runCommand(char *s) {
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
-    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d\n",
-                  currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0);
+    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d\n",
+                  currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
+                  uiModeName(), touchCalibrated() ? 1 : 0);
   } else if (cmd == "ls") {
     listFiles(*arg ? arg : "/");
   } else if (cmd == "cat") {
@@ -268,6 +306,7 @@ static bool runCommand(char *s) {
     else {
       String name = String(arg).substring(0, json - arg);
       if (name == "now_playing") uiNowPlaying(doc.as<JsonObjectConst>());
+      else if (name == "volume") uiVolume(doc.as<JsonObjectConst>());
       Serial.printf("widget %s\n", name.c_str());
     }
   } else if (cmd == "settime") {
@@ -314,7 +353,36 @@ static bool runCommand(char *s) {
   } else if (cmd == "bench") {
     displayBench();
   } else if (cmd == "calibrate") {
-    uiCalibrate();
+    if (!strcmp(arg, "cancel")) uiCalibrateCancel(); else uiCalibrate();
+    Serial.printf("ui %s\n", uiModeName());
+  } else if (cmd == "touchcal") {
+    cmdTouchcal(arg);
+  } else if (cmd == "traw") {
+    e = 120;
+    if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Serial.println("traw <rx> <ry> [ms]");
+    else { touchInjectRaw(a, b, e); return false; }
+  } else if (cmd == "perf") {
+    uiPerf(!strcmp(arg, "reset"));
+  } else if (cmd == "rbench") {
+    uiRenderBench();
+    uiMarkAll();
+  } else if (cmd == "led") {
+    cmdLed(arg);
+  } else if (cmd == "ledbright") {
+    ledsSetBrightness(constrain(atoi(arg), 0, 255));
+    Serial.printf("ledbright %d\n", ledsBrightness());
+  } else if (cmd == "click") {
+    if (*arg) feedbackSetClick(!strcmp(arg, "on"));
+    Serial.printf("click %s\n", feedbackClickOn() ? "on" : "off");
+  } else if (cmd == "hostname") {
+    if (!*arg) Serial.println("hostname <name>");
+    else Serial.println(bleSetHostName(arg) ? "hostname set" : "ERR no host connected");
+  } else if (cmd == "toast") {
+    uiToast(arg);
+    Serial.println("toast");
+  } else if (cmd == "sheet") {
+    if (!strcmp(arg, "close")) uiCloseSheet(); else uiOpenSheet();
+    Serial.printf("ui %s\n", uiModeName());
   } else {
     Serial.println("unknown");
   }

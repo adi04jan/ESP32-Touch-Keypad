@@ -11,3 +11,5 @@ static const char DEFAULT_PROFILE3[] PROGMEM = R"JSON({"schema_version":2,"profi
 static const char *const DEFAULT_PROFILES[] = { DEFAULT_PROFILE1, DEFAULT_PROFILE2, DEFAULT_PROFILE3 };
 
 #define DEFAULT_PROFILE_COUNT 3
+
+#define DEFAULTS_VERSION 0x0e9f4cf1u   // changes whenever a default changes

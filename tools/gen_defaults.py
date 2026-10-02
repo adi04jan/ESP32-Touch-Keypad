@@ -10,6 +10,7 @@ shows it), widget "media" (the full-page player, span 5x3).
 Host actions carry a starting slot; Studio reassigns slots when it saves.
 """
 import json
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -182,6 +183,8 @@ def main():
         out.append(f'static const char DEFAULT_PROFILE{i}[] PROGMEM = R"JSON({json.dumps(p, separators=(",", ":"))})JSON";\n')
     out.append("static const char *const DEFAULT_PROFILES[] = { DEFAULT_PROFILE1, DEFAULT_PROFILE2, DEFAULT_PROFILE3 };\n")
     out.append(f"#define DEFAULT_PROFILE_COUNT {len(PROFILES)}\n")
+    blob = "".join(json.dumps(p, separators=(",", ":")) for p in PROFILES).encode()
+    out.append(f"#define DEFAULTS_VERSION 0x{zlib.crc32(blob):08x}u   // changes whenever a default changes\n")
     (ROOT / "firmware/TouchKeypad/defaults_gen.h").write_text("\n".join(out), encoding="utf-8")
     (ROOT / "docs/device").mkdir(parents=True, exist_ok=True)
     (ROOT / "docs/device/profiles.js").write_text(

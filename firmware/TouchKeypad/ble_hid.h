@@ -30,3 +30,9 @@ uint32_t blePairLeftMs();
 void bleList();
 bool bleForget(int n);
 int  bleBondCount();
+
+bool bleHostUp(int n);                       // bond n has a live link
+int  bleConnectedSlot();                     // bond index of the connected host, -1 if none
+bool bleUse(int n);                          // switch to bond n (directed advertising)
+String bleHostName(int n);                   // the name Studio gave it, or "Host n+1"
+bool bleSetHostName(const char *name);       // name the connected host (Studio sends the PC name)

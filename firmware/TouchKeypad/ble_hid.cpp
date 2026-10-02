@@ -4,6 +4,7 @@
 #include "ui.h"
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
+#include <Preferences.h>
 
 #define RID_KB    1
 #define RID_CONS  2
@@ -361,4 +362,55 @@ bool bleForget(int n) {
   bool ok = NimBLEDevice::deleteBond(a);
   uiMarkStatus();
   return ok;
+}
+
+static bool bondUp(const NimBLEAddress &a) {
+  for (uint16_t h : server->getPeerDevices())
+    if (server->getPeerInfoByHandle(h).getIdAddress() == a) return true;
+  return false;
+}
+
+bool bleHostUp(int n) { return n >= 0 && n < NimBLEDevice::getNumBonds() && bondUp(NimBLEDevice::getBondedAddress(n)); }
+
+int bleConnectedSlot() {
+  for (int i = 0; i < NimBLEDevice::getNumBonds(); i++) if (bleHostUp(i)) return i;
+  return -1;
+}
+
+// Switch hosts: drop the current link and advertise directly to bond n, so that
+// computer reconnects. If it is not in range, blePoll() resumes open advertising.
+bool bleUse(int n) {
+  if (n < 0 || n >= NimBLEDevice::getNumBonds()) return false;
+  NimBLEAddress a = NimBLEDevice::getBondedAddress(n);
+  for (uint16_t h : server->getPeerDevices()) server->disconnect(h);
+  NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
+  adv->stop();
+  return adv->start(1280, &a);
+}
+
+// Names come from Studio (`hostname`), keyed by the bond's identity address.
+static String nameKey(const NimBLEAddress &a) {
+  String k = a.toString().c_str();
+  k.replace(":", "");
+  return k.substring(0, 12);
+}
+
+String bleHostName(int n) {
+  if (n < 0 || n >= NimBLEDevice::getNumBonds()) return "";
+  Preferences p;
+  p.begin("hosts", true);
+  String s = p.getString(nameKey(NimBLEDevice::getBondedAddress(n)).c_str(), "");
+  p.end();
+  return s.length() ? s : "Host " + String(n + 1);
+}
+
+bool bleSetHostName(const char *name) {
+  int n = bleConnectedSlot();
+  if (n < 0) return false;
+  Preferences p;
+  p.begin("hosts", false);
+  p.putString(nameKey(NimBLEDevice::getBondedAddress(n)).c_str(), String(name).substring(0, 20));
+  p.end();
+  uiMarkStatus();
+  return true;
 }
