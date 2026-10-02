@@ -29,7 +29,8 @@ Keys work with nothing installed, because the device is a standard BLE HID keybo
 
 ## Brand Commitments
 - Belongs to the Macropad family with Macropad Studio. Name: "ESP32 Touch Keypad".
-- The user pinned a visual direction for the design viewer: a layered paper-over-paper look like a puppet or paper-theatre art show, including the device's on-screen UI rendered as papercraft.
+- The user pinned a visual direction for the design viewer: a layered paper-over-paper look like a puppet or paper-theatre art show.
+- The device's own screen is "glass / smartwatch" (user decision, 2026-10-01, replacing the papercraft screen as "too funky"): see `firmware/DESIGN.md`.
 
 ## Evidence on Hand
 - Real content: the research findings, pin map, protocol, roadmap and risks in `docs/PLAN.md`; the Macropad v2.1 codebase at `D:\Personal\Project\ESP32-Macro-pad`.

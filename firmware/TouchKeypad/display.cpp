@@ -11,14 +11,14 @@ LGFX lcd;
 // rebuild: `lcd invert 1`, `lcd bgr 1`, `lcd mhz 27`, then reboot.
 static bool    knobInvert = false;
 static bool    knobBgr    = false;
-static uint8_t knobMhz    = 40;
+static uint8_t knobMhz    = 80;   // 80 MHz measured clean on this panel (bench stripe test)
 
 LGFX::LGFX() {
   {
     auto cfg = bus.config();
     cfg.spi_host    = HSPI_HOST;
     cfg.spi_mode    = 0;
-    cfg.freq_write  = 40000000;
+    cfg.freq_write  = 80000000;
     cfg.freq_read   = 4000000;
     cfg.spi_3wire   = false;
     cfg.use_lock    = true;
@@ -79,7 +79,7 @@ void displayBegin() {
   p.begin("lcd", true);
   knobInvert = p.getBool("invert", false);
   knobBgr    = p.getBool("bgr", false);
-  knobMhz    = p.getUChar("mhz", 40);
+  knobMhz    = p.getUChar("mhz", 80);
   p.end();
   {
     auto cfg = lcd.panel.config();
@@ -112,6 +112,36 @@ void displayLcdCmd(const char *arg) {
     p.end();
   }
   Serial.printf("lcd invert:%d bgr:%d mhz:%d (bgr/mhz apply after reboot)\n", knobInvert, knobBgr, knobMhz);
+}
+
+// Timings that set the animation budget: one full fill, one 96x90 cell push
+// (blocking and DMA), then a stripe pattern read back to prove writes at this clock.
+void displayBench() {
+  uint32_t t = micros();
+  for (int i = 0; i < 4; i++) lcd.fillScreen(i & 1 ? TFT_BLACK : TFT_NAVY);
+  uint32_t fill = (micros() - t) / 4;
+  LGFX_Sprite s(&lcd);
+  s.setColorDepth(16);
+  if (!s.createSprite(96, 90)) { Serial.println("ERR no RAM"); return; }
+  s.fillScreen(TFT_ORANGE);
+  t = micros();
+  for (int i = 0; i < 40; i++) s.pushSprite((i % 5) * 96, 30 + (i / 5 % 3) * 90);
+  uint32_t push = (micros() - t) / 40;
+  lcd.startWrite();
+  t = micros();
+  for (int i = 0; i < 40; i++) lcd.pushImageDMA((i % 5) * 96, 30 + (i / 5 % 3) * 90, 96, 90, (lgfx::rgb565_t *)s.getBuffer());
+  lcd.waitDMA();
+  uint32_t dma = (micros() - t) / 40;
+  lcd.endWrite();
+  for (int x = 0; x < SCR_W; x++) lcd.drawFastVLine(x, 0, SCR_H, (x & 1) ? TFT_WHITE : lgfx::color565(0x24, 0x34, 0x5c));
+  int bad = 0;
+  uint16_t px[SCR_W];
+  for (int y = 0; y < SCR_H; y += 40) {
+    REG_SET_FIELD(SPI_CTRL2_REG(2), SPI_MISO_DELAY_MODE, 2);
+    lcd.readRect(0, y, SCR_W, 1, (lgfx::rgb565_t *)px);
+    for (int x = 0; x < SCR_W; x++) bad += px[x] != ((x & 1) ? 0xFFFF : lgfx::color565(0x24, 0x34, 0x5c));
+  }
+  Serial.printf("bench mhz:%d fill_us:%u cell_push_us:%u cell_dma_us:%u stripe_errors:%d\n", knobMhz, fill, push, dma, bad);
 }
 
 // Read GRAM back over MISO one line at a time and stream it as base64 of

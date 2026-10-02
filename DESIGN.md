@@ -136,7 +136,7 @@ The viewer is a hand-coloured lithograph toy theatre. One gilt proscenium fills 
 
 Everything is drawn, not rendered. Plates are authored SVG with ink outline (#1b1814, 1 to 3px), diagonal hatching at 45 degrees and flat hand-coloured fills; paper carries a faint fractal grain. Specs, tables, pin maps and code sit on clean paper-white sheets so the numbers stay crisp, and the theatre does the theatre around them. Depth is physical: stacked paper layers with soft offset shadows, deckled edges and a coloured endpaper under-sheet peeking out at a slight rotation.
 
-The keypad's own screen belongs to the same world in cut paper: each tile is two paper layers (a darker base and a lighter face) with a small paper label chip beneath. Motion follows the stage: sheets slide on rails with exponential ease-out, and a press flattens the top paper onto its base.
+The keypad's own screen is a separate world, watch glass under an avionics display discipline, recorded in `firmware/DESIGN.md` and mocked in `docs/device/index.html`; the viewer's stage still shows it in its player. Motion follows the stage: sheets slide on rails with exponential ease-out.
 
 **Key Characteristics:**
 - One proscenium, one stage; no header, tab strip or card grid.

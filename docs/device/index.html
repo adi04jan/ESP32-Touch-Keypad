@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Touch Keypad Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Device tokens: the firmware ports these values (docs/device is the source of truth for the screen). */
+:root {
+  color-scheme: dark;
+  --g0: #0e141b; --g1: #06090c;                 /* ground, top to bottom */
+  --ply: #131a22; --ply-2: #0e141a;             /* sheet ply */
+  --well: #090d12;                              /* empty key socket */
+  --hair: rgba(214, 228, 243, .08); --hair-2: rgba(214, 228, 243, .15);
+  --txt: #e9eff5; --txt-2: #9aa6b4; --txt-3: #66737f; --lbl: #c9d3dd;
+  --cyan: #4cc9ea; --mag: #e56fd6; --green: #52d68f; --amber: #f2b746; --red: #ff6359;
+  --press: cubic-bezier(.2, .9, .3, 1); --spring: cubic-bezier(.34, 1.56, .64, 1); --out: cubic-bezier(.16, 1, .3, 1);
+  --page: #05070a; --page-txt: #c3ccd6; --page-txt-2: #7d8996;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--page); }
+body { margin: 0; color: var(--page-txt); font: 400 15px/1.55 "B612", ui-sans-serif, system-ui, sans-serif; padding-block: 32px 64px; padding-inline: 16px; }
+::selection { background: color-mix(in oklab, var(--cyan) 45%, transparent); color: #fff; }
+button { font: inherit; color: inherit; }
+.doc { max-width: 1040px; margin: 0 auto; }
+.doc > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; margin-bottom: 28px; }
+.doc h1 { margin: 0; font: 700 26px/1.2 "B612", sans-serif; color: #fff; text-wrap: balance; }
+.doc header p { margin: 0; color: var(--page-txt-2); max-width: 62ch; }
+.zoom { margin-left: auto; display: flex; gap: 4px; }
+.zoom button { height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: #141b23; color: var(--page-txt); cursor: pointer; box-shadow: inset 0 0 0 1px var(--hair-2); }
+.zoom button[aria-pressed="true"] { color: var(--mag); box-shadow: inset 0 0 0 1px var(--mag); }
+.zoom button:focus-visible, .scr button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr)); gap: 40px 32px; }
+.zoomed .gallery { grid-template-columns: 1fr; }
+figure { margin: 0; min-width: 0; }
+figcaption { margin-top: 10px; }
+figcaption b { display: block; color: #fff; font-weight: 700; }
+figcaption span { color: var(--page-txt-2); font-size: 14px; }
+.frame { overflow-x: auto; padding: 2px; }
+.zoomed .scr { zoom: 2; }
+@media (max-width: 520px) { .scr { zoom: .74; } .frame { overflow: visible; } .zoomed .scr { zoom: 1; } }
+
+/* ---------------------------------------------------------------- the screen */
+.scr { position: relative; width: 480px; height: 320px; flex: none; overflow: hidden; border-radius: 4px; color: var(--txt);
+  background: linear-gradient(180deg, var(--g0), var(--g1)); font-family: "B612", sans-serif; user-select: none; -webkit-user-select: none; }
+.scr :where(button) { border: 0; background: none; padding: 0; cursor: pointer; }
+.mono { font-family: "B612 Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* status band */
+.sb { position: absolute; inset: 0 0 auto 0; height: 28px; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--hair); }
+.sb .clock { font: 700 17px/1 "B612"; font-variant-numeric: tabular-nums; }
+.sb .prof { display: flex; align-items: center; gap: 6px; font: 700 13px/1 "B612"; }
+.sb .prof i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px color-mix(in oklab, var(--line) 30%, transparent); }
+.sb .prof span { font: 400 12px/1 "B612 Mono"; color: var(--txt-2); }
+.sb .host { margin-left: auto; display: flex; align-items: center; gap: 4px; font: 400 12px/1 "B612 Mono"; color: var(--green); }
+.sb .host.caution { color: var(--amber); } .sb .host.pairing { color: var(--mag); }
+.sb .usb { color: var(--txt-3); display: grid; }
+.sb .gear { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--txt);
+  background: linear-gradient(180deg, #242e39, #151c24); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px var(--hair-2); }
+
+/* key grid */
+.grid { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; display: grid; grid-template-columns: repeat(5, 96px); grid-template-rows: repeat(3, 90px); }
+.cell { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.key { --t: #8a98ab; position: relative; width: 66px; height: 66px; border-radius: 19px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d) 0%, color-mix(in oklab, var(--t) 36%, #070a0e) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--t) 30%, #fff), inset 0 0 0 1px color-mix(in oklab, var(--t) 70%, transparent), 0 12px 16px -12px #000;
+  transition: transform .26s var(--spring), filter .2s; }
+.key::before { content: ""; position: absolute; inset: 1px 1px 52% 1px; border-radius: 18px 18px 9px 9px; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0)); pointer-events: none; }
+.key > svg { position: relative; width: 36px; height: 36px; filter: drop-shadow(0 1px 3px color-mix(in oklab, var(--t) 60%, #000)); }
+/* signature: the press brightens with pressure (on the device: XPT2046 Z), here with hold time */
+.cell.pressed .key { transform: scale(calc(.94 - var(--pr, .4) * .04)); filter: brightness(calc(1.06 + var(--pr, .4) * .34)) saturate(calc(1 + var(--pr, .4) * .3)); transition: transform .09s var(--press); }
+.cell.pressed .key::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px rgba(255,255,255, calc(var(--pr, .4) * .5)); }
+.lbl { margin-top: 5px; font: 400 13px/14px "B612"; color: var(--lbl); max-width: 92px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.well { width: 66px; height: 66px; border-radius: 19px; background: var(--well); box-shadow: inset 0 2px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(255,255,255,.05); }
+.tag { position: absolute; top: -5px; right: -7px; height: 17px; padding: 0 5px; border-radius: 6px; font: 700 12px/17px "B612 Mono"; letter-spacing: .02em; }
+.tag.pc { color: var(--cyan); background: #071318; box-shadow: inset 0 0 0 1px var(--cyan); }
+.tag.hold { color: var(--txt-2); background: #0b1015; box-shadow: inset 0 0 0 1px var(--hair-2); }
+.tag.on { color: #062012; background: var(--green); }
+.cell.on .key { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--t) 30%, #fff), inset 0 0 0 2px var(--green), 0 12px 16px -12px #000; }
+.ring { position: absolute; top: 0; left: 12px; width: 72px; height: 72px; border-radius: 22px; border: 2px solid var(--green); pointer-events: none; transform: scale(1.06); opacity: .75; }
+.ring.alert { border-color: var(--red); }
+.ring.stamp { animation: stamp .7s var(--out) forwards; }
+@keyframes stamp { from { transform: scale(.9); opacity: 1; } 55% { opacity: 1; } to { transform: scale(1.08); opacity: 0; } }
+.hold-arc { position: absolute; top: 0; left: 12px; width: 72px; height: 72px; border-radius: 23px; pointer-events: none;
+  background: conic-gradient(var(--cyan) var(--p, 60%), transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 3px; }
+
+/* animated keys */
+.eq { position: relative; display: flex; align-items: flex-end; gap: 4px; height: 30px; filter: drop-shadow(0 1px 3px color-mix(in oklab, var(--t) 60%, #000)); }
+.eq i { width: 6px; border-radius: 3px; background: #fff; height: 40%; animation: eq 1s var(--out) infinite alternate; }
+.eq i:nth-child(2) { animation-duration: .7s; animation-delay: -.3s; } .eq i:nth-child(3) { animation-duration: .9s; animation-delay: -.5s; } .eq i:nth-child(4) { animation-duration: .6s; animation-delay: -.1s; }
+@keyframes eq { from { height: 20%; } to { height: 100%; } }
+.pulse::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 2px solid color-mix(in oklab, var(--t) 70%, #fff); animation: pulse 1.6s var(--out) infinite; }
+@keyframes pulse { from { transform: scale(.6); opacity: .9; } to { transform: scale(1.25); opacity: 0; } }
+.rec > svg { animation: rec 1.2s steps(1) infinite; }
+@keyframes rec { 50% { color: var(--red); } }
+
+/* page line */
+.line { position: absolute; left: 0; right: 0; bottom: 3px; height: 16px; display: flex; justify-content: center; align-items: center; gap: 22px; }
+.line::before { content: ""; position: absolute; height: 2px; width: calc(var(--n) * 30px - 22px); background: color-mix(in oklab, var(--line) 70%, #000); border-radius: 1px; }
+.line button { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--g1); box-shadow: inset 0 0 0 2px var(--line); }
+.line button[aria-current="true"] { width: 12px; height: 12px; background: var(--line); box-shadow: 0 0 0 2px var(--g1); }
+.line button[aria-current="true"]::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: #fff; }
+
+/* page change: staggered diagonal pop-in, one cell at a time */
+.grid.enter .cell { animation: pop .2s var(--out) backwards; animation-delay: calc(var(--d) * 26ms); }
+@keyframes pop { from { transform: scale(.82); opacity: 0; } }
+
+/* media player */
+.mp { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; }
+.art { position: absolute; left: 16px; top: 14px; width: 128px; height: 128px; border-radius: 16px; overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), inset 0 0 0 1px rgba(255,255,255,.08), 0 14px 22px -14px #000; }
+.art .synth { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.meta { position: absolute; left: 160px; top: 16px; right: 16px; }
+.meta .t { font: 700 25px/1.12 "B612"; color: #fff; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: balance; }
+.meta .al { margin-top: 4px; font: 400 15px/1.2 "B612"; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta .a { margin-top: 4px; display: flex; align-items: center; gap: 8px; font: 400 15px/1.2 "B612"; color: var(--txt-2); white-space: nowrap; }
+.meta .a .src { display: inline-flex; align-items: center; gap: 4px; color: var(--green); }
+.meta .mini-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.meta .mini-eq i { width: 3px; background: var(--green); border-radius: 1px; animation: eq .8s var(--out) infinite alternate; }
+.meta .mini-eq i:nth-child(2) { animation-duration: .55s; } .meta .mini-eq i:nth-child(3) { animation-duration: .7s; animation-delay: -.2s; }
+.seek { position: absolute; left: 160px; right: 16px; top: 104px; height: 44px; }
+.seek .tr { position: absolute; left: 0; right: 0; top: 19px; height: 6px; border-radius: 3px; background: #1f2832; box-shadow: inset 0 1px 1px rgba(0,0,0,.5); }
+.seek .fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--p); border-radius: 3px; background: linear-gradient(90deg, color-mix(in oklab, var(--cyan) 60%, #000), var(--cyan)); }
+.seek .knob { position: absolute; top: 15px; left: calc(var(--p) - 7px); width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px #000; }
+.times { position: absolute; left: 160px; right: 16px; top: 146px; display: flex; justify-content: space-between; font: 400 13px/1 "B612"; font-variant-numeric: tabular-nums; color: var(--txt-2); }
+.ctl { position: absolute; left: 12px; right: 12px; top: 176px; height: 84px; display: flex; align-items: center; justify-content: space-between; }
+.ctl button { --t: #8a98ab; position: relative; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--t) 40%, #10161d), color-mix(in oklab, var(--t) 14%, #070a0e));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 0 0 1px color-mix(in oklab, var(--t) 45%, transparent), 0 12px 16px -12px #000; transition: transform .26s var(--spring); }
+.ctl button:active { transform: scale(.92); transition-duration: .09s; }
+.ctl button svg { width: 28px; height: 28px; filter: drop-shadow(0 1px 3px color-mix(in oklab, var(--t) 60%, #000)); }
+.ctl .play { --t: var(--cyan); width: 84px; height: 84px; } .ctl .play svg { width: 36px; height: 36px; }
+.ctl .mute { width: 56px; height: 56px; } .ctl .mute svg { width: 24px; height: 24px; }
+
+/* sheet (ply 3) */
+.sheet { position: absolute; left: 0; top: 30px; width: 480px; height: 290px; border-radius: 16px 16px 0 0; background: linear-gradient(180deg, var(--ply), var(--ply-2));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13), 0 -12px 22px -14px #000; }
+.sheet.wipe { animation: wipe .24s var(--out) both; }
+@keyframes wipe { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+.rail { position: absolute; left: 8px; top: 10px; width: 108px; display: flex; flex-direction: column; gap: 4px; }
+.tab { height: 48px; border-radius: 12px; display: flex; align-items: center; gap: 9px; padding: 0 10px; font: 700 14px/1 "B612"; color: var(--txt-2); text-align: left; }
+.tab svg { width: 20px; height: 20px; flex: none; }
+.tab[aria-selected="true"] { color: var(--mag); background: color-mix(in oklab, var(--mag) 16%, transparent); }
+.pane { position: absolute; left: 128px; top: 12px; right: 14px; bottom: 12px; }
+.pane h2 { margin: 0; height: 44px; display: flex; align-items: center; font: 700 19px/1 "B612"; color: #fff; }
+.pane .done { position: absolute; right: 0; top: 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font: 400 15px/1.3 "B612"; }
+.row .v { font: 400 13px/1 "B612 Mono"; color: var(--txt-2); }
+.btn { height: 44px; padding: 0 16px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: 700 14px/1 "B612"; color: var(--txt);
+  background: linear-gradient(180deg, #242e39, #19212a); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 1px var(--hair-2); }
+.btn svg { width: 18px; height: 18px; }
+.btn.primary { color: #fff; background: linear-gradient(180deg, color-mix(in oklab, var(--cyan) 62%, #0b1218), color-mix(in oklab, var(--cyan) 36%, #05090c)); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 0 0 1px color-mix(in oklab, var(--cyan) 70%, transparent); }
+.btn.quiet { color: var(--red); background: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--red) 40%, transparent); }
+.slider { position: relative; height: 44px; margin-top: 2px; }
+.slider .tr { position: absolute; left: 13px; right: 13px; top: 19px; height: 6px; border-radius: 3px; background: #1f2832; box-shadow: inset 0 1px 1px rgba(0,0,0,.5); }
+.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--p); border-radius: 3px; background: var(--cyan); }
+.slider .th { position: absolute; top: 9px; left: calc(13px + (100% - 26px) * var(--f) - 13px); width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(#fff, #d5dde5); box-shadow: 0 3px 6px rgba(0,0,0,.7), inset 0 -1px 0 rgba(0,0,0,.15); }
+.seg { display: flex; gap: 4px; margin-top: 6px; }
+.seg button { flex: 1; height: 44px; border-radius: 11px; font: 700 13px/1 "B612"; color: var(--txt-2); background: #182029; box-shadow: inset 0 0 0 1px var(--hair); }
+.seg button[aria-pressed="true"] { color: var(--mag); background: color-mix(in oklab, var(--mag) 14%, #10161d); box-shadow: inset 0 0 0 1px var(--mag); }
+.sw { width: 52px; height: 30px; border-radius: 15px; position: relative; background: #222b35; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(#fff, #cfd8e0); box-shadow: 0 2px 4px rgba(0,0,0,.6); transition: transform .2s var(--spring); }
+.sw[aria-checked="true"] { background: color-mix(in oklab, var(--green) 70%, #0a0f13); } .sw[aria-checked="true"]::after { transform: translateX(22px); }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
+.card { height: 100px; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; text-align: left; background: #172029; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px var(--hair); }
+.card i { width: 22px; height: 4px; border-radius: 2px; background: var(--line); }
+.card b { font: 700 15px/1.2 "B612"; color: var(--txt); margin-top: 6px; }
+.card span { font: 400 12px/1.2 "B612 Mono"; color: var(--txt-2); }
+.card.empty { background: none; box-shadow: inset 0 0 0 1px var(--hair); } .card.empty b { color: var(--txt-3); }
+.card[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--mag); } .card[aria-current="true"] span { color: var(--mag); }
+.hosts { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.hostrow { height: 52px; border-radius: 12px; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 12px; background: #172029; box-shadow: inset 0 0 0 1px var(--hair); }
+.hostrow .n { flex: 1; min-width: 0; } .hostrow .n b { display: block; font: 700 15px/1.2 "B612"; } .hostrow .n span { font: 400 12px/1.2 "B612 Mono"; color: var(--txt-2); }
+.hostrow .n span.up { color: var(--green); }
+.hostrow.empty { background: none; color: var(--txt-3); }
+.hostrow .btn { height: 40px; padding: 0 12px; }
+.pats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 4px; }
+.pat { height: 76px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 700 13px/1 "B612"; color: var(--txt-2); background: #172029; box-shadow: inset 0 0 0 1px var(--hair); }
+.pat i { width: 28px; height: 28px; border-radius: 50%; }
+.pat[aria-pressed="true"] { color: var(--mag); box-shadow: inset 0 0 0 2px var(--mag); }
+dl.about { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font: 400 14px/1.25 "B612"; font-variant-numeric: tabular-nums; }
+dl.about dt { color: var(--txt-2); } dl.about dd { margin: 0; color: var(--txt); }
+
+/* pairing */
+.pair { position: absolute; inset: 30px 0 0 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 22px; }
+.pair h2 { margin: 0; font: 700 19px/1.2 "B612"; color: #fff; }
+.pair p { margin: 8px 0 0; max-width: 40ch; font: 400 15px/1.35 "B612"; color: var(--txt-2); }
+.pk { margin-top: 18px; font: 700 46px/1 "B612 Mono"; letter-spacing: .08em; color: #fff; }
+.pk span { margin-left: .35em; }
+.timer { margin-top: 18px; display: flex; align-items: center; gap: 10px; font: 400 15px/1 "B612"; font-variant-numeric: tabular-nums; color: var(--mag); }
+.timer .bar { width: 220px; height: 4px; border-radius: 2px; background: #222a33; overflow: hidden; } .timer .bar i { display: block; height: 100%; width: var(--p); background: var(--mag); }
+.pair .btn { position: absolute; bottom: 16px; }
+
+/* calibration */
+.cal { background: #05070a; }
+.reticle { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; color: var(--cyan); }
+.reticle.done { color: var(--green); } .reticle.todo { color: #2b3540; }
+.reticle svg { width: 56px; height: 56px; overflow: visible; }
+.cal .msg { position: absolute; left: 70px; right: 70px; top: 94px; text-align: center; text-wrap: balance; }
+.cal .msg h2 { margin: 0; font: 700 19px/1.2 "B612"; color: #fff; }
+.cal .msg p { margin: 8px 0 0; font: 400 15px/1.35 "B612"; color: var(--txt-2); }
+.cal .msg .step { margin-top: 10px; font: 400 13px/1 "B612 Mono"; color: var(--cyan); }
+.cal .ok { color: var(--green); display: inline-flex; align-items: center; gap: 6px; }
+.dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--cyan); }
+.cal .acts { position: absolute; bottom: 16px; left: 0; right: 0; display: flex; justify-content: center; gap: 12px; }
+
+/* overlays (ply 4) */
+.toast { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); height: 40px; padding: 0 16px 0 12px; border-radius: 20px; display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  font: 700 15px/1 "B612"; background: linear-gradient(180deg, #1f2833, #151c24); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 0 0 1px var(--hair-2), 0 10px 18px -8px #000; }
+.toast i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.hud { position: absolute; left: 50%; top: 50%; width: 260px; height: 76px; margin: -38px 0 0 -130px; border-radius: 22px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  background: linear-gradient(180deg, #1f2833, #141b23); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 0 0 1px var(--hair-2), 0 16px 26px -10px #000; }
+.hud svg { width: 26px; height: 26px; flex: none; }
+.hud .segs { flex: 1; display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; height: 16px; }
+.hud .segs i { border-radius: 2px; background: #29323c; } .hud .segs i.lit { background: linear-gradient(#fff, #cfd9e2); }
+.hud .n { font: 700 22px/1 "B612 Mono"; width: 36px; text-align: right; }
+
+@media (prefers-reduced-motion: reduce) { .scr *, .scr *::before, .scr *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="doc">
+  <header>
+    <h1>Touch Keypad screens</h1>
+    <p>Every screen of the 480×320 keypad, drawn at device pixels from the same profiles and icon set the firmware ships. The first screen responds to clicks: keys, page stations, the gear, the player. Album art is synthetic.</p>
+    <div class="zoom" role="group" aria-label="Scale"><button type="button" aria-pressed="true" data-z="1">1×</button><button type="button" aria-pressed="false" data-z="2">2×</button></div>
+  </header>
+  <main class="gallery" id="gallery"></main>
+</div>
+<script src="../../studio/renderer/keyicons.js"></script>
+<script src="profiles.js"></script>
+<script>
+"use strict";
+const P = window.DEFAULT_PROFILES, I = window.KEY_ICONS;
+const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+function icon(name, px = 24) {
+  const g = I[name];
+  if (!g) return "";
+  const paint = g.f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
+  return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" ${paint} aria-hidden="true">${g.d}</svg>`;
+}
+
+function statusBand(p, pageIdx, host = "PC-WORK", hostState = "") {
+  const hostTxt = hostState === "caution" ? "No host" : hostState === "pairing" ? "Pairing" : host;
+  const bt = hostState === "caution" ? "bluetooth-off" : hostState === "pairing" ? "bluetooth-searching" : "bluetooth";
+  return `<div class="sb" style="--line:${rgb(p.color)}"><span class="clock">14:05</span>
+    <span class="prof"><i></i>${esc(p.profile_name)} <span>${pageIdx + 1}/${p.pages.length}</span></span>
+    <span class="host ${hostState}">${icon(bt, 18)}${esc(hostTxt)}</span><span class="usb" title="USB power">${icon("plug-zap", 18)}</span>
+    <button class="gear" type="button" aria-label="Settings" data-act="sheet">${icon("settings", 18)}</button></div>`;
+}
+
+function keyHTML(k, st = {}) {
+  if (!k) return `<div class="cell"><div class="well"></div></div>`;
+  const t = rgb(k.led_color || [138, 152, 171]);
+  const host = (k.actions || []).some((a) => a.type === "host");
+  const tags = st.on ? `<span class="tag on">ON</span>` : host ? `<span class="tag pc">PC</span>` : k.hold_actions && !st.hold ? `<span class="tag hold">HOLD</span>` : "";
+  let face = icon(k.icon, 40), cls = "key";
+  if (k.anim === "eq" && st.playing) face = `<span class="eq"><i></i><i></i><i></i><i></i></span>`;
+  if (k.anim === "pulse" && st.live) cls += " pulse";
+  if (k.anim === "rec" && st.on) cls += " rec";
+  return `<div class="cell ${st.pressed ? "pressed" : ""} ${st.on ? "on" : ""}" data-id="${k.id}" style="--d:${st.d || 0}${st.pr != null ? `;--pr:${st.pr}` : ""}">
+    ${st.hold ? `<span class="hold-arc" style="--p:${st.hold}%"></span>` : ""}
+    <button type="button" class="${cls}" style="--t:${t}" aria-label="${esc(k.name)}">${face}${tags}</button>
+    <span class="lbl">${esc(k.name)}</span>${st.ring ? `<span class="ring ${st.ring}"></span>` : ""}</div>`;
+}
+
+function gridHTML(page, states = {}, enter = false) {
+  return `<div class="grid ${enter ? "enter" : ""}">${page.keys.map((k, i) => keyHTML(k, { ...(states[i + 1] || {}), d: (i % 5) + Math.floor(i / 5) })).join("")}</div>`;
+}
+
+function lineHTML(p, cur) {
+  return `<div class="line" style="--line:${rgb(p.color)};--n:${p.pages.length}">${p.pages.map((pg, i) =>
+    `<button type="button" aria-label="Page ${i + 1}: ${esc(pg.name)}" aria-current="${i === cur}" data-page="${i}"></button>`).join("")}</div>`;
+}
+
+function homeHTML(p, pageIdx, states, opts = {}) {
+  const page = p.pages[pageIdx];
+  const body = page.keys[0] && page.keys[0].widget === "media" ? playerHTML(opts.np) : gridHTML(page, states, opts.enter);
+  return statusBand(p, pageIdx, "PC-WORK", opts.host || "") + body + lineHTML(p, pageIdx);
+}
+
+const NP = { title: "Midnight City", album: "Hurry Up, We're Dreaming", artist: "M83", app: "Spotify", pos: 102, len: 243, playing: true };
+const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+function playerHTML(np = NP) {
+  const p = (np.pos / np.len * 100).toFixed(1) + "%";
+  return `<div class="mp"><div class="art"><svg class="synth" viewBox="0 0 128 128" role="img" aria-label="Album art (synthetic)"><defs><linearGradient id="sky" x1="0" y1="0" x2=".4" y2="1"><stop offset="0" stop-color="#2b2f7a"/><stop offset="1" stop-color="#120f2e"/></linearGradient></defs><rect width="128" height="128" fill="url(#sky)"/><circle cx="90" cy="38" r="23" fill="#ffb35c"/><circle cx="38" cy="102" r="38" fill="#ff4f8b"/><path d="M0 88h128M0 98h128M0 108h128" stroke="#fff" stroke-opacity=".55" stroke-width="2"/></svg></div>
+    <div class="meta"><div class="t">${esc(np.title)}</div><div class="al">${esc(np.album)}</div>
+      <div class="a">${esc(np.artist)} <span class="src">${icon("spotify", 14)}${esc(np.app)}</span>${np.playing ? `<span class="mini-eq"><i></i><i></i><i></i></span>` : ""}</div></div>
+    <button class="seek" type="button" aria-label="Seek" data-act="seek" style="--p:${p}"><span class="tr"><span class="fill"></span></span><span class="knob"></span></button>
+    <div class="times"><span>${clock(np.pos)}</span><span>−${clock(np.len - np.pos)}</span></div>
+    <div class="ctl">
+      <button type="button" class="mute" aria-label="Mute">${icon("volume-x", 24)}</button>
+      <button type="button" aria-label="Volume down">${icon("volume-1", 28)}</button>
+      <button type="button" aria-label="Previous">${icon("skip-back", 28)}</button>
+      <button type="button" class="play" aria-label="${np.playing ? "Pause" : "Play"}" data-act="play">${icon(np.playing ? "pause" : "play", 36)}</button>
+      <button type="button" aria-label="Next">${icon("skip-forward", 28)}</button>
+      <button type="button" aria-label="Volume up">${icon("volume-2", 28)}</button>
+    </div></div>`;
+}
+
+const TABS = [["display", "Display", "sun"], ["profiles", "Profiles", "layers"], ["bluetooth", "Bluetooth", "bluetooth"], ["led", "LED", "lightbulb"], ["device", "Device", "cpu"]];
+function sheetHTML(tab, wipe = false) {
+  const panes = {
+    display: `<h2>Display</h2>
+      <div class="row" style="margin-top:6px"><span>Brightness</span><span class="v">78%</span></div>
+      <div class="slider" style="--f:.78"><span class="tr"><span class="fill" style="--p:78%"></span></span><span class="th"></span></div>
+      <div class="row" style="margin-top:10px"><span>Dim after</span><span class="v">then off at 10 min</span></div>
+      <div class="seg" role="group" aria-label="Dim after">${["30 s", "1 min", "2 min", "5 min", "Never"].map((s, i) => `<button type="button" aria-pressed="${i === 2}">${s}</button>`).join("")}</div>`,
+    profiles: `<h2>Profiles</h2><div class="cards">${P.map((p, i) => `<button type="button" class="card" style="--line:${rgb(p.color)}" aria-current="${i === 0}"><i></i><b>${esc(p.profile_name)}</b><span>${i === 0 ? "Active" : p.pages.length + " pages"}</span></button>`).join("")}
+      ${[4, 5, 6, 7, 8].map((n) => `<button type="button" class="card empty"><b>Slot ${n}</b><span>Empty</span></button>`).join("")}</div>`,
+    bluetooth: `<h2>Bluetooth</h2><div class="hosts">
+      <div class="hostrow">${icon("bluetooth", 20)}<div class="n"><b>PC-WORK</b><span class="up">Connected</span></div><button type="button" class="btn quiet">Forget</button></div>
+      <div class="hostrow">${icon("bluetooth", 20)}<div class="n"><b>MacBook Air</b><span>Saved</span></div><button type="button" class="btn">Use</button><button type="button" class="btn quiet">Forget</button></div>
+      <div class="hostrow empty">${icon("bluetooth-off", 20)}<div class="n"><b>Empty slot</b></div></div>
+      <button type="button" class="btn primary" style="margin-top:2px">${icon("link", 18)}Pair new host</button></div>`,
+    led: `<h2>Status LED</h2><div class="pats" role="group" aria-label="LED pattern">${[["Rainbow", "conic-gradient(#ff5f57,#f2b746,#52d68f,#4cc9ea,#9b7bff,#ff5f57)"], ["Breathe", "radial-gradient(circle,#9b7bff,#2a2149)"], ["Solid", "#4f8cff"], ["Status", "radial-gradient(circle,#4cc9ea 0 35%,#0b1a20 36%)"], ["Off", "#1f262e"]]
+      .map(([n, bg], i) => `<button type="button" class="pat" aria-pressed="${i === 0}"><i style="background:${bg}"></i>${n}</button>`).join("")}</div>
+      <div class="row" style="margin-top:12px"><span>LED brightness</span><span class="v">60%</span></div>
+      <div class="slider" style="--f:.6"><span class="tr"><span class="fill" style="--p:60%"></span></span><span class="th"></span></div>`,
+    device: `<h2>Device</h2>
+      <div class="row" style="height:44px"><span>Key click</span><button type="button" class="sw" role="switch" aria-checked="true" aria-label="Key click"></button></div>
+      <div class="row" style="height:48px"><span>Touch calibration</span><button type="button" class="btn">${icon("crosshair", 18)}Calibrate</button></div>
+      <dl class="about"><dt>Firmware</dt><dd>3.1.0</dd><dt>Free memory</dt><dd>141 KB</dd><dt>Storage</dt><dd>0.4 of 2.0 MB</dd><dt>Bluetooth</dt><dd>88:F4:DA:B7:F8:76</dd></dl>`,
+  };
+  return `<div class="sheet ${wipe ? "wipe" : ""}"><div class="rail" role="tablist" aria-label="Settings">${TABS.map(([id, n, ic]) =>
+    `<button type="button" class="tab" role="tab" aria-selected="${id === tab}" data-tab="${id}">${icon(ic, 20)}${n}</button>`).join("")}</div>
+    <div class="pane">${panes[tab]}<button type="button" class="btn done" data-act="close">Done</button></div></div>`;
+}
+
+function pairHTML() {
+  return statusBand(P[0], 0, "", "pairing") + `<div class="pair"><h2>Pair a host</h2>
+    <p>On your computer open Bluetooth, add a device, choose Touch Keypad, then type this code.</p>
+    <div class="pk">482<span>913</span></div>
+    <div class="timer"><span class="bar" style="--p:86%"><i></i></span><span>0:52</span></div>
+    <button type="button" class="btn">Cancel</button></div>`;
+}
+
+const RETICLE = `<svg viewBox="-28 -28 56 56" fill="none" stroke="currentColor" stroke-width="2"><circle r="14"/><path d="M0-26v8M0 18v8M-26 0h8M18 0h8"/><circle r="2.5" fill="currentColor" stroke="none"/></svg>`;
+const CHECK = `<svg viewBox="-28 -28 56 56" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle r="14"/><path d="M-6 0l4 4 8-8"/></svg>`;
+function calHTML(step) {
+  const pts = [[36, 36], [444, 36], [444, 284], [36, 284]];
+  return pts.map(([x, y], i) => `<div class="reticle ${i < step ? "done" : i === step ? "" : "todo"}" style="left:${x}px;top:${y}px">${i < step ? CHECK : RETICLE}</div>`).join("") +
+    `<div class="msg"><h2>Touch calibration</h2><p>Press and hold the cyan target until it turns green.</p><div class="step mono">${step + 1} of 4</div></div>`;
+}
+function calTestHTML() {
+  const dots = [[120, 200], [140, 214], [300, 190], [362, 236], [212, 252], [90, 120], [400, 110]];
+  return `<div class="msg" style="top:40px"><h2><span class="ok">${icon("check", 20)}Calibrated, off by 3 px</span></h2><p>Tap anywhere: each dot is where the screen feels you.</p></div>` +
+    dots.map(([x, y]) => `<span class="dot" style="left:${x}px;top:${y}px"></span>`).join("") +
+    `<div class="acts"><button type="button" class="btn">${icon("rotate-ccw", 18)}Redo</button><button type="button" class="btn primary">${icon("check", 18)}Done</button></div>`;
+}
+
+function hudHTML(level) {
+  return `<div class="hud" role="status">${icon("volume-2", 26)}<div class="segs">${Array.from({ length: 16 }, (_, i) => `<i class="${i < Math.round(level / 100 * 16) ? "lit" : ""}"></i>`).join("")}</div><span class="n">${level}</span></div>`;
+}
+
+/* ---------------------------------------------------------------- gallery */
+const SCREENS = [
+  ["Home · live", "Click a key, a page station, the gear or a player control. Daily profile, page 1.", () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true } }), true],
+  ["Key states", "Pressed hard (Copy: the glass brightens with pressure), confirmed (Paste), refused with no host (GitHub), holding past half a second (Play), engaged toggle (Mic mute).",
+    () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true, hold: 70 }, 6: { pressed: true, pr: .85 }, 7: { ring: "ok" }, 12: { ring: "alert" } })],
+  ["Code profile", "Each profile owns a line colour; its pages are the stations along the bottom.", () => homeHTML(P[1], 0, {})],
+  ["Stream profile, live", "Animated keys: recording blinks red, an open mic pulses.", () => homeHTML(P[2], 0, { 5: { on: true }, 6: { live: true } })],
+  ["Media player", "Album art, track, source, exact running times; tap the bar to seek.", () => homeHTML(P[0], 1, {}, { np: NP })],
+  ["Settings · Display", "A soft-key rail, the current tab in magenta.", () => statusBand(P[0], 0) + sheetHTML("display")],
+  ["Settings · Profiles", "Eight slots; three ship filled.", () => statusBand(P[0], 0) + sheetHTML("profiles")],
+  ["Settings · Bluetooth", "Up to three hosts: switch, forget, pair another.", () => statusBand(P[0], 0) + sheetHTML("bluetooth")],
+  ["Settings · LED", "The board's status LED: rainbow by default.", () => statusBand(P[0], 0) + sheetHTML("led")],
+  ["Settings · Device", "Key click, touch calibration, about.", () => statusBand(P[0], 0) + sheetHTML("device")],
+  ["Pairing", "The passkey the computer asks for, with the window's time left.", pairHTML],
+  ["Calibration", "Four corner targets, then a centre check.", () => calHTML(1), false, "cal"],
+  ["Calibration · test", "After saving, tap to see where the screen feels each touch.", calTestHTML, false, "cal"],
+  ["Toast and volume", "A toast names a profile change; the volume panel shows the level Studio reports. No host: the band says so in amber.",
+    () => homeHTML(P[1], 0, {}, { host: "caution" }) + `<div class="toast" style="--line:${rgb(P[1].color)}"><i></i>Profile 2 · Code</div>` + hudHTML(42)],
+];
+
+const gallery = document.getElementById("gallery");
+gallery.innerHTML = SCREENS.map(([t, note, fn, live, cls], i) =>
+  `<figure><div class="frame"><div class="scr ${cls || ""}" id="${live ? "live" : `s${i}`}">${fn()}</div></div><figcaption><b>${esc(t)}</b><span>${esc(note)}</span></figcaption></figure>`).join("");
+
+/* ---------------------------------------------------------------- the live screen */
+const live = { prof: 0, page: 0, sheet: null, np: { ...NP }, on: { 1: true } };
+const liveEl = document.getElementById("live");
+function renderLive(enter) {
+  const st = {};
+  for (const id in live.on) if (live.on[id]) st[id] = { on: true };
+  st[2] = { ...(st[2] || {}), playing: live.np.playing };
+  liveEl.innerHTML = live.sheet ? statusBand(P[live.prof], live.page) + sheetHTML(live.sheet, enter === "sheet")
+    : homeHTML(P[live.prof], live.page, st, { enter: enter === "page", np: live.np });
+}
+let prRaf = 0;
+liveEl.addEventListener("pointerdown", (e) => {
+  const c = e.target.closest(".cell");
+  if (!c || live.sheet) return;
+  c.classList.add("pressed");
+  const t0 = performance.now();
+  const step = (t) => { c.style.setProperty("--pr", Math.min(1, (t - t0) / 600).toFixed(3)); prRaf = requestAnimationFrame(step); };
+  prRaf = requestAnimationFrame(step);
+});
+liveEl.addEventListener("pointerup", (e) => {
+  const c = e.target.closest(".cell");
+  cancelAnimationFrame(prRaf);
+  liveEl.querySelectorAll(".cell.pressed").forEach((x) => { x.classList.remove("pressed"); x.style.removeProperty("--pr"); });
+  const act = e.target.closest("[data-act]"), pg = e.target.closest("[data-page]"), tab = e.target.closest("[data-tab]");
+  if (tab) { live.sheet = tab.dataset.tab; return renderLive(); }
+  if (act) {
+    const a = act.dataset.act;
+    if (a === "sheet") { live.sheet = "display"; return renderLive("sheet"); }
+    if (a === "close") { live.sheet = null; return renderLive(); }
+    if (a === "play") { live.np.playing = !live.np.playing; return renderLive(); }
+    if (a === "seek") { const r = act.getBoundingClientRect(); live.np.pos = Math.round((e.clientX - r.left) / r.width * live.np.len); return renderLive(); }
+  }
+  if (pg) { live.page = +pg.dataset.page; return renderLive("page"); }
+  if (!c) return;
+  const k = P[live.prof].pages[live.page].keys[c.dataset.id - 1];
+  const a = (k.actions || [])[0] || {};
+  if (k.toggle) { live.on[k.id] = !live.on[k.id]; renderLive(); }
+  if (a.type === "page") { live.page = a.value - 1; return renderLive("page"); }
+  if (a.type === "back") { live.page = 0; return renderLive("page"); }
+  if (a.type === "media" && a.value === "PLAY_PAUSE") { live.np.playing = !live.np.playing; renderLive(); }
+  const cell = liveEl.querySelector(`.cell[data-id="${k.id}"]`);
+  if (cell) { const r = document.createElement("span"); r.className = "ring stamp"; cell.appendChild(r); setTimeout(() => r.remove(), 750); }
+});
+renderLive();
+
+document.querySelectorAll(".zoom button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".zoom button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  document.body.classList.toggle("zoomed", b.dataset.z === "2");
+}));
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-enum : uint8_t { G_DOWN, G_HOLD, G_TAP, G_SWIPE_L, G_SWIPE_R, G_SWIPE_U, G_SWIPE_D };
+enum : uint8_t { G_DOWN, G_HOLD, G_TAP, G_SWIPE_L, G_SWIPE_R, G_SWIPE_U, G_SWIPE_D, G_MOVE };
 
 void uiBegin();
 void uiTick();
@@ -29,4 +29,7 @@ void uiCloseSheet();
 bool uiSheetOpen();
 void uiSetBrightness(int level);     // 0-255, live + NVS
 void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS
+void uiCalibrate();                  // touch calibration screen (non-blocking)
+void uiCalibrateCancel();
+bool uiCalibrating();
 int  uiBrightness();

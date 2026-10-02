@@ -311,8 +311,10 @@ static bool runCommand(char *s) {
     Serial.printf("log %s\n", arg);
   } else if (cmd == "lcd") {
     displayLcdCmd(arg);
+  } else if (cmd == "bench") {
+    displayBench();
   } else if (cmd == "calibrate") {
-    touchCalibrate();
+    uiCalibrate();
   } else {
     Serial.println("unknown");
   }

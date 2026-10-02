@@ -18,3 +18,4 @@ void displayBegin();             // init panel, backlight, NVS knobs (invert/bgr
 void displaySetBacklight(uint8_t level);
 void displayShot();              // stream the screen as ###SHOT### + base64 lines + ###END###
 void displayLcdCmd(const char *arg);   // `lcd` CLI: show/set invert, bgr, mhz
+void displayBench();             // `bench` CLI: fill and push timings at the current SPI clock

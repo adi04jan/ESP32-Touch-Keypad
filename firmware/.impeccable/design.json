@@ -1,0 +1,102 @@
+{
+ "schemaVersion": 2,
+ "generatedAt": "2026-10-02T05:49:22+00:00",
+ "title": "Design System: Touch Keypad screen",
+ "extensions": {
+  "colorMeta": {
+   "cyan": {
+    "role": "secondary",
+    "displayName": "Selectable",
+    "canonical": "#4cc9ea"
+   },
+   "magenta": {
+    "role": "secondary",
+    "displayName": "Current",
+    "canonical": "#e56fd6"
+   },
+   "green": {
+    "role": "secondary",
+    "displayName": "Engaged",
+    "canonical": "#52d68f"
+   },
+   "amber": {
+    "role": "secondary",
+    "displayName": "Caution",
+    "canonical": "#f2b746"
+   },
+   "red": {
+    "role": "secondary",
+    "displayName": "Fault",
+    "canonical": "#ff6359"
+   },
+   "ground-top": {
+    "role": "neutral",
+    "displayName": "Ground",
+    "canonical": "#0e141b"
+   }
+  },
+  "typographyMeta": {
+   "family": "B612 / B612 Mono (OFL)",
+   "source": "tools/fonts/build_fonts.py -> VLW"
+  },
+  "shadows": {
+   "key": "0 12px 16px -12px #000",
+   "overlay": "0 16px 26px -10px #000"
+  },
+  "motion": {
+   "press": "cubic-bezier(.2,.9,.3,1) 90ms",
+   "release": "cubic-bezier(.34,1.56,.64,1) 260ms",
+   "pop-in": "200ms ease-out, 26ms stagger per diagonal",
+   "stamp": "700ms",
+   "budget": "<= 25% of the screen per 60 fps frame"
+  },
+  "breakpoints": {
+   "device": "480x320 fixed"
+  }
+ },
+ "components": [
+  {
+   "name": "Glass key",
+   "kind": "button",
+   "refersTo": "key",
+   "description": "Lit glass in the key's tint with a white glyph and a label under it.",
+   "html": "<div class=\"cell\"><button class=\"key\" style=\"--t:#4f8cff\">\u2026</button><span class=\"lbl\">Copy</span></div>",
+   "css": "see docs/device/index.html .key"
+  },
+  {
+   "name": "Primary button",
+   "kind": "button",
+   "refersTo": "button-primary",
+   "description": "Cyan glass, 44 px.",
+   "html": "<button class=\"btn primary\">Pair new host</button>",
+   "css": "see docs/device/index.html .btn.primary"
+  }
+ ],
+ "narrative": {
+  "northStar": "An instrument, not a toy",
+  "overview": "Watch-glass keys run by an avionics multi-function-display discipline on a graphite ground; every system colour is a state word.",
+  "keyCharacteristics": [
+   "Lit glass keys in user tints",
+   "Semantic system colour",
+   "B612 cockpit face",
+   "Strict ply order"
+  ],
+  "rules": [
+   "The State Word Rule",
+   "The Line Rule",
+   "The Ply Rule"
+  ],
+  "dos": [
+   "Glass in tint, white glyph",
+   "Pair colour with a word",
+   "Animate per cell",
+   "Tabular figures"
+  ],
+  "donts": [
+   "Coloured halos",
+   "Full-screen fades or slides",
+   "Labels above titles",
+   "A sixth system colour"
+  ]
+ }
+}

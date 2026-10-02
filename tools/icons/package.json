@@ -1,0 +1,13 @@
+{
+  "name": "touch-keypad-icons",
+  "private": true,
+  "description": "Rasterizes the Lucide icon set into alpha masks for the keypad firmware and Studio",
+  "scripts": {
+    "build": "node build_icons.js"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "lucide-static": "^1.49.0",
+    "simple-icons": "^16.33.0"
+  }
+}

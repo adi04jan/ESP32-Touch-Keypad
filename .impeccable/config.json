@@ -20,6 +20,16 @@
         ],
         "createdAt": "2026-10-01T21:50:29.350Z",
         "reason": "Claude triage: flagged children are intentionally full-bleed: sheet deckle edge strips (.tail, ::before), the stage backdrop plate, and the keypad bezel inside .shell (percent padding)."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "b612",
+        "createdAt": "2026-10-02T05:37:53.001Z"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "b612 mono",
+        "createdAt": "2026-10-02T05:37:53.353Z"
       }
     ]
   }

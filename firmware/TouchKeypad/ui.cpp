@@ -423,7 +423,7 @@ static void sheetTap(int x, int y) {
     case B_PROF_DN: uiSetProfile(currentProfile > 1 ? currentProfile - 1 : NUM_PROFILES); break;
     case B_PROF_UP: uiSetProfile(currentProfile < NUM_PROFILES ? currentProfile + 1 : 1); break;
     case B_PAIR: uiCloseSheet(); blePairOpen(); break;
-    case B_CAL: touchCalibrate(); dirtySheet = true; break;
+    case B_CAL: uiCalibrate(); break;
   }
 }
 
@@ -698,3 +698,8 @@ void uiTick() {
   }
   if (dirtyDots) { dirtyDots = false; drawDots(); }
 }
+
+// ponytail: placeholder until the calibration screen lands with the new UI.
+void uiCalibrate() {}
+void uiCalibrateCancel() {}
+bool uiCalibrating() { return false; }
