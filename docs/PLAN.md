@@ -321,7 +321,9 @@ v2.1's engine, unchanged in structure. It runs one step per `tick()`, waits `def
 - **NVS:** bonds (NimBLE), touch calibration, brightness, timers, last profile and page, config-lock state, key click.
 - Tiles are content-addressed, so a shared tile is stored once and re-syncs skip unchanged tiles.
 
-### 6.9 RAM budget (estimates; measure in M0)
+### 6.9 RAM budget (estimates)
+Measured on firmware 3.0.0: about 147 KB heap free with NimBLE up and the 96×90 cell sprite allocated, with a largest block of 110 KB. That is enough to buffer a 64 KB upload in RAM (§8.3). The UI composes one cell at a time in a 17 KB sprite instead of DMA ping-pong line buffers.
+
 | Item | Size |
 |---|---|
 | NimBLE | ~60 KB |
@@ -497,7 +499,7 @@ Example `status` reply: `Profile:1 loaded:1 idle:0 mode:ble ver:3.0.0 model:touc
 > ###END###
 < SAVED /t/3fa9c2d1.565
 ```
-- JSON uploads keep v2.1's parse-before-commit, atomicWrite and 5 s stall timeout. The size cap rises from 16 KB to 64 KB for multi-page profiles. Lines are streamed to `<file>.tmp` rather than collected in RAM (§4 porting notes).
+- JSON uploads keep v2.1's parse-before-commit, atomicWrite and 5 s stall timeout. The size cap rises from 16 KB to 64 KB for multi-page profiles. The device acknowledges the header with `RECV <path>`. It collects the upload in RAM and writes `<file>.tmp` only after `###END###`: streaming to flash dropped bytes, because this core's UART ISR is not in IRAM and a flash erase overflows the RX FIFO (found in M0; see `docs/PROTOCOL.md`).
 - Tile uploads (`###BEGINB### <path> <size> crc=<crc32>`) are decoded line by line into `<path>.tmp`, checked against the size and CRC32, and only then renamed into place.
 
 ### 8.4 Sync
@@ -612,4 +614,4 @@ Studio 3 changes live in the Macropad repo (§10).
 1. Is a battery planned? If so, move battery mode and deeper sleep earlier than M5.
 2. Should the default be 5×3 (Stream Deck MK.2 parity), or 4×3 with larger keys for resistive touch? Decide after the M0 touch accuracy test.
 3. Is the optional EC11 dial worth the enclosure work? It uses the I2C header pins.
-4. Arduino core: stay on 2.0.17 (the vendor's main test target) or move to 3.x (the vendor also tested 3.0.3, and v2.1 is on 3.2.x, so fewer backports)? Decide in M0 once LovyanGFX and NimBLE are running.
+4. ~~Arduino core: stay on 2.0.17 or move to 3.x?~~ Decided in M0: core 3.2.1. LovyanGFX, NimBLE HID, touch, LittleFS and screen readback all run on it (screen readback needs SPI MISO delay mode 2).
