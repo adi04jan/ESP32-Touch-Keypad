@@ -28,13 +28,14 @@ static const C3 G0 = HEXC(0x0e141b), G1 = HEXC(0x06090c), PLY = HEXC(0x131a22), 
 #define KEY_R 19.0f
 #define LINE_Y 300
 #define POP_MS 120
-#define POP_STEP 24
+#define POP_STEP 28
 #define DIM_DEFAULT_S 120
 
 static int cellX(int c) { return (c % GRID_COLS) * CELL_W; }
 static int cellY(int c) { return STATUS_H + (c / GRID_COLS) * CELL_H; }
 static float clamp01(float t) { return t < 0 ? 0 : t > 1 ? 1 : t; }
 static float easeOut(float t) { t = clamp01(t); float u = 1 - t; return 1 - u * u * u; }
+static float easeQuad(float t) { t = clamp01(t); return 1 - (1 - t) * (1 - t); }
 static float easeBack(float t) { t = clamp01(t); float u = t - 1; return 1 + 2.70158f * u * u * u + 1.70158f * u * u; }
 static bool inRect(int x, int y, int rx, int ry, int rw, int rh) { return x >= rx && x < rx + rw && y >= ry && y < ry + rh; }
 
@@ -68,7 +69,7 @@ static uint32_t toast0 = 0;
 static bool toastOn = false;
 static uint32_t hud0 = 0;
 static bool hudOn = false, hudMuted = false;
-static int hudLevel = -1, hudDir = 0;   // dir: 1 up, -1 down, 0 mute
+static int hudLevel = -1, hudDir = 1;   // dir: 1 up, -1 down
 
 static uint8_t sheetTab = 0;
 static uint32_t sheet0 = 0;
@@ -76,8 +77,15 @@ static bool sheetClosing = false;
 static int sheetTopDrawn = SCR_H;
 static int dragSlider = -1;          // 0 brightness, 1 LED brightness
 static struct { char name[24]; int pages; uint8_t col[3]; bool ok; } slots[NUM_PROFILES];
+// Readouts that are slow to fetch (LittleFS walks, NVS reads): taken when the sheet
+// opens or changes, never inside a render.
+static struct { size_t used, total; uint32_t heap; char mac[20]; int bonds; bool up[3]; char names[3][24]; } info;
+static char hostName[24] = "";
 
 static uint32_t pairKey = 0;
+static uint32_t wipe0 = 0;           // keys <-> player: the new page wipes in from the top
+static bool wiping = false;
+static int wipeDrawn = STATUS_H;
 
 static int8_t calStep = -1;          // 0-3 corners, 4 verify, 5 test pad
 static int calRaw[4][2];
@@ -161,17 +169,34 @@ static void slider(int x, int y, int w, float f) {   // 44 px tall control, trac
 }
 
 // ---------------------------------------------------------------- keys
-static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
+// Custom tile images, kept decoded for the last few keys drawn so an animation
+// does not read flash every frame (a read also stalls the UART interrupt).
+static struct { char crc[9]; uint16_t *img; uint32_t used; } tileCache[3];
+
+static const uint16_t *tileImage(const char *crc) {
+  int slot = 0;
+  for (int i = 0; i < 3; i++) {
+    if (tileCache[i].img && !strncmp(tileCache[i].crc, crc, 8)) { tileCache[i].used = millis(); return tileCache[i].img; }
+    if (tileCache[i].used < tileCache[slot].used) slot = i;
+  }
   char path[24];
   snprintf(path, sizeof path, "/t/%.8s.565", crc);
-  if (!LittleFS.exists(path)) return false;
+  if (!LittleFS.exists(path)) return nullptr;
+  auto &t = tileCache[slot];
+  if (!t.img) t.img = (uint16_t *)malloc(TILE_PX * TILE_PX * 2);
   File f = LittleFS.open(path, "r");
-  uint16_t *img = (uint16_t *)malloc(TILE_PX * TILE_PX * 2);
-  bool ok = img && f && f.read((uint8_t *)img, TILE_PX * TILE_PX * 2) == TILE_PX * TILE_PX * 2;
+  bool ok = t.img && f && f.read((uint8_t *)t.img, TILE_PX * TILE_PX * 2) == TILE_PX * TILE_PX * 2;
   f.close();
-  if (ok) blitImage(img, TILE_PX, TILE_PX, x, y, sz, sz, KEY_R * sz / KEY, alpha);
-  free(img);
-  return ok;
+  if (!ok) { t.crc[0] = 0; return nullptr; }
+  strlcpy(t.crc, crc, sizeof t.crc);
+  t.used = millis();
+  return t.img;
+}
+
+static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
+  const uint16_t *img = tileImage(crc);
+  if (img) blitImage(img, TILE_PX, TILE_PX, x, y, sz, sz, KEY_R * sz / KEY, alpha);
+  return img != nullptr;
 }
 
 static void eqBars(float cx, float cy, float s, C3 sh, int alpha, uint32_t now) {
@@ -295,7 +320,7 @@ static void drawStatus() {
   glyph(iconFind("settings", true), true, 466, 14, 18, TXT);
   glyph(iconFind("plug-zap", true), true, 440, 14, 18, TXT3);
   bool pairing = blePairing(), up = hidConnected();
-  String host = pairing ? String("Pairing") : up ? bleHostName(bleConnectedSlot()) : String("No host");
+  String host = pairing ? String("Pairing") : up ? String(hostName) : String("No host");
   host = ellipsize(fRead, host.c_str(), 120);
   C3 hc = pairing ? MAG : up ? GREEN : AMBER;
   int tw = textW(fRead, host.c_str());
@@ -403,8 +428,18 @@ static const C3 SWATCH[8] = { HEXC(0x4f8cff), HEXC(0x3fc6e0), HEXC(0x52d68f), HE
 #define PANE_X 128
 #define PANE_W 338
 
+static void refreshInfo() {
+  info.used = LittleFS.usedBytes();
+  info.total = LittleFS.totalBytes();
+  info.heap = ESP.getFreeHeap();
+  strlcpy(info.mac, NimBLEDevice::getAddress().toString().c_str(), sizeof info.mac);
+  info.bonds = min(bleBondCount(), 3);
+  for (int i = 0; i < info.bonds; i++) { info.up[i] = bleHostUp(i); strlcpy(info.names[i], bleHostName(i).c_str(), sizeof info.names[i]); }
+}
+
 static void loadSlots() {
   for (int i = 0; i < NUM_PROFILES; i++) slots[i].ok = profileMeta(i + 1, slots[i].name, sizeof slots[i].name, &slots[i].pages, slots[i].col);
+  refreshInfo();
 }
 
 static void seg5(int y, int cur, const char *const *labels) {
@@ -457,15 +492,14 @@ static void drawPane() {
       break;
     }
     case 2: {
-      int n = bleBondCount();
       for (int i = 0; i < 3; i++) {
         int y = 92 + i * 58;
-        if (i < n) {
-          bool up = bleHostUp(i);
+        if (i < info.bonds) {
+          bool up = info.up[i];
           rrFill(PANE_X, y, PANE_W, 52, 12, solidFill(CARD));
           rrRing(PANE_X + 0.5f, y + 0.5f, PANE_W - 1, 51, 11.5f, 1, mix(CARD, HAIR, 20));
           glyph(iconFind("bluetooth", true), true, PANE_X + 22, y + 26, 20, TXT);
-          text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, bleHostName(i).c_str(), 140).c_str(), TXT);
+          text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, info.names[i], 140).c_str(), TXT);
           text(fRead, PANE_X + 42, y + 40, up ? "Connected" : "Saved", up ? GREEN : TXT2);
           button(PANE_X + PANE_W - 86, y + 6, 80, 40, "Forget", nullptr, 2, pressedBtn == 20 + i);
           if (!up) button(PANE_X + PANE_W - 156, y + 6, 62, 40, "Use", nullptr, 0, pressedBtn == 10 + i);
@@ -520,13 +554,13 @@ static void drawPane() {
       rrFill(on ? 439 : 417, 102, 24, 24, 12, knob);
       text(fBody, PANE_X, 167, "Touch calibration", TXT);
       button(PANE_X + PANE_W - 130, 140, 130, 44, "Calibrate", "crosshair", 0, pressedBtn == 40);
-      size_t used = LittleFS.usedBytes(), total = LittleFS.totalBytes();
+      size_t used = info.used, total = info.total;
       const char *dt[4] = { "Firmware", "Free memory", "Storage", "Bluetooth" };
       char dd[4][40];
       snprintf(dd[0], 40, "%s", FW_VERSION);
-      snprintf(dd[1], 40, "%u KB", (unsigned)(ESP.getFreeHeap() / 1024));
+      snprintf(dd[1], 40, "%u KB", (unsigned)(info.heap / 1024));
       snprintf(dd[2], 40, "%.1f of %.1f MB", used / 1048576.0f, total / 1048576.0f);
-      snprintf(dd[3], 40, "%s", NimBLEDevice::getAddress().toString().c_str());
+      snprintf(dd[3], 40, "%s", info.mac);
       for (int i = 0; i < 4; i++) {
         text(fBody, PANE_X, 212 + i * 23, dt[i], TXT2);
         text(fBody, PANE_X + 130, 212 + i * 23, dd[i], TXT);
@@ -536,7 +570,7 @@ static void drawPane() {
 }
 
 static int sheetTop(uint32_t now) {
-  float t = clamp01((now - sheet0) / 240.0f), e = easeOut(t);
+  float t = clamp01((now - sheet0) / 260.0f), e = easeQuad(t);
   if (sheetClosing) e = 1 - e;
   if (mode != M_SHEET) return SCR_H;
   return SCR_H - (int)((SCR_H - STATUS_H) * e);
@@ -678,7 +712,7 @@ static void drawHud(uint32_t now) {
   float s = 0.9f + 0.1f * a, w = HUD_W * s, h = HUD_H * s, x = 240 - w / 2, y = 160 - h / 2;
   softShadow(x, y, w, h, A);
   rrFill(x, y, w, h, 22 * s, pillFill(), A);
-  bool muted = hudMuted || hudDir == 0;
+  bool muted = hudMuted;
   glyph(iconFind(muted ? "volume-x" : hudDir < 0 ? "volume-1" : "volume-2", true), true, x + 31 * s, 160, 26 * s, TXT, A);
   if (hudLevel >= 0) {
     float sx = x + 56 * s, sw = 148 * s, segW = (sw - 45 * s) / 16;
@@ -770,9 +804,16 @@ static bool animate(uint32_t now) {
     }
     if (pressedBtn >= 0 || released >= 100) { mark(0, BTN_Y - 46, SCR_W, 92); live = true; if (released >= 100 && now - release0 > 200) released = -1; }
   }
+  if (wiping) {
+    float e = easeQuad((now - wipe0) / 220.0f);
+    int y = STATUS_H + (int)((LINE_Y - STATUS_H) * e);
+    if (y > wipeDrawn) { mark(0, wipeDrawn, SCR_W, y - wipeDrawn); wipeDrawn = y; }
+    if (e >= 1) wiping = false;
+    live = true;
+  }
   if (mode == M_SHEET || sheetClosing) {
     int top = sheetTop(now);
-    if (sheetClosing && now - sheet0 > 240) { sheetClosing = false; mode = M_HOME; emitMode(); top = SCR_H; }
+    if (sheetClosing && now - sheet0 > 260) { sheetClosing = false; mode = M_HOME; emitMode(); top = SCR_H; }
     if (top != sheetTopDrawn) {
       int a = min(top, sheetTopDrawn), b = max(top, sheetTopDrawn);
       mark(0, a - 2, SCR_W, b - a + 4);
@@ -880,7 +921,11 @@ void uiBegin() {
 
 void uiMarkAll() { markScreen(); }
 void uiMarkCell(int c) { if (c >= 0 && c < NUM_CELLS) { if (playerPage()) mark(0, STATUS_H, SCR_W, LINE_Y - STATUS_H); else markCellRect(c); } }
-void uiMarkStatus() { mark(0, 0, SCR_W, STATUS_H); if (mode == M_SHEET && sheetTab == 2) mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
+void uiMarkStatus() {   // BLE state changed: refresh the cached names, then redraw
+  strlcpy(hostName, hidConnected() ? bleHostName(bleConnectedSlot()).c_str() : "", sizeof hostName);
+  mark(0, 0, SCR_W, STATUS_H);
+  if (mode == M_SHEET && sheetTab == 2) { refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
+}
 void uiActivity() { lastAct = millis(); }
 const char *uiModeName() { return MODE_NAMES[mode]; }
 
@@ -923,7 +968,17 @@ static void startWave() {
   for (int c = 0; c < NUM_CELLS; c++) ca[c].ring = 0;
   mark(0, 0, SCR_W, STATUS_H);
   mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
-  if (playerPage()) mark(0, STATUS_H, SCR_W, LINE_Y - STATUS_H);
+}
+
+// The page kind changes (keys <-> player): wipe the new page down over the old.
+static void startWipe() {
+  for (int c = 0; c < NUM_CELLS; c++) { ca[c].pop0 = 0; ca[c].ring = 0; }
+  pressed = released = -1;
+  wiping = true;
+  wipe0 = millis();
+  wipeDrawn = STATUS_H;
+  mark(0, 0, SCR_W, STATUS_H);
+  mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
 }
 
 void uiGoPage(int idx, bool push) {
@@ -936,8 +991,7 @@ void uiGoPage(int idx, bool push) {
     backStack[backDepth++] = from;
   }
   Serial.printf("EVT:PAGE %d\n", idx + 1);
-  startWave();
-  if (wasPlayer && !playerPage()) mark(0, STATUS_H, SCR_W, LINE_Y - STATUS_H);
+  if (wasPlayer != playerPage()) startWipe(); else startWave();
 }
 
 void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
@@ -997,7 +1051,7 @@ void uiNowPlaying(JsonObjectConst o) {
 void uiVolume(JsonObjectConst o) {
   int lvl = o["level"] | -1;
   bool muted = o["muted"] | false;
-  if (hudLevel >= 0 && lvl >= 0) hudDir = muted ? 0 : lvl > hudLevel ? 1 : lvl < hudLevel ? -1 : hudDir;
+  if (hudLevel >= 0 && lvl >= 0) hudDir = lvl > hudLevel ? 1 : lvl < hudLevel ? -1 : hudDir;
   hudLevel = lvl;
   hudMuted = muted;
   if (!hudOn) hud0 = millis(); else hud0 = millis() - 130;   // already showing: hold, don't replay the entrance
@@ -1011,8 +1065,7 @@ void uiMediaKey(const char *v) {
     if (!strcasecmp(v, "PLAY_PAUSE") && np.have) { np.pos = npPos(); np.at = millis(); np.playing = !np.playing; if (playerPage()) mark(0, STATUS_H, SCR_W, LINE_Y - STATUS_H); }
     return;
   }
-  hudDir = dir;
-  if (dir == 0) hudMuted = !hudMuted; else hudMuted = false;
+  if (dir == 0) hudMuted = !hudMuted; else { hudDir = dir; hudMuted = false; }
   if (!hudOn) hud0 = millis(); else hud0 = millis() - 130;
   hudOn = true;
   mark(HUD_X - 6, HUD_Y - 4, HUD_W + 12, HUD_H + 22);
@@ -1161,15 +1214,15 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
 static void sheetTap(int x, int y) {
   for (int i = 0; i < 5; i++)
     if (inRect(x, y, 8, 40 + i * 52, 108, 48)) {
-      if (i == 1) loadSlots();
+      if (i == 1) loadSlots(); else refreshInfo();
       sheetTab = i;
       mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H);
       return;
     }
   int b = sheetButtonAt(x, y);
   if (b == 1) { uiCloseSheet(); return; }
-  if (b >= 10 && b < 13) { bleUse(b - 10); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
-  if (b >= 20 && b < 23) { bleForget(b - 20); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
+  if (b >= 10 && b < 13) { bleUse(b - 10); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
+  if (b >= 20 && b < 23) { bleForget(b - 20); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
   if (b == 30) { mode = M_HOME; blePairOpen(); return; }
   if (b == 40) { uiCalibrate(); return; }
   switch (sheetTab) {

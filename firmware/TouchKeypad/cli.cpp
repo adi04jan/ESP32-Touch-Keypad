@@ -259,6 +259,12 @@ static bool runCommand(char *s) {
     char p[64];
     normPath(arg, p, sizeof p);
     if (!*arg) Serial.println("cat <file>"); else catFile(p);
+  } else if (cmd == "rm") {
+    char p[64];
+    normPath(arg, p, sizeof p);
+    if (!*arg || strstr(p, "..")) Serial.println("rm <file>");
+    else if (!LittleFS.exists(p) || LittleFS.open(p).isDirectory()) Serial.printf("ERR no such file: %s\n", p);
+    else { LittleFS.remove(p); Serial.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
   } else if (cmd == "fsinfo") {
     Serial.printf("FS_INFO:%u,%u\n", (unsigned)LittleFS.totalBytes(), (unsigned)LittleFS.usedBytes());
   } else if (cmd == "reboot") {
