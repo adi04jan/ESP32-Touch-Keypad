@@ -36,7 +36,7 @@ cd studio && npm start               # run from source
 python tools/kp.py build --release && cd studio && npm run dist   # installer with the firmware bundled
 ```
 
-Studio's Device view installs the bundled firmware over USB (profiles, pairings and calibration are kept).
+Studio's editor shows the keypad's screen in its current theme; keys edit live (Ctrl+Z undoes, Ctrl+C / Ctrl+V copy keys, arrows move). It tells you when the keypad needs calibrating or has older firmware than Studio bundles, and its Device view installs that firmware over USB (profiles, pairings and calibration are kept). Without a keypad Studio only previews: profiles live on the keypad.
 
 ## Tests, from fastest to fullest
 

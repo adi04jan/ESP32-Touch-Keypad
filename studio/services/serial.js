@@ -205,9 +205,9 @@ class SerialLink extends EventEmitter {
 
   uploadBinary(path, buf) { return this._upload(path, buildBinaryUploadLines(path, buf)); }
 
-  readFile(filename) {
+  readFile(filename, quiet = false) {
     if (!filename.startsWith("/")) filename = "/" + filename;
-    return this.command(`cat ${filename}`).then(stripCatEcho);
+    return this.command(`cat ${filename}`, undefined, quiet).then(stripCatEcho);
   }
 
   // Find the keypad: CH340 port whose `status` reply carries model:touch.

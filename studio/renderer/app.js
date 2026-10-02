@@ -79,7 +79,7 @@ const newer = (a, b) => { const x = String(a).split(".").map(Number), y = String
 /* ============ state ============ */
 const state = {
   slots: Object.fromEntries(Array.from({ length: NUM_PROFILES }, (_, i) => [i + 1, blankProfile(i + 1)])),
-  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight",
+  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight", empty: {},
   conn: { connected: false }, settings: {}, np: { title: "", album: "", artist: "", app: "", pos: 0, len: 0, playing: false }, art: null,
 };
 const prof = () => state.slots[state.slot];
@@ -147,8 +147,10 @@ function devHTML() {
 }
 
 function renderTop() {
-  $("st-slots").innerHTML = Array.from({ length: NUM_PROFILES }, (_, i) => i + 1).map((n) =>
-    `<button aria-pressed="${n === state.slot}" data-stslot="${n}" title="${n === state.conn.activeSlot ? "Active on the keypad" : ""}">${n} · ${esc(state.slots[n].profile_name)}${n === state.conn.activeSlot && state.conn.connected ? " ●" : ""}</button>`).join("");
+  $("st-slots").innerHTML = Array.from({ length: NUM_PROFILES }, (_, i) => i + 1).map((n) => {
+    const empty = state.conn.connected && state.empty[n];
+    return `<button aria-pressed="${n === state.slot}" data-stslot="${n}" class="${empty ? "empty" : ""}" title="${n === state.conn.activeSlot ? "Active on the keypad" : empty ? "Empty slot: edit it to create a profile" : ""}">${n} · ${empty ? "Empty" : esc(state.slots[n].profile_name)}${n === state.conn.activeSlot && state.conn.connected ? " ●" : ""}</button>`;
+  }).join("");
   const c = state.conn, pill = $("conn-pill");
   pill.className = `pill ${c.connected ? "ok" : "off"}`;
   pill.lastElementChild.textContent = c.connected
@@ -421,10 +423,22 @@ function changed(kinds, fromInput = false) {
 }
 function setSave(cls, text) { const el = $("save-ind"); el.className = `save-ind ${cls}`; el.lastElementChild.textContent = text; }
 
+// Names for the slot strip without switching the keypad: each profile file read in place.
+async function peekSlots() {
+  for (let n = 1; n <= NUM_PROFILES; n++) {
+    if (!state.conn.connected || n === state.slot) continue;
+    const p = await api.peekProfile(n);
+    state.empty[n] = !p;
+    if (p) { state.slots[n] = p; hist.base[n] = JSON.stringify(p); }
+  }
+  renderTop();
+}
+
 async function loadSlot(n) {
   const p = await api.loadProfile(n);
   if (!p) { cli("sys", `! Could not read profile${n}.json; editing a local copy.`); return; }
   state.slots[n] = p;
+  state.empty[n] = false;
   hist.base[n] = JSON.stringify(p);
   if (n === state.slot) { state.page = Math.min(state.page, p.pages.length - 1); renderStudio(); }
   renderTop();
@@ -586,6 +600,7 @@ api.onEvent(({ type, data }) => {
         const look = await api.lookState();
         if (look && look.theme) state.theme = look.theme;
         renderStudio();
+        peekSlots();
       });
       if (!data.connected) setSave("off", "Offline · edits are backed up on this PC");
       if (state.view === "device") { clearTimeout(state.devTimer); state.devTimer = setTimeout(renderDevice, 400); }
@@ -629,6 +644,7 @@ api.onEvent(({ type, data }) => {
     await loadSlot(state.conn.activeSlot || 1);
     const look = await api.lookState();
     if (look && look.theme) { state.theme = look.theme; renderStudio(); }
+    peekSlots();
   }
   // Self-check for the smoke test: the shared icon map loaded and the preview drew the screen.
   let undoOk = null;

@@ -167,6 +167,10 @@ test("device panel: status, BLE slots, forget, profile switch, events, now playi
   assert.deepEqual(events, [{ slot: 0, up: false }]);
 
   sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
+  const before = sim.profileN;
+  assert.equal((await dev.peekProfile(2)).profile_name, "Code");   // read in place:
+  assert.equal(sim.profileN, before, "peeking does not switch the keypad");
+  assert.equal(await dev.peekProfile(6), null, "an empty slot peeks as null");
   const p2 = await dev.loadProfile(2);
   assert.equal(p2.profile_name, "Code");
   assert.equal(dev.activeSlot, 2);

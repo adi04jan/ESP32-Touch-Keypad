@@ -204,6 +204,7 @@ ipcMain.handle("device:status", () => device.refreshStatus());
 ipcMain.handle("device:fsinfo", () => device.fsinfo());
 ipcMain.handle("device:command", (_e, cmd) => link.command(String(cmd)));
 ipcMain.handle("device:loadProfile", (_e, slot) => device.loadProfile(slot));
+ipcMain.handle("device:peekProfile", (_e, slot) => device.peekProfile(slot));
 ipcMain.handle("device:setActive", (_e, slot) => device.setActiveProfile(slot));
 ipcMain.handle("device:showPage", (_e, slot, page) => device.showPage(slot, page));
 ipcMain.handle("device:save", (_e, slot, profile) => device.save(slot, profile));

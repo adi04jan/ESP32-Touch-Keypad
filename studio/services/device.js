@@ -112,6 +112,13 @@ class Device extends EventEmitter {
     return p;
   }
 
+  // Read a profile without switching the keypad to it (the slot strip's names). null = empty slot.
+  async peekProfile(slot) {
+    if (!this.link.isOpen()) return null;
+    const raw = await this.link.readFile(`profile${slot}.json`, true);
+    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) { return null; }
+  }
+
   async showPage(slot, page) {
     if (!this.link.isOpen() || slot !== this.activeSlot || page === this.devicePage) return;
     await this.link.command(`page ${page}`);

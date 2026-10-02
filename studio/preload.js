@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("api", {
   fsinfo: call("device:fsinfo"),
   command: call("device:command"),
   loadProfile: call("device:loadProfile"),
+  peekProfile: call("device:peekProfile"),   // read without switching the keypad
   setActive: call("device:setActive"),
   showPage: call("device:showPage"),
   save: call("device:save"),
