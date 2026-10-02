@@ -1,13 +1,16 @@
 """End to end over real Bluetooth: pair the keypad with this PC, type into a
-test window, check the text, unpair.
+test window, check the text, then run a host action through Studio, unpair.
 
     python tools/e2e/run_e2e.py          # board on USB (KP_TEST build), BLE on this PC
 
 Keystrokes only ever go to KpHelper's own topmost window, which keeps focus
-while the test runs. No media keys. The keypad's bonds are cleared before and
-after (it is a test device); this PC's pairing with it is removed at the end.
+while the test runs. No media keys. The host action is a reserved
+Ctrl+Alt+Shift+F18 combo that Studio's global shortcut consumes. The keypad's
+bonds are cleared before and after (it is a test device); this PC's pairing
+with it is removed at the end.
 """
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -25,6 +28,9 @@ NAME = "Touch Keypad"
 SLOT = 6
 TEXT = "kp-e2e: Hello, Paper Theatre 123!"
 EXPECT = TEXT + "K\r\nsecond lin"   # text, Shift+K, multiline, then one backspace
+HOST_OK = ROOT / "build" / "e2e-host-ok.txt"
+HOST_SLOT = 5                                  # Ctrl+Alt+Shift+F18
+HOST_CMD = f"run echo host-ok> {HOST_OK}"
 
 
 def profile():
@@ -34,6 +40,7 @@ def profile():
     keys[2] = {"id": 3, "name": "Lines", "led_color": [226, 176, 74], "actions": [{"type": "multiline", "value": "\nsecond line"}]}
     keys[3] = {"id": 4, "name": "Bksp", "led_color": [122, 31, 43], "actions": [{"type": "key", "value": "BACKSPACE"}]}
     keys[4] = {"id": 5, "name": "Probe", "led_color": [47, 107, 79], "actions": [{"type": "text", "value": "."}]}
+    keys[5] = {"id": 6, "name": "Host", "led_color": [100, 80, 160], "actions": [{"type": "host", "cmd": HOST_CMD, "slot": HOST_SLOT}]}
     return {"schema_version": 2, "profile_name": "E2E", "default_delay": 20, "pages": [{"name": "BLE", "keys": keys}]}
 
 
@@ -100,6 +107,18 @@ def helper_run(*args, timeout=60):
     return r.stdout
 
 
+def start_studio():
+    """Studio with only the host bridge active: no serial (kp.py owns the port), no feeds."""
+    data = ROOT / "build" / "e2e-studio"
+    (data / "data").mkdir(parents=True, exist_ok=True)
+    (data / "data" / "settings.json").write_text(json.dumps({
+        "auto_connect": False, "nowplaying_enabled": False, "auto_switch_enabled": False,
+        "host_slots": {str(HOST_SLOT): HOST_CMD}}))
+    exe = ROOT / "studio" / "node_modules" / "electron" / "dist" / "electron.exe"
+    return subprocess.Popen([str(exe), str(ROOT / "studio")], env={**os.environ, "STUDIO_DATA_DIR": str(data)},
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def forget_device_bonds(d):
     bonds = [int(l.split()[0]) for l in d.cmd("ble list") if l[:1].isdigit()]
     for n in sorted(bonds, reverse=True):
@@ -143,7 +162,7 @@ def main():
     OUT.parent.mkdir(exist_ok=True)
     d = kp.Device()
     d.ready()
-    window = None
+    window = studio = None
     ok = False
     try:
         d.ok("setdim 0")
@@ -191,7 +210,26 @@ def main():
         ok = got == EXPECT
         log(f"typed {got!r}")
         log("PASS: keystrokes over BLE match" if ok else f"FAIL: expected {EXPECT!r}")
+
+        log("host action: starting Studio's host bridge")
+        HOST_OK.unlink(missing_ok=True)
+        studio = start_studio()
+        time.sleep(8)   # Electron starts and registers the reserved combos
+        before = typed()
+        log("tap cell 6 (host action, slot 5)")
+        d.touch(*cell_xy(6))
+        deadline = time.time() + 8
+        while not HOST_OK.exists() and time.time() < deadline:
+            time.sleep(0.3)
+        time.sleep(0.5)
+        host_ok = HOST_OK.exists() and HOST_OK.read_text().startswith("host-ok")
+        quiet = typed() == before
+        log("PASS: Studio ran the host command" if host_ok else "FAIL: host command did not run")
+        log("PASS: the combo never reached the window" if quiet else f"FAIL: window got {typed()[len(before):]!r}")
+        ok = ok and host_ok and quiet
     finally:
+        if studio:
+            subprocess.run(["taskkill", "/PID", str(studio.pid), "/T", "/F"], capture_output=True)
         if window:
             window.stop()
         log("cleaning up")
