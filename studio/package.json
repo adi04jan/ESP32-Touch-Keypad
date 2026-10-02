@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
+    "test:hw": "node --test test/hw.test.js",
     "smoke": "node test/boot-smoke.js",
     "dist": "electron-builder --win"
   },

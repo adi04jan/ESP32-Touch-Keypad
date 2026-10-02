@@ -1,0 +1,136 @@
+{
+ "schema_version": 2,
+ "profile_name": "Code",
+ "default_delay": 20,
+ "brightness": 200,
+ "pages": [
+  {
+   "name": "IDE",
+   "keys": [
+    {
+     "id": 1,
+     "name": "Build",
+     "icon": "hammer",
+     "led_color": [
+      52,
+      90,
+      160
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_CTRL",
+        "LEFT_SHIFT",
+        "B"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 2,
+     "name": "Run",
+     "icon": "play",
+     "led_color": [
+      47,
+      107,
+      79
+     ],
+     "actions": [
+      {
+       "type": "key",
+       "value": "F5"
+      }
+     ]
+    },
+    {
+     "id": 3,
+     "name": "Stop",
+     "icon": "square",
+     "led_color": [
+      194,
+      65,
+      43
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_SHIFT",
+        "F5"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Terminal",
+     "icon": "terminal",
+     "led_color": [
+      110,
+      100,
+      92
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_CTRL",
+        "`"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "name": "git pull",
+     "icon": "git-pull-request",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "text",
+       "value": "git pull"
+      },
+      {
+       "type": "key",
+       "value": "ENTER"
+      }
+     ]
+    },
+    {
+     "id": 6,
+     "name": "Commit",
+     "icon": "check",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "text",
+       "value": "git commit -am \"wip\""
+      },
+      {
+       "type": "key",
+       "value": "ENTER"
+      }
+     ]
+    },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ ]
+}

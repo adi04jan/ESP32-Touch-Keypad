@@ -1,0 +1,545 @@
+{
+ "schema_version": 2,
+ "profile_name": "Daily",
+ "default_delay": 20,
+ "brightness": 200,
+ "pages": [
+  {
+   "name": "Main",
+   "keys": [
+    {
+     "id": 1,
+     "name": "Mute mic",
+     "icon": "mic",
+     "led_color": [
+      47,
+      107,
+      79
+     ],
+     "actions": [
+      {
+       "type": "telephony",
+       "value": "MIC_MUTE"
+      }
+     ]
+    },
+    {
+     "id": 2,
+     "name": "Play",
+     "icon": "play",
+     "led_color": [
+      47,
+      107,
+      115
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "PLAY_PAUSE"
+      }
+     ],
+     "hold_actions": [
+      {
+       "type": "media",
+       "value": "NEXT"
+      }
+     ]
+    },
+    {
+     "id": 3,
+     "name": "Vol −",
+     "icon": "volume-1",
+     "led_color": [
+      52,
+      90,
+      160
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "VOLUME_DOWN"
+      }
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Vol +",
+     "icon": "volume-2",
+     "led_color": [
+      52,
+      90,
+      160
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "VOLUME_UP"
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "name": "Lock",
+     "icon": "lock",
+     "led_color": [
+      110,
+      100,
+      92
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_GUI",
+        "L"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 6,
+     "name": "Copy",
+     "icon": "copy",
+     "led_color": [
+      100,
+      80,
+      160
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_CTRL",
+        "C"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 7,
+     "name": "Paste",
+     "icon": "clipboard-paste",
+     "led_color": [
+      100,
+      80,
+      160
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_CTRL",
+        "V"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 8,
+     "name": "Snip",
+     "icon": "scissors",
+     "led_color": [
+      190,
+      80,
+      120
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_GUI",
+        "LEFT_SHIFT",
+        "S"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 9,
+     "name": "Notepad",
+     "icon": "file-text",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_GUI",
+        "R"
+       ]
+      },
+      {
+       "type": "delay",
+       "ms": 300
+      },
+      {
+       "type": "text",
+       "value": "notepad"
+      },
+      {
+       "type": "key",
+       "value": "ENTER"
+      }
+     ]
+    },
+    {
+     "id": 10,
+     "name": "git status",
+     "icon": "git-branch",
+     "led_color": [
+      194,
+      65,
+      43
+     ],
+     "actions": [
+      {
+       "type": "text",
+       "value": "git status"
+      },
+      {
+       "type": "key",
+       "value": "ENTER"
+      }
+     ]
+    },
+    {
+     "id": 11,
+     "name": "GitHub",
+     "icon": "github",
+     "led_color": [
+      110,
+      100,
+      92
+     ],
+     "actions": [
+      {
+       "type": "host",
+       "cmd": "open https://github.com"
+      }
+     ]
+    },
+    {
+     "id": 12,
+     "name": "Signature",
+     "icon": "pen-line",
+     "led_color": [
+      148,
+      40,
+      58
+     ],
+     "actions": [
+      {
+       "type": "multiline",
+       "value": "Best regards,\nAditya"
+      }
+     ]
+    },
+    null,
+    {
+     "id": 14,
+     "name": "Media",
+     "icon": "music",
+     "led_color": [
+      194,
+      65,
+      43
+     ],
+     "actions": [
+      {
+       "type": "page",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 15,
+     "name": "Stream",
+     "icon": "radio",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "page",
+       "value": 3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Media",
+   "keys": [
+    {
+     "id": 1,
+     "name": "Now Playing",
+     "widget": "now_playing",
+     "span": [
+      3,
+      2
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "PLAY_PAUSE"
+      }
+     ]
+    },
+    null,
+    null,
+    {
+     "id": 4,
+     "name": "Vol −",
+     "icon": "volume-1",
+     "led_color": [
+      52,
+      90,
+      160
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "VOLUME_DOWN"
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "name": "Vol +",
+     "icon": "volume-2",
+     "led_color": [
+      52,
+      90,
+      160
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "VOLUME_UP"
+      }
+     ]
+    },
+    null,
+    null,
+    null,
+    {
+     "id": 9,
+     "name": "Mute",
+     "icon": "volume-x",
+     "led_color": [
+      194,
+      65,
+      43
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "MUTE"
+      }
+     ]
+    },
+    {
+     "id": 10,
+     "name": "Back",
+     "icon": "undo-2",
+     "led_color": [
+      110,
+      100,
+      92
+     ],
+     "actions": [
+      {
+       "type": "back"
+      }
+     ]
+    },
+    {
+     "id": 11,
+     "name": "Prev",
+     "icon": "skip-back",
+     "led_color": [
+      47,
+      107,
+      115
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "PREVIOUS"
+      }
+     ]
+    },
+    {
+     "id": 12,
+     "name": "Play",
+     "icon": "play",
+     "led_color": [
+      47,
+      107,
+      79
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "PLAY_PAUSE"
+      }
+     ]
+    },
+    {
+     "id": 13,
+     "name": "Next",
+     "icon": "skip-forward",
+     "led_color": [
+      47,
+      107,
+      115
+     ],
+     "actions": [
+      {
+       "type": "media",
+       "value": "NEXT"
+      }
+     ]
+    },
+    {
+     "id": 14,
+     "name": "Spotify",
+     "icon": "music",
+     "led_color": [
+      47,
+      140,
+      120
+     ],
+     "actions": [
+      {
+       "type": "host",
+       "cmd": "open spotify:"
+      }
+     ]
+    },
+    null
+   ]
+  },
+  {
+   "name": "Stream",
+   "keys": [
+    {
+     "id": 1,
+     "name": "Back",
+     "icon": "undo-2",
+     "led_color": [
+      110,
+      100,
+      92
+     ],
+     "actions": [
+      {
+       "type": "back"
+      }
+     ]
+    },
+    {
+     "id": 2,
+     "name": "Gameplay",
+     "icon": "monitor-play",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "host",
+       "cmd": "obs.scene Gameplay"
+      }
+     ]
+    },
+    {
+     "id": 3,
+     "name": "BRB",
+     "icon": "coffee",
+     "led_color": [
+      233,
+      150,
+      50
+     ],
+     "actions": [
+      {
+       "type": "host",
+       "cmd": "obs.scene BRB"
+      }
+     ]
+    },
+    {
+     "id": 4,
+     "name": "Record",
+     "icon": "circle-dot",
+     "led_color": [
+      194,
+      65,
+      43
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_CTRL",
+        "LEFT_ALT",
+        "R"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "name": "Clip",
+     "icon": "clapperboard",
+     "led_color": [
+      148,
+      40,
+      58
+     ],
+     "actions": [
+      {
+       "type": "keycombo",
+       "keys": [
+        "LEFT_ALT",
+        "F10"
+       ]
+      }
+     ]
+    },
+    {
+     "id": 6,
+     "name": "Mic",
+     "icon": "mic",
+     "led_color": [
+      47,
+      107,
+      79
+     ],
+     "actions": [
+      {
+       "type": "telephony",
+       "value": "MIC_MUTE"
+      }
+     ]
+    },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ ]
+}

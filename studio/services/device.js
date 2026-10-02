@@ -96,6 +96,7 @@ class Device extends EventEmitter {
   // ---- profiles ----
   async loadProfile(slot) {
     if (!this.link.isOpen()) return null;
+    if (this._save.has(slot)) await this.flush();     // never read back a file with edits still pending
     await this.link.command(`setprofile ${slot}`);
     this.activeSlot = slot;
     this.devicePage = 1;
@@ -164,6 +165,7 @@ class Device extends EventEmitter {
    * upload, reload. Returns { ok, errors?, error?, backup?, profile? }. */
   async save(slot, profile = this.profiles[slot]) {
     if (!profile) return { ok: false, error: "nothing to save" };
+    this.profiles[slot] = profile;
     const clean = schema.repairProfile(profile);
     const s = this.settings.load();
     const { slots, errors: slotErr } = hostbridge.assignSlots([clean], s.host_slots);

@@ -3,7 +3,7 @@
  * diversion and paced uploads, plus binary (###BEGINB###) tile uploads, v2
  * events and CH340 + `model:touch` detection (PLAN.md §8, PROTOCOL.md).
  *
- * Emits: 'log'(text), 'tx'(text), 'rx'(line), 'fs-info'({total,used}),
+ * Emits: 'log'(text), 'tx'(text), 'rx'(unsolicited line), 'fs-info'({total,used}),
  *        'key'({page,id,state}), 'profile'(n), 'page'(n), 'ble'({slot,up}),
  *        'idle'(name), 'open', 'disconnect'. */
 "use strict";
@@ -269,8 +269,8 @@ class SerialLink extends EventEmitter {
     if (clean.startsWith("EVT:")) { this.emit("rx", clean); this._handleEvent(clean.slice(4).trim()); return; }
     const fs = parseFsInfo(clean);
     if (fs) this.emit("fs-info", fs);
-    if (clean.trim() !== "") this.emit("rx", clean);
-    if (this._reading) this._readLines.push(clean);
+    if (this._reading) this._readLines.push(clean);   // replies go to the awaiting caller
+    else if (clean.trim() !== "") this.emit("rx", clean);
   }
 }
 
