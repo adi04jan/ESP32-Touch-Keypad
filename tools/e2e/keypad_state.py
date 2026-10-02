@@ -4,7 +4,7 @@
     python tools/e2e/keypad_state.py restore <file>
 
 save records the active profile, theme, LED pattern, colour and brightness,
-screen brightness and key click. --free-slot N makes slot N available for the
+screen brightness, key click and the HID dry-run state. --free-slot N makes slot N available for the
 run: an untouched blank (the file the keypad writes when an empty slot is
 visited) is removed; a real profile there stops the run instead of being
 overwritten. restore puts every recorded value back and removes slot N again.
@@ -60,7 +60,8 @@ def restore(path):
     if s.get("free_slot"):
         d.cmd(f"rm /profile{s['free_slot']}.json")
     for c in (f"setprofile {s['profile']}", f"theme {s['theme']}", f"led {s['led']} {s['led_color']}",
-              f"ledbright {s['led_bright']}", f"setbrightness {s['bright']}", f"click {'on' if s['click'] else 'off'}"):
+              f"ledbright {s['led_bright']}", f"setbrightness {s['bright']}", f"click {'on' if s['click'] else 'off'}",
+              f"hid dry {'on' if 'dry:1' in s['status'] else 'off'}"):
         d.cmd(c)
     print(d.cmd("status")[0])
     d.close()

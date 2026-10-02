@@ -10,10 +10,17 @@ routes media keys to, and pressed twice so it ends playing. The host action is a
 Ctrl+Alt+Shift+F18 combo that Studio's global shortcut consumes. The keypad's
 bonds are cleared before and after (it is a test device); this PC's pairing
 with it is removed at the end.
+
+When this PC is already paired and connected (a keypad in daily use), the run
+reuses that pairing and leaves it in place; --fresh-pairing clears it and pairs
+again (the pairing test). Either way the keypad's profile, theme, LED,
+brightness, click and dry-run state are saved first and put back after
+(keypad_state.py), and this PC's real name goes back on the host.
 """
 import json
 import os
 import queue
+import socket
 import subprocess
 import sys
 import threading
@@ -22,14 +29,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tools" / "e2e"))
 import kp  # noqa: E402
+import keypad_state  # noqa: E402
+
+STATE = ROOT / "build" / "e2e-keypad-before.json"
 
 HELPER = ROOT / "tools" / "e2e" / "bin" / "KpHelper.exe"
 OUT = ROOT / "build" / "e2e-keys.txt"
 NAME = "Touch Keypad"
 SLOT = 6
 TEXT = "kp-e2e: Hello, Paper Theatre 123!"
-EXPECT = TEXT + "K\r\nsecond lin[on][off]"   # text, Shift+K, multiline, one backspace, toggle on then off
+# 120 characters in one go: a dropped or merged HID report shows up as a missing letter
+LONG = " Sphinx of black quartz, judge my vow. The quick brown fox jumps over the lazy dog! 0123456789 Pack my box, end."
+EXPECT = TEXT + "K\r\nsecond lin[on][off]" + LONG   # text, Shift+K, multiline, one backspace, toggle on then off, the long line
 PLAY_XY = (274, 248)                           # the player page's Play/Pause button
 HOST_OK = ROOT / "build" / "e2e-host-ok.txt"
 HOST_SLOT = 5                                  # Ctrl+Alt+Shift+F18
@@ -44,6 +57,7 @@ def profile():
     keys[3] = {"id": 4, "name": "Bksp", "led_color": [122, 31, 43], "actions": [{"type": "key", "value": "BACKSPACE"}]}
     keys[4] = {"id": 5, "name": "Probe", "led_color": [47, 107, 79], "actions": [{"type": "text", "value": "."}]}
     keys[5] = {"id": 6, "name": "Host", "led_color": [100, 80, 160], "actions": [{"type": "host", "cmd": HOST_CMD, "slot": HOST_SLOT}]}
+    keys[7] = {"id": 8, "name": "Long", "icon": "type", "led_color": [79, 140, 255], "actions": [{"type": "text", "value": LONG}]}
     keys[6] = {"id": 7, "name": "Toggle", "icon": "power", "led_color": [82, 214, 143], "toggle": True,
                "actions": [{"type": "text", "value": "[on]"}], "off_actions": [{"type": "text", "value": "[off]"}]}
     player = [None] * 15
@@ -168,10 +182,13 @@ def pair(d):
 
 def main():
     OUT.parent.mkdir(exist_ok=True)
+    keypad_state.save(STATE, SLOT)          # also frees slot 6 (or stops if it holds a real profile)
     d = kp.Device()
     d.ready()
     window = studio = None
     ok = False
+    reuse = "ble:1" in d.cmd("status")[0] and "--fresh-pairing" not in sys.argv \
+        and "paired=True" in helper_run("list", NAME, timeout=40)
     try:
         d.ok("setdim 0")
         d.ok("hid dry off")
@@ -179,13 +196,15 @@ def main():
         assert any(l.startswith("SAVED") for l in r), r
         d.ok(f"setprofile {SLOT}")
 
-        log("clearing old pairings")
-        helper_run("unpair", NAME)
-        log(f"keypad forgot {forget_device_bonds(d)} bond(s)")
-
-        log("pairing")
-        pair(d)
-        d.wait_event(r"^EVT:BLE \d+ up$", 20)
+        if reuse:
+            log("this PC is already paired and connected: reusing that pairing")
+        else:
+            log("clearing old pairings")
+            helper_run("unpair", NAME)
+            log(f"keypad forgot {forget_device_bonds(d)} bond(s)")
+            log("pairing")
+            pair(d)
+            d.wait_event(r"^EVT:BLE \d+ up$", 20)
         deadline = time.time() + 20
         while "ble:1" not in d.cmd("status")[0]:
             if time.time() > deadline:
@@ -194,6 +213,7 @@ def main():
         names = d.cmd("hostname E2E-PC") + d.cmd("ble list")
         named = any(l.endswith(" connected E2E-PC") for l in names)
         log("PASS: the connected host carries Studio's name" if named else f"FAIL: host name not set: {names}")
+        d.cmd(f"hostname {socket.gethostname()}")   # this PC's real name back
         window = Helper("window", str(OUT), "150")
         window.wait_for("OK window", 15)
         log("host connected; probing until Windows delivers keystrokes to the window")
@@ -206,7 +226,7 @@ def main():
         time.sleep(1.5)
         prefix = typed()
         log(f"keyboard ready (probe typed {prefix!r})")
-        for cell, pause in ((1, 2.5), (2, 1.0), (3, 1.5), (4, 1.0), (7, 1.2), (7, 1.2)):
+        for cell, pause in ((1, 2.5), (2, 1.0), (3, 1.5), (4, 1.0), (7, 1.2), (7, 1.2), (8, 7.0)):
             log(f"tap cell {cell}")
             d.touch(*cell_xy(cell))
             time.sleep(pause)
@@ -265,13 +285,13 @@ def main():
             window.stop()
         log("cleaning up")
         try:
-            helper_run("unpair", NAME)
-            forget_device_bonds(d)
-            d.cmd("hid dry on")
-            d.cmd("setprofile 1")
+            if not reuse:
+                helper_run("unpair", NAME)
+                forget_device_bonds(d)
             d.cmd("setdim 120")
         finally:
             d.close()
+        keypad_state.restore(STATE)
     return 0 if ok else 1
 
 

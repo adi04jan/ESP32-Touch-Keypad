@@ -148,8 +148,15 @@ static bool sendReport(uint8_t id, const uint8_t *data, size_t len) {
   if (!linkUp) return dryRun;
   NimBLECharacteristic *c = id == RID_KB ? inKb : id == RID_CONS ? inCons : id == RID_MOUSE ? inMouse : inTel;
   c->setValue(data, len);
-  c->notify();
-  return true;
+  // Each report in its own buffer: a bare notify() sends whatever the value is when the link
+  // gets to it, so a key's press was overwritten by its release 8 ms later and letters vanished.
+  // A full controller queue refuses the buffer; give the link a moment and try again.
+  for (int tries = 0; tries < 40; tries++) {
+    if (c->notify(data, len)) return true;
+    delay(3);
+  }
+  Serial.printf("HID report %u dropped: the link is not draining\n", id);
+  return false;
 }
 
 static uint8_t kbMods = 0, kbKeys[6] = {0};
