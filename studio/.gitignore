@@ -3,3 +3,6 @@ dist-build/
 device_backups/
 data/
 fw-bundle/
+native/dist/
+native/KpLink/bin/
+native/KpLink/obj/

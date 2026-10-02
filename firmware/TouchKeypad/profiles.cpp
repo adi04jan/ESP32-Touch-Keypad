@@ -1,5 +1,6 @@
 #include "profiles.h"
 #include "board.h"
+#include "console.h"
 #include "storage.h"
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -60,7 +61,7 @@ void profilesInstallDefaults() {
   for (int id = 1; changed && id <= DEFAULT_PROFILE_COUNT; id++) {
     String path = profilePath(id), key = "dcrc" + String(id);
     if (!first && LittleFS.exists(path) && fileCrc(path) != p.getUInt(key.c_str(), 0)) continue;
-    if (writeDefault(id)) { p.putUInt(key.c_str(), fileCrc(path)); Serial.printf("Installed default profile %d\n", id); }
+    if (writeDefault(id)) { p.putUInt(key.c_str(), fileCrc(path)); Con.printf("Installed default profile %d\n", id); }
   }
   if (changed) p.putUInt("defv", DEFAULTS_VERSION);
   p.end();
@@ -83,7 +84,7 @@ static bool migrateV1(const String &path, JsonDocument &v1) {
   }
   String out;
   serializeJson(v2, out);
-  Serial.printf("Migrated %s schema v1 -> v2\n", path.c_str());
+  Con.printf("Migrated %s schema v1 -> v2\n", path.c_str());
   return writeFileStr(path.c_str(), out);
 }
 
@@ -106,7 +107,7 @@ bool loadProfile(int id) {
   DeserializationError err = deserializeJson(meta, f, DeserializationOption::Filter(filter), NEST);
   f.close();
   if (err) {
-    Serial.printf("Profile %d parse error: %s\n", id, err.c_str());
+    Con.printf("Profile %d parse error: %s\n", id, err.c_str());
     return false;
   }
   if ((meta["schema_version"] | 1) < 2 && meta["keys"].is<JsonArray>()) {
@@ -115,7 +116,7 @@ bool loadProfile(int id) {
   }
   JsonArray pages = meta["pages"];
   if (pages.isNull() || pages.size() == 0) {
-    Serial.printf("Profile %d has no pages\n", id);
+    Con.printf("Profile %d has no pages\n", id);
     return false;
   }
   currentProfile = id;
@@ -133,14 +134,14 @@ bool loadProfile(int id) {
   p.begin("kp", false);
   if (p.getUChar("prof", 1) != id) p.putUChar("prof", id);
   p.end();
-  Serial.printf("Loaded profile %d (%s)\n", id, profileName);
-  Serial.printf("EVT:PROFILE %d\n", id);
+  Con.printf("Loaded profile %d (%s)\n", id, profileName);
+  Con.printf("EVT:PROFILE %d\n", id);
   return true;
 }
 
 bool loadProfileSafe(int id) {
   if (loadProfile(id)) return true;
-  Serial.printf("Profile %d unreadable; restoring default.\n", id);
+  Con.printf("Profile %d unreadable; restoring default.\n", id);
   writeDefault(id);
   if (loadProfile(id)) return true;
   profileLoaded = false;
@@ -189,7 +190,7 @@ bool loadPage(int idx) {
   }
   f.close();
   if (!ok || !pageDoc.is<JsonObject>()) {
-    Serial.printf("Page %d of profile %d unreadable\n", idx + 1, currentProfile);
+    Con.printf("Page %d of profile %d unreadable\n", idx + 1, currentProfile);
     pageDoc.clear();
     return false;
   }
@@ -251,7 +252,7 @@ void gcTiles() {
   }
   dir.close();
   for (auto &nm : del) LittleFS.remove("/t/" + nm);
-  if (!del.empty()) Serial.printf("Removed %u unreferenced tiles\n", (unsigned)del.size());
+  if (!del.empty()) Con.printf("Removed %u unreferenced tiles\n", (unsigned)del.size());
 }
 
 // Name, page count and colour of a slot without loading it (the settings sheet).

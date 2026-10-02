@@ -3,6 +3,7 @@
 #include "gfx.h"
 #include "themes.h"
 #include "board.h"
+#include "console.h"
 #include "display.h"
 #include "profiles.h"
 #include "macro_engine.h"
@@ -157,8 +158,8 @@ static C3 lineC() {   // the profile's line colour, made to read on this theme's
   for (int i = 0; T->light && i < 4 && ((c.r * 77 + c.g * 150 + c.b * 29) >> 8) > 140; i++) c = mix(c, BLACK, 50);
   return c;
 }
-static void emitKey(int c, char st) { Serial.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st); }
-static void emitMode() { Serial.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
+static void emitKey(int c, char st) { Con.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st); }
+static void emitMode() { Con.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
 static int npPos() {
   int p = np.pos + (np.playing ? (int)((millis() - np.at) / 1000) : 0);
   return np.len > 0 && p > np.len ? np.len : p;
@@ -1142,7 +1143,7 @@ void uiRenderBench() {
   auto run = [&](const char *name, int x, int y, int w, int h, std::function<void()> draw) {
     t = micros();
     for (int i = 0; i < 10; i++) { gfxChunk(chunkBuf[0], x, y, w, h); gfxGround(); draw(); }
-    Serial.printf("rbench %-10s %5u us\n", name, (unsigned)((micros() - t) / 10));
+    Con.printf("rbench %-10s %5u us\n", name, (unsigned)((micros() - t) / 10));
   };
   run("ground", 0, 30, 96, 90, [] {});
   run("glass", 0, 30, 96, 90, [] { rrFill(15, 34, 66, 66, 19, glassFill(HEXC(0x4f8cff))); });
@@ -1164,9 +1165,9 @@ void uiRenderBench() {
 }
 
 void uiPerf(bool reset) {
-  if (reset) { memset(&perf, 0, sizeof perf); Serial.println("perf reset"); return; }
+  if (reset) { memset(&perf, 0, sizeof perf); Con.println("perf reset"); return; }
   float avgGap = perf.gaps ? perf.sumGap / (float)perf.gaps : 0;
-  Serial.printf("perf frames:%u avg_ms:%.2f max_ms:%.2f fps:%.1f\n", (unsigned)perf.frames,
+  Con.printf("perf frames:%u avg_ms:%.2f max_ms:%.2f fps:%.1f\n", (unsigned)perf.frames,
                 perf.frames ? perf.sumUs / 1000.0f / perf.frames : 0.0f, perf.maxUs / 1000.0f, avgGap > 0 ? 1000.0f / avgGap : 0.0f);
 }
 
@@ -1252,7 +1253,7 @@ void uiSetTheme(int i, bool save) {
   }
   if (i == themeIdx && T == &THEMES[i]) return;
   applyTheme(i);
-  Serial.printf("EVT:THEME %s\n", T->id);
+  Con.printf("EVT:THEME %s\n", T->id);
   // the new theme wipes down over the old one, a band of rows per frame
   for (int c = 0; c < NUM_CELLS; c++) ca[c].pop0 = 0;
   wiping = true;
@@ -1313,7 +1314,7 @@ void uiGoPage(int idx, bool push) {
     if (backDepth == (int)sizeof backStack) memmove(backStack, backStack + 1, --backDepth);
     backStack[backDepth++] = from;
   }
-  Serial.printf("EVT:PAGE %d\n", idx + 1);
+  Con.printf("EVT:PAGE %d\n", idx + 1);
   if (wasPlayer != playerPage()) startWipe(); else startWave();
 }
 
@@ -1452,7 +1453,7 @@ void uiCalibrate() {
   calDotN = 0;
   pressed = -1;
   uiWake();
-  Serial.println("EVT:CAL start");
+  Con.println("EVT:CAL start");
   emitMode();
   markScreen();
 }
@@ -1461,7 +1462,7 @@ void uiCalibrateCancel() {
   if (mode != M_CAL) return;
   mode = M_HOME;
   calStep = -1;
-  Serial.println("EVT:CAL cancel");
+  Con.println("EVT:CAL cancel");
   emitMode();
   markScreen();
 }
@@ -1473,7 +1474,7 @@ static void calTap(int x, int y) {
   if (calStep < 4) {
     calRaw[calStep][0] = rx;
     calRaw[calStep][1] = ry;
-    Serial.printf("EVT:CAL point %d %d %d\n", calStep + 1, rx, ry);
+    Con.printf("EVT:CAL point %d %d %d\n", calStep + 1, rx, ry);
     calNote = 0;
     if (++calStep == 4) {
       int worst = 999;
@@ -1485,7 +1486,7 @@ static void calTap(int x, int y) {
           worst = max(worst, (int)hypotf(sx - CAL_PT[i][0], sy - CAL_PT[i][1]));
         }
       }
-      if (worst > 30) { Serial.printf("EVT:CAL retry fit %d\n", worst); calStep = 0; calNote = 1; }
+      if (worst > 30) { Con.printf("EVT:CAL retry fit %d\n", worst); calStep = 0; calNote = 1; }
     }
   } else if (calStep == 4) {
     int sx, sy;
@@ -1493,20 +1494,20 @@ static void calTap(int x, int y) {
     calErr = (int)hypotf(sx - CAL_VX, sy - CAL_VY);
     if (calErr <= 16) {
       touchSetCal(calCand, true);
-      Serial.printf("EVT:CAL saved %d\n", calErr);
+      Con.printf("EVT:CAL saved %d\n", calErr);
       calStep = 5;
       calDotN = 0;
     } else {
-      Serial.printf("EVT:CAL retry verify %d\n", calErr);
+      Con.printf("EVT:CAL retry verify %d\n", calErr);
       calStep = 0;
       calNote = 2;
     }
   } else {
-    if (inRect(x, y, 132, 262, 104, 44)) { calStep = 0; calNote = 0; Serial.println("EVT:CAL redo"); }
+    if (inRect(x, y, 132, 262, 104, 44)) { calStep = 0; calNote = 0; Con.println("EVT:CAL redo"); }
     else if (inRect(x, y, 248, 262, 100, 44)) {
       mode = M_HOME;
       calStep = -1;
-      Serial.println("EVT:CAL done");
+      Con.println("EVT:CAL done");
       emitMode();
     } else if (calDotN < 24) { calDots[calDotN][0] = x; calDots[calDotN][1] = y; calDotN++; }
   }
@@ -1633,7 +1634,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
         mark(0, BTN_Y - 46, SCR_W, 92);
       } else if (inRect(x1, y1, SEEK_X - 8, 134, SEEK_W + 16, 44) && np.len > 0) {
         int sec = (int)(clamp01((x1 - SEEK_X) / (float)SEEK_W) * np.len);
-        Serial.printf("EVT:SEEK %d\n", sec);
+        Con.printf("EVT:SEEK %d\n", sec);
         np.pos = sec;
         np.at = now;
         mark(SEEK_X - 8, 140, SEEK_W + 16, 56);

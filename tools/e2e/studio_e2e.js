@@ -1,6 +1,7 @@
 /* Studio end to end, through the INSTALLED app and the real keypad.
  *
- *   node tools/e2e/studio_e2e.js
+ *   node tools/e2e/studio_e2e.js          (Studio on USB)
+ *   E2E_BLE=1 node tools/e2e/studio_e2e.js (Studio over Bluetooth only: USB hidden from it)
  *
  * Launches the installed Macropad Studio Touch with a DevTools port and drives
  * its real UI (clicks, keys, inputs) while the keypad is on USB and paired to
@@ -25,6 +26,7 @@ const EXE = process.env.STUDIO_EXE || path.join(process.env.LOCALAPPDATA, "Progr
 const HELPER = path.join(__dirname, "bin", "KpHelper.exe");
 const OUT = path.join(__dirname, "..", "..", "build", "studio-e2e");
 const PORT = 9223, SLOT = 8;
+const BLE = process.env.E2E_BLE === "1";
 const TYPED = path.join(OUT, "typed.txt"), HOST_FILE = path.join(OUT, "host-ok.txt");
 const STATE_PY = path.join(__dirname, "keypad_state.py"), STATE_FILE = path.join(OUT, "keypad-before.json");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -34,6 +36,9 @@ async function until(what, fn, ms = 10000, every = 150) {
   while (Date.now() - t0 < ms) { try { last = await fn(); if (last) return last; } catch (e) { last = e.message; } await sleep(every); }
   throw new Error(`timed out: ${what}${last !== undefined && last !== false ? ` (last: ${String(last).slice(0, 160)})` : ""}`);
 }
+// The lock screen (LogonUI) takes every keystroke, shortcut and media key: those tests skip, not fail.
+function pcLocked() { try { return /LogonUI\.exe/i.test(execSync('tasklist /FI "IMAGENAME eq LogonUI.exe"', { encoding: "utf8" })); } catch (_) { return false; } }
+const needsDesktop = () => { if (pcLocked()) { const e = new Error("this PC is locked; unlock it to test keystrokes"); e.skip = true; throw e; } };
 const log = (s) => console.log(`[studio-e2e ${new Date().toTimeString().slice(0, 8)}] ${s}`);
 
 // ---------------------------------------------------------------- DevTools
@@ -83,9 +88,9 @@ let before, saved;   // the keypad's state before the run (saved over USB), put 
 const T = [];
 const test = (name, fn) => T.push([name, fn]);
 
-test("installed Studio boots and finds the keypad on USB", async () => {
+test(`installed Studio boots and finds the keypad on ${BLE ? "Bluetooth" : "USB"}`, async () => {
   const pill = await until("connection pill", async () => { const t = await text("#conn-pill"); return /Touch Keypad/.test(t) && /fw 3\.2/.test(t) && t; }, 30000);
-  if (!/COM\d+/.test(pill)) throw new Error(`no port in "${pill}"`);
+  if (!(BLE ? /Bluetooth/ : /COM\d+/).test(pill)) throw new Error(`wrong link in "${pill}"`);
   log(`keypad: profile ${before.Profile}, theme ${before.theme}, ble ${before.ble}, cal ${before.cal}`);
 });
 
@@ -156,6 +161,7 @@ test(`Editor: create a key in empty slot ${SLOT}; autosave writes it to the keyp
 });
 
 test("a tap on the keypad flashes in Studio and types over Bluetooth", async () => {
+  needsDesktop();
   if (before.ble !== "1") throw new Error("no Bluetooth host connected: pair this PC first");
   fs.rmSync(TYPED, { force: true });
   typing = helperProc(["window", TYPED, "300"], () => {});
@@ -188,6 +194,7 @@ test("Editor keyboard: copy a key, arrow right, paste, Delete", async () => {
 });
 
 test("Editor: a host action key runs on this PC through the installed Studio", async () => {
+  needsDesktop();
   fs.rmSync(HOST_FILE, { force: true });
   await click('#st-screen [data-k="2"]');
   await click("#mk-key");
@@ -239,6 +246,7 @@ test("Music: tap-to-seek on the keypad moves the PC's track", async () => {
 });
 
 test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bluetooth", async () => {
+  needsDesktop();
   const cur = mediaLines.find((l) => l.startsWith("CURRENT")) || "";
   if (!cur.includes("KpHelper")) throw new Error(`media keys would go to ${cur}, not the test session`);
   const n0 = mediaLines.length;
@@ -249,10 +257,31 @@ test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bl
   await until("playing", async () => mediaLines.slice(n1).includes("STATE Playing"), 6000);
 });
 
+test("Device view: power readout, and the battery sleep time reaches the keypad", async () => {
+  await view("device");
+  const pane = await text("#device-pane");
+  if (!/PowerUSB/.test(pane)) throw new Error(`no USB power readout in the Device view`);
+  if (BLE && !/LinkBluetooth/.test(pane)) throw new Error("Link row does not say Bluetooth");
+  await setInput("#d-sleep", "10", "change");
+  await until("sleep 10 on the keypad", async () => /sleep:10/.test(await cmd("power")), 8000, 300);
+  await cmd("power sim battery");
+  await view("editor"); await view("device");
+  const bat = (await text("#device-pane")).match(/PowerBattery · (\d+)%/);
+  await cmd("power sim off");
+  if (!bat) throw new Error("simulated battery not shown as Battery · N%");
+  await shot("07-power");
+});
+
 test("Device view: Studio installs its bundled firmware and everything survives", async () => {
   await view("device");
   if (!/Installs firmware 3\.\d+\.\d+/.test(await text("#device-pane"))) throw new Error("no bundled firmware offered");
   await run(() => { window.confirm = () => true; return true; });
+  if (BLE) {   // esptool needs the cable, and this Studio sees no USB port
+    if (!/needs the USB cable/.test(await text("#device-pane"))) throw new Error("no USB-cable hint over Bluetooth");
+    await click("#d-flash");
+    await until("refused over Bluetooth", async () => /USB cable/.test(await text("#flash-msg")), 15000, 300);
+    return;
+  }
   await click("#d-flash");
   await until("installed", async () => /Installed/.test(await text("#flash-msg")), 120000, 1000);
   await until("reconnected", async () => (await run(() => state.conn.connected)) && /fw 3\.2/.test(await text("#conn-pill")), 40000, 1000);
@@ -278,7 +307,7 @@ test("Device view: back up all profiles writes them to this PC", async () => {
   before = Object.fromEntries(saved.status.trim().split(/\s+/).map((kv) => kv.split(":")));
   before.click = saved.click;
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "studio-e2e-"));
-  studio = spawn(EXE, [`--remote-debugging-port=${PORT}`], { env: { ...process.env, STUDIO_DATA_DIR: data }, stdio: "ignore" });
+  studio = spawn(EXE, [`--remote-debugging-port=${PORT}`], { env: { ...process.env, STUDIO_DATA_DIR: data, ...(BLE ? { STUDIO_BLE_ONLY: "1" } : {}) }, stdio: "ignore" });
   const results = [];
   try {
     cdp = await connectCdp();
@@ -286,7 +315,10 @@ test("Device view: back up all profiles writes them to this PC", async () => {
     for (const [name, fn] of T.filter(([n], i) => !only || i === 0 || only.test(n))) {
       const t0 = Date.now();
       try { await fn(); results.push([true, name]); log(`PASS ${name} (${Date.now() - t0} ms)`); }
-      catch (e) { results.push([false, name, e.message]); log(`FAIL ${name}: ${e.message}`); try { await shot(`fail-${results.length}`); } catch (_) {} }
+      catch (e) {
+        if (e.skip) { results.push([null, name, e.message]); log(`SKIP ${name}: ${e.message}`); continue; }
+        results.push([false, name, e.message]); log(`FAIL ${name}: ${e.message}`); try { await shot(`fail-${results.length}`); } catch (_) {}
+      }
     }
   } catch (e) { log(`ABORT: ${e.message}`); results.push([false, "harness", e.message]); }
   for (const p of [typing, media]) if (p) try { p.kill(); } catch (_) {}
@@ -294,8 +326,8 @@ test("Device view: back up all profiles writes them to this PC", async () => {
   await sleep(1500);   // Windows releases the COM port
   try { log(`restored: ${execFileSync("python", [STATE_PY, "restore", STATE_FILE], { encoding: "utf8" }).trim()}`); }
   catch (e) { log(`RESTORE FAILED: ${e.message}`); }
-  const failed = results.filter((r) => !r[0]);
-  console.log(`\n${results.length - failed.length}/${results.length} passed`);
+  const failed = results.filter((r) => r[0] === false), skipped = results.filter((r) => r[0] === null);
+  console.log(`\n${results.length - failed.length - skipped.length}/${results.length} passed${skipped.length ? `, ${skipped.length} skipped (${skipped[0][2]})` : ""}`);
   for (const f of failed) console.log(`  FAIL ${f[1]}: ${f[2]}`);
   fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(results, null, 1));
   process.exit(failed.length ? 1 : 0);

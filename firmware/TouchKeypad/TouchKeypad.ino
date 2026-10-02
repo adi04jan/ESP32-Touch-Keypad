@@ -19,6 +19,7 @@
 #include <Preferences.h>
 #include "esp_task_wdt.h"
 #include "board.h"
+#include "console.h"
 #include "display.h"
 #include "storage.h"
 #include "profiles.h"
@@ -33,13 +34,13 @@
 void setup() {
   Serial.setRxBufferSize(SERIAL_RX_BUF);
   Serial.begin(SERIAL_BAUD);
-  Serial.printf("\nTouch Keypad v%s starting\n", FW_VERSION);
+  Con.printf("\nTouch Keypad v%s starting\n", FW_VERSION);
   pinMode(PIN_BOOT, INPUT_PULLUP);
   bool safeBoot = digitalRead(PIN_BOOT) == LOW;   // BOOT held: start on profile 1
 
   displayBegin();
   ledsBegin();
-  if (fsBegin()) Serial.println("LittleFS mounted");
+  if (fsBegin()) Con.println("LittleFS mounted");
   profilesInstallDefaults();
 
   Preferences p;
@@ -57,7 +58,7 @@ void setup() {
   esp_task_wdt_reconfigure(&wdt);
   esp_task_wdt_add(NULL);
 
-  Serial.println("Ready");
+  Con.println("Ready");
   cliBegin();
 }
 

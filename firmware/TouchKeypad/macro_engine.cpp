@@ -1,3 +1,4 @@
+#include "console.h"
 #include "macro_engine.h"
 #include "ble_hid.h"
 #include "hid_maps.h"
@@ -113,7 +114,7 @@ void MacroEngine::execAction(JsonObjectConst act, unsigned long now) {
   } else if (!strcmp(type, "host")) {
     ok = hidHostCombo(act["slot"] | -1);
   } else {
-    Serial.printf("Unknown action type '%s'\n", type);
+    Con.printf("Unknown action type '%s'\n", type);
   }
   if (!ok) dropped = true;
 }

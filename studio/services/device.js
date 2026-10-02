@@ -271,7 +271,9 @@ class Device extends EventEmitter {
     const br = (await this.link.command("setbrightness", undefined, true)).match(/brightness (\d+)/);
     const ck = (await this.link.command("click", undefined, true)).match(/click (on|off)/);
     const th = (await this.link.command("theme", undefined, true)).match(/^theme (\w+)$/m);
-    return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on", theme: th ? th[1] : "" };
+    const pw = parseStatus(((await this.link.command("power", undefined, true)).match(/^power .*$/m) || [""])[0]);
+    const power = "usb" in pw ? { usb: pw.usb === "1", pct: +pw.pct, charging: pw.charging === "1", sleep: +pw.sleep } : null;
+    return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on", theme: th ? th[1] : "", power };
   }
 
   async fsinfo() {

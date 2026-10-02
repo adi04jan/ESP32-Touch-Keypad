@@ -180,6 +180,12 @@ def pair(d):
         h.stop()
 
 
+def pc_locked():
+    """The lock screen (LogonUI) takes every keystroke, shortcut and media key."""
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq LogonUI.exe"], capture_output=True, text=True).stdout
+    return "LogonUI.exe" in out
+
+
 def main():
     OUT.parent.mkdir(exist_ok=True)
     keypad_state.save(STATE, SLOT)          # also frees slot 6 (or stops if it holds a real profile)
@@ -214,6 +220,8 @@ def main():
         named = any(l.endswith(" connected E2E-PC") for l in names)
         log("PASS: the connected host carries Studio's name" if named else f"FAIL: host name not set: {names}")
         d.cmd(f"hostname {socket.gethostname()}")   # this PC's real name back
+        if pc_locked():
+            raise RuntimeError("SKIP: this PC is locked; keystrokes go to the lock screen. Unlock it and run again")
         window = Helper("window", str(OUT), "150")
         window.wait_for("OK window", 15)
         log("host connected; probing until Windows delivers keystrokes to the window")

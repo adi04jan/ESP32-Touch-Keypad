@@ -36,4 +36,9 @@ int  bleConnectedSlot();                     // bond index of the connected host
 bool bleUse(int n);                          // switch to bond n (directed advertising)
 String bleHostName(int n);                   // the name Studio gave it, or "Host n+1"
 bool bleSetHostName(const char *name);
-void bleSetBattery(uint8_t pct);             // Battery Service level (100 on USB)       // name the connected host (Studio sends the PC name)
+void bleSetBattery(uint8_t pct);
+// Bluetooth console: the line CLI over a Nordic UART service, paired hosts only.
+void bleConsoleWrite(const uint8_t *b, size_t n);   // Con copies output here
+void bleConsoleFlush();
+int  bleConsoleRead();                       // next received byte, -1 if none (main loop)
+bool bleConsoleOpen();                       // a host is subscribed             // Battery Service level (100 on USB)       // name the connected host (Studio sends the PC name)

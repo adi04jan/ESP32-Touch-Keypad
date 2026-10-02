@@ -48,7 +48,7 @@ test("detect skips a CH340 that is not a Touch Keypad", async () => {
   link.on("log", (t) => logs.push(t));
   assert.equal(await link.detect(), null);
   assert.equal(link.isOpen(), false);
-  assert.match(logs.join(""), /not a Touch Keypad/);
+  assert.match(logs.join(""), /did not answer as a Touch Keypad/);
 });
 
 test("command queue serializes concurrent commands and attributes replies", async () => {

@@ -5,7 +5,7 @@
  * in-process simulated keypad (test/sim-device.js, dev only) instead of serial;
  * STUDIO_SMOKE=1 quits after the renderer reports ready (npm run smoke);
  * STUDIO_SCREENSHOT=<png> [STUDIO_VIEW=device|settings] captures the window;
- * STUDIO_DATA_DIR overrides the data dir. */
+ * STUDIO_DATA_DIR overrides the data dir; STUDIO_BLE_ONLY=1 connects over Bluetooth only. */
 "use strict";
 
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell, globalShortcut } = require("electron");
@@ -23,11 +23,13 @@ const flasher = require("./services/flasher");
 const hostbridge = require("./services/hostbridge");
 const { contextForProcess, CONTEXT_MATCH } = require("./services/contexts");
 const { SerialLink } = require("./services/serial");
+const { withBluetooth, BLE_PATH } = require("./services/bleport");
 const { Device } = require("./services/device");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
 const SMOKE = process.env.STUDIO_SMOKE === "1";
+const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: tests the Bluetooth link with the cable in
 const ICON = path.join(__dirname, "assets", "icon.ico");
 
 let win = null, tray = null, link = null, device = null, bridge = null;
@@ -54,7 +56,7 @@ function initServices() {
   store.configure({ dataDir: path.join(dataDir, "data") });
   backup.configure({ dataDir });
 
-  link = new SerialLink({ SerialPort: SIM ? simPort() : NO_SERIAL ? offlinePort() : undefined });
+  link = new SerialLink({ SerialPort: SIM ? simPort() : NO_SERIAL ? offlinePort() : withBluetooth(BLE_ONLY ? { list: async () => [] } : require("serialport").SerialPort) });
   bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log });
   device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname() });
 
@@ -266,8 +268,9 @@ ipcMain.handle("flash:info", () => flasher.info(fwResources()));
 // Install firmware: release the port, run esptool, then reconnect to the same port.
 ipcMain.handle("flash:run", async () => {
   if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
-  const port = link.path || ((await link.listPorts()).find((p) => p.ch340) || {}).path;
-  if (!port) return { ok: false, error: "no keypad found on USB" };
+  // esptool needs the cable: over Bluetooth, flash the keypad on USB if one is plugged in too.
+  const port = (link.path !== BLE_PATH && link.path) || ((await link.listPorts()).find((p) => p.ch340) || {}).path;
+  if (!port) return { ok: false, error: "connect the keypad with a USB cable to install firmware" };
   manualDisconnect = true;
   device.disconnect();
   await new Promise((r) => setTimeout(r, 400));

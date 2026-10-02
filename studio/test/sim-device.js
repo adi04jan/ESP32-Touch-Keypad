@@ -135,7 +135,7 @@ class SimDevice extends EventEmitter {
       case "status": {
         if (!this.doc) this._load(this.profileN);
         const up = this.ble.filter((b) => b && b.state === "connected").length;
-        return this.println(`Profile:${this.profileN} loaded:1 idle:0 mode:ble ver:${this.version} model:${this.model} page:${this.page} ble:${up} dry:0 ui:${this.cal === 0 ? "cal" : "home"} cal:${this.cal ?? 1} theme:${this.theme || "daylight"}`);
+        return this.println(`Profile:${this.profileN} loaded:1 idle:0 mode:ble ver:${this.version} model:${this.model} page:${this.page} ble:${up} dry:0 ui:${this.cal === 0 ? "cal" : "home"} cal:${this.cal ?? 1} theme:${this.theme || "daylight"} pwr:usb bat:82`);
       }
       case "fsinfo": return this.println(`FS_INFO:${this.fsTotal},${this._used()}`);
       case "ls": {
@@ -207,6 +207,11 @@ class SimDevice extends EventEmitter {
       case "setbrightness": if (arg) this.bright = +arg; return this.println(`brightness ${this.bright ?? 200}`);
       case "ledbright": if (arg) this.ledBright = +arg; return this.println(`ledbright ${this.ledBright ?? 153}`);
       case "click": if (arg) this.click = arg === "on"; return this.println(`click ${this.click === false ? "off" : "on"}`);
+      case "power": {
+        const m = arg.match(/^sleep (\d+)$/);
+        if (m) this.sleepMin = +m[1];
+        return this.println(`power usb:1 mv:4020 pct:82 charging:1 sleep:${this.sleepMin ?? 5} sim:-1 divider:2.000 cpu:240 screen:on`);
+      }
       case "theme": {
         const ids = ["glass", "paper", "daylight", "aurora", "synth", "retro"];
         if (arg && !ids.includes(arg)) return this.println(`theme ${ids.join(" ")}`);

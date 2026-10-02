@@ -1,5 +1,6 @@
 #include "cli.h"
 #include "board.h"
+#include "console.h"
 #include "storage.h"
 #include "profiles.h"
 #include "ui.h"
@@ -13,9 +14,10 @@
 #include "mbedtls/base64.h"
 #include "esp_rom_crc.h"
 
-static char line[CLI_LINE_MAX];
-static size_t lineLen = 0;
-static bool lineTooLong = false;
+// One line assembler per source: USB serial and the Bluetooth console.
+struct LineIn { char buf[CLI_LINE_MAX]; size_t len; bool tooLong; };
+static LineIn inUsb, inBle;
+static uint8_t curSrc = 0;   // 0 USB, 1 Bluetooth: the source of the line being handled
 
 // Uploads collect in RAM and touch flash only after ###END###: this core's UART
 // ISR is not in IRAM, so a flash erase mid-stream overflows the 128-byte RX FIFO
@@ -27,11 +29,14 @@ static struct {
   size_t size, cap, want;
   uint32_t crc, wantCrc, last;
   bool failed, tooBig, art;
+  uint8_t src;
 } up;
 
-bool cliUploading() { return up.on; }
+// A USB upload pauses drawing (its UART interrupt is not in IRAM); a Bluetooth one does not:
+// the NimBLE task fills its ring whatever the loop is doing.
+bool cliUploading() { return up.on && up.src == 0; }
 
-static void prompt() { Serial.print("macropad:$ "); }
+static void prompt() { Con.print("macropad:$ ");  Con.flush(); }
 
 static void normPath(const char *in, char *out, size_t n) {
   snprintf(out, n, "%s%s", *in == '/' ? "" : "/", in);
@@ -40,12 +45,13 @@ static void normPath(const char *in, char *out, size_t n) {
 // ---------------------------------------------------------------- uploads
 static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   normPath(path, up.path, sizeof up.path);
-  if (strstr(up.path, "..") || strlen(path) > 56) { Serial.println("ERR bad path"); return false; }
+  if (strstr(up.path, "..") || strlen(path) > 56) { Con.println("ERR bad path"); return false; }
   up.cap = bin ? want : 8192;
   up.art = bin && !strcmp(up.path, "/ram:art");   // album art goes straight to the player's buffer
   up.buf = up.art ? uiArtBuffer(want) : (uint8_t *)malloc(up.cap);
-  if (!up.buf) { Serial.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
+  if (!up.buf) { Con.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
   up.on = true;
+  up.src = curSrc;
   up.bin = bin;
   up.size = 0;
   up.want = want;
@@ -53,7 +59,7 @@ static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   up.wantCrc = crc;
   up.failed = up.tooBig = false;
   up.last = millis();
-  Serial.printf("RECV %s\n", up.path);
+  Con.printf("RECV %s\n", up.path);
   return true;
 }
 
@@ -88,7 +94,7 @@ static bool writeTmp(const String &tmp) {
 
 static void uploadAbort(const char *why) {
   uploadEnd();
-  Serial.println(why);
+  Con.println(why);
   prompt();
 }
 
@@ -113,23 +119,23 @@ static void uploadFinish() {
   if (up.art) {
     bool ok = !up.failed && up.size == up.want && up.crc == up.wantCrc;
     uiArtDone(ok);
-    if (ok) Serial.println("SAVED ram:art");
-    else Serial.printf("ERR art %u of %u bytes, crc %08lx\n", (unsigned)up.size, (unsigned)up.want, (unsigned long)up.crc);
+    if (ok) Con.println("SAVED ram:art");
+    else Con.printf("ERR art %u of %u bytes, crc %08lx\n", (unsigned)up.size, (unsigned)up.want, (unsigned long)up.crc);
     uploadEnd();
     prompt();
     return;
   }
   if (up.bin) {
-    if (up.failed || up.size != up.want) Serial.printf("ERR size mismatch %u != %u\n", (unsigned)up.size, (unsigned)up.want);
-    else if (up.crc != up.wantCrc) Serial.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc);
-    else if (!writeTmp(tmp) || !commitTmp(up.path, false)) Serial.printf("ERR cannot save %s\n", up.path);
-    else { Serial.printf("SAVED %s\n", up.path); uiMarkAll(); }
+    if (up.failed || up.size != up.want) Con.printf("ERR size mismatch %u != %u\n", (unsigned)up.size, (unsigned)up.want);
+    else if (up.crc != up.wantCrc) Con.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc);
+    else if (!writeTmp(tmp) || !commitTmp(up.path, false)) Con.printf("ERR cannot save %s\n", up.path);
+    else { Con.printf("SAVED %s\n", up.path); uiMarkAll(); }
     uploadEnd();
     prompt();
     return;
   }
   if (up.failed) {
-    Serial.println(up.tooBig ? "Upload too large; discarded." : "ERR out of RAM");
+    Con.println(up.tooBig ? "Upload too large; discarded." : "ERR out of RAM");
     uploadEnd();
     prompt();
     return;
@@ -137,7 +143,7 @@ static void uploadFinish() {
   size_t size = up.size;
   bool written = writeTmp(tmp);
   uploadEnd();
-  if (!written) { Serial.printf("ERR cannot write %s\n", tmp.c_str()); prompt(); return; }
+  if (!written) { Con.printf("ERR cannot write %s\n", tmp.c_str()); prompt(); return; }
 
   int id = 0;
   String err;
@@ -152,9 +158,9 @@ static void uploadFinish() {
     ok = !e;
     if (e) err = String("invalid JSON (") + e.c_str() + ")";
   }
-  if (!ok) { LittleFS.remove(tmp); Serial.printf("Upload rejected: %s\n", err.c_str()); prompt(); return; }
-  if (!commitTmp(up.path, true)) { Serial.printf("ERR cannot save %s\n", up.path); prompt(); return; }
-  Serial.printf("SAVED %s %u\n", up.path + 1, (unsigned)size);
+  if (!ok) { LittleFS.remove(tmp); Con.printf("Upload rejected: %s\n", err.c_str()); prompt(); return; }
+  if (!commitTmp(up.path, true)) { Con.printf("ERR cannot save %s\n", up.path); prompt(); return; }
+  Con.printf("SAVED %s %u\n", up.path + 1, (unsigned)size);
   if (id) {
     gcTiles();
     if (id == currentProfile) {
@@ -192,32 +198,32 @@ static void setActions(const char *cmd, const char *arg, const char *field) {
   const char *json = strchr(arg, ' ');
   JsonDocument tmp;
   if (!json || id < 1 || id > NUM_CELLS || deserializeJson(tmp, json + 1) || !tmp.is<JsonArray>()) {
-    Serial.printf("%s <id 1-15> <json-array>\n", cmd);
+    Con.printf("%s <id 1-15> <json-array>\n", cmd);
     return;
   }
   cellKey(id, true)[field] = tmp.as<JsonArray>();
   uiMarkCell(id - 1);
-  Serial.printf("Key %d updated in RAM\n", id);
+  Con.printf("Key %d updated in RAM\n", id);
 }
 
 // ---------------------------------------------------------------- commands
 static void cmdBle(const char *arg) {
   int n = -1;
   if (!strcmp(arg, "list")) bleList();
-  else if (sscanf(arg, "forget %d", &n) == 1) Serial.println(bleForget(n) ? "forgot " + String(n) : "ERR no host " + String(n));
-  else if (!strcmp(arg, "pair")) { blePairOpen(); Serial.println("pair open"); }
-  else if (!strcmp(arg, "cancel")) { blePairCancel(); Serial.println("pair closed"); }
-  else if (sscanf(arg, "use %d", &n) == 1) Serial.println(bleUse(n) ? "using " + String(n) : "ERR no host " + String(n));
-  else Serial.println("ble list | ble forget <n> | ble use <n> | ble pair | ble cancel");
+  else if (sscanf(arg, "forget %d", &n) == 1) Con.println(bleForget(n) ? "forgot " + String(n) : "ERR no host " + String(n));
+  else if (!strcmp(arg, "pair")) { blePairOpen(); Con.println("pair open"); }
+  else if (!strcmp(arg, "cancel")) { blePairCancel(); Con.println("pair closed"); }
+  else if (sscanf(arg, "use %d", &n) == 1) Con.println(bleUse(n) ? "using " + String(n) : "ERR no host " + String(n));
+  else Con.println("ble list | ble forget <n> | ble use <n> | ble pair | ble cancel");
 }
 
 static void cmdTouchcal(const char *arg) {
   float m[6];
   if (!strncmp(arg, "set", 3) && sscanf(arg + 3, "%f %f %f %f %f %f", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) == 6) touchSetCal(m, true);
   else if (!strcmp(arg, "clear")) touchClearCal();
-  else if (*arg) { Serial.println("touchcal | touchcal set <a b c d e f> | touchcal clear"); return; }
+  else if (*arg) { Con.println("touchcal | touchcal set <a b c d e f> | touchcal clear"); return; }
   touchGetCal(m);
-  Serial.printf("cal:%d %.6f %.6f %.3f %.6f %.6f %.3f\n", touchCalibrated(), m[0], m[1], m[2], m[3], m[4], m[5]);
+  Con.printf("cal:%d %.6f %.6f %.3f %.6f %.6f %.3f\n", touchCalibrated(), m[0], m[1], m[2], m[3], m[4], m[5]);
 }
 
 static void cmdLed(const char *arg) {
@@ -225,14 +231,14 @@ static void cmdLed(const char *arg) {
   int r, g, b;
   int n = sscanf(arg, "%11s %d %d %d", name, &r, &g, &b);
   int p = n >= 1 ? ledsPatternFromName(name) : -2;
-  if (p == -1) { Serial.println("led rainbow|breathe|solid|status|off [r g b]"); return; }
+  if (p == -1) { Con.println("led rainbow|breathe|solid|status|off [r g b]"); return; }
   if (p >= 0) ledsSetPattern(p);
   if (n == 4) ledsSetColor(constrain(r, 0, 255), constrain(g, 0, 255), constrain(b, 0, 255));
   uint8_t c[3], now[3];
   ledsGetColor(c);
   ledsCurrent(now);
   uiMarkAll();
-  Serial.printf("led %s color %d %d %d brightness %d showing %d %d %d\n", ledsPatternName(ledsPattern()), c[0], c[1], c[2],
+  Con.printf("led %s color %d %d %d brightness %d showing %d %d %d\n", ledsPatternName(ledsPattern()), c[0], c[1], c[2],
                 ledsBrightness(), now[0], now[1], now[2]);
 }
 
@@ -245,13 +251,13 @@ static bool runCommand(char *s) {
   int a, b, c, d, e;
 
   if (cmd == "help") {
-    Serial.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
+    Con.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
                    "setface <id> <tile> <r> <g> <b> title <id> <text> show <id> ok|alert widget <name> <json> "
                    "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> "
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
-    Serial.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s pwr:%s bat:%d\n",
+    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
                   uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
   } else if (cmd == "ls") {
@@ -259,28 +265,28 @@ static bool runCommand(char *s) {
   } else if (cmd == "cat") {
     char p[64];
     normPath(arg, p, sizeof p);
-    if (!*arg) Serial.println("cat <file>"); else catFile(p);
+    if (!*arg) Con.println("cat <file>"); else catFile(p);
   } else if (cmd == "rm") {
     char p[64];
     normPath(arg, p, sizeof p);
-    if (!*arg || strstr(p, "..")) Serial.println("rm <file>");
-    else if (!LittleFS.exists(p) || LittleFS.open(p).isDirectory()) Serial.printf("ERR no such file: %s\n", p);
-    else { LittleFS.remove(p); Serial.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
+    if (!*arg || strstr(p, "..")) Con.println("rm <file>");
+    else if (!LittleFS.exists(p) || LittleFS.open(p).isDirectory()) Con.printf("ERR no such file: %s\n", p);
+    else { LittleFS.remove(p); Con.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
   } else if (cmd == "fsinfo") {
-    Serial.printf("FS_INFO:%u,%u\n", (unsigned)LittleFS.totalBytes(), (unsigned)LittleFS.usedBytes());
+    Con.printf("FS_INFO:%u,%u\n", (unsigned)LittleFS.totalBytes(), (unsigned)LittleFS.usedBytes());
   } else if (cmd == "reboot") {
-    Serial.println("rebooting");
-    Serial.flush();
+    Con.println("rebooting");
+    Con.flush(); Serial.flush();
     delay(100);
     ESP.restart();
   } else if (cmd == "setprofile") {
     a = atoi(arg);
-    if (a < 1 || a > NUM_PROFILES) Serial.println("invalid");
-    else { uiSetProfile(a); Serial.printf("profile %d\n", a); }
+    if (a < 1 || a > NUM_PROFILES) Con.println("invalid");
+    else { uiSetProfile(a); Con.printf("profile %d\n", a); }
   } else if (cmd == "page") {
     a = atoi(arg);
-    if (a < 1 || a > pageCount) Serial.println("invalid page");
-    else { uiGoPage(a - 1, false); Serial.printf("page %d\n", a); }
+    if (a < 1 || a > pageCount) Con.println("invalid page");
+    else { uiGoPage(a - 1, false); Con.printf("page %d\n", a); }
   } else if (cmd == "setkey") {
     setActions("setkey", arg, "actions");
   } else if (cmd == "sethold") {
@@ -289,49 +295,49 @@ static bool runCommand(char *s) {
     char tile[12] = "";
     if (sscanf(arg, "%d %11s %d %d %d", &a, tile, &b, &c, &d) != 5 || a < 1 || a > NUM_CELLS || strlen(tile) != 8 ||
         strspn(tile, "0123456789abcdef") != 8) {
-      Serial.println("setface <id> <tile> <r> <g> <b>");
+      Con.println("setface <id> <tile> <r> <g> <b>");
     } else {
       JsonVariant k = cellKey(a, true);
       k["tile"] = tile;
       setColor(k, b, c, d);
       uiMarkCell(a - 1);
-      Serial.printf("face %d %s\n", a, LittleFS.exists(String("/t/") + tile + ".565") ? "ok" : "missing tile");
+      Con.printf("face %d %s\n", a, LittleFS.exists(String("/t/") + tile + ".565") ? "ok" : "missing tile");
     }
   } else if (cmd == "title") {
     a = atoi(arg);
     const char *text = strchr(arg, ' ');
-    if (a < 1 || a > NUM_CELLS) Serial.println("title <id> <text>");
-    else { cellKey(a, true)["name"] = text ? text + 1 : ""; uiMarkCell(a - 1); Serial.printf("title %d\n", a); }
+    if (a < 1 || a > NUM_CELLS) Con.println("title <id> <text>");
+    else { cellKey(a, true)["name"] = text ? text + 1 : ""; uiMarkCell(a - 1); Con.printf("title %d\n", a); }
   } else if (cmd == "show") {
     char what[8] = "";
-    if (sscanf(arg, "%d %7s", &a, what) != 2 || a < 1 || a > NUM_CELLS) Serial.println("show <id> ok|alert");
-    else { uiFlash(a - 1, strcmp(what, "alert") != 0); Serial.printf("show %d %s\n", a, what); }
+    if (sscanf(arg, "%d %7s", &a, what) != 2 || a < 1 || a > NUM_CELLS) Con.println("show <id> ok|alert");
+    else { uiFlash(a - 1, strcmp(what, "alert") != 0); Con.printf("show %d %s\n", a, what); }
   } else if (cmd == "widget") {
     const char *json = strchr(arg, ' ');
     JsonDocument doc;
-    if (!json || deserializeJson(doc, json + 1) || !doc.is<JsonObject>()) Serial.println("widget <name> <json>");
+    if (!json || deserializeJson(doc, json + 1) || !doc.is<JsonObject>()) Con.println("widget <name> <json>");
     else {
       String name = String(arg).substring(0, json - arg);
       if (name == "now_playing") uiNowPlaying(doc.as<JsonObjectConst>());
       else if (name == "volume") uiVolume(doc.as<JsonObjectConst>());
-      Serial.printf("widget %s\n", name.c_str());
+      Con.printf("widget %s\n", name.c_str());
     }
   } else if (cmd == "settime") {
     unsigned long epoch = 0;
     a = 0;
-    if (sscanf(arg, "%lu %d", &epoch, &a) < 1) Serial.println("settime <epoch> <tzmin>");
-    else { uiSetTime(epoch, a); Serial.println("time set"); }
+    if (sscanf(arg, "%lu %d", &epoch, &a) < 1) Con.println("settime <epoch> <tzmin>");
+    else { uiSetTime(epoch, a); Con.println("time set"); }
   } else if (cmd == "setled") {
-    if (sscanf(arg, "%d %d %d %d", &a, &b, &c, &d) != 4 || a < 1 || a > NUM_CELLS) Serial.println("setled <id> <r> <g> <b>");
-    else { setColor(cellKey(a, true), b, c, d); uiMarkCell(a - 1); Serial.println("setled ok"); }
+    if (sscanf(arg, "%d %d %d %d", &a, &b, &c, &d) != 4 || a < 1 || a > NUM_CELLS) Con.println("setled <id> <r> <g> <b>");
+    else { setColor(cellKey(a, true), b, c, d); uiMarkCell(a - 1); Con.println("setled ok"); }
   } else if (cmd == "setidle") {
-    Serial.println("setidle ok");   // v2.1 key-LED idle animations: this board has no key LEDs
+    Con.println("setidle ok");   // v2.1 key-LED idle animations: this board has no key LEDs
   } else if (cmd == "setbrightness") {
     if (*arg) uiSetBrightness(atoi(arg));   // no argument: just report
-    Serial.printf("brightness %d\n", uiBrightness());
+    Con.printf("brightness %d\n", uiBrightness());
   } else if (cmd == "setdim") {
     uiSetDim(atoi(arg));
-    Serial.printf("dim %d\n", atoi(arg));
+    Con.printf("dim %d\n", atoi(arg));
   } else if (cmd == "ble") {
     cmdBle(arg);
   // ---- debug / test harness ----
@@ -339,34 +345,34 @@ static bool runCommand(char *s) {
     displayShot();
   } else if (cmd == "touch" || cmd == "hold") {
     e = cmd == "touch" ? 80 : 800;
-    if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Serial.printf("%s <x> <y> [ms]\n", cmd.c_str());
+    if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Con.printf("%s <x> <y> [ms]\n", cmd.c_str());
     else { touchInject(a, b, a, b, e); return false; }
   } else if (cmd == "swipe") {
     e = 250;
-    if (sscanf(arg, "%d %d %d %d %d", &a, &b, &c, &d, &e) < 4) Serial.println("swipe <x1> <y1> <x2> <y2> [ms]");
+    if (sscanf(arg, "%d %d %d %d %d", &a, &b, &c, &d, &e) < 4) Con.println("swipe <x1> <y1> <x2> <y2> [ms]");
     else { touchInject(a, b, c, d, e); return false; }
   } else if (cmd == "hid") {
     if (!strcmp(arg, "dry on")) hidSetDry(true);
     else if (!strcmp(arg, "dry off")) hidSetDry(false);
     uiMarkStatus();
-    Serial.printf("hid dry %d connected %d\n", hidDry(), hidConnected());
+    Con.printf("hid dry %d connected %d\n", hidDry(), hidConnected());
   } else if (cmd == "heap") {
-    Serial.printf("heap free:%u min:%u largest:%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+    Con.printf("heap free:%u min:%u largest:%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
   } else if (cmd == "log") {
     touchLog(!strcmp(arg, "on"));
-    Serial.printf("log %s\n", arg);
+    Con.printf("log %s\n", arg);
   } else if (cmd == "lcd") {
     displayLcdCmd(arg);
   } else if (cmd == "bench") {
     displayBench();
   } else if (cmd == "calibrate") {
     if (!strcmp(arg, "cancel")) uiCalibrateCancel(); else uiCalibrate();
-    Serial.printf("ui %s\n", uiModeName());
+    Con.printf("ui %s\n", uiModeName());
   } else if (cmd == "touchcal") {
     cmdTouchcal(arg);
   } else if (cmd == "traw") {
     e = 120;
-    if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Serial.println("traw <rx> <ry> [ms]");
+    if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Con.println("traw <rx> <ry> [ms]");
     else { touchInjectRaw(a, b, e); return false; }
   } else if (cmd == "perf") {
     uiPerf(!strcmp(arg, "reset"));
@@ -377,7 +383,7 @@ static bool runCommand(char *s) {
     cmdLed(arg);
   } else if (cmd == "ledbright") {
     if (*arg) ledsSetBrightness(constrain(atoi(arg), 0, 255));
-    Serial.printf("ledbright %d\n", ledsBrightness());
+    Con.printf("ledbright %d\n", ledsBrightness());
   } else if (cmd == "power") {
     float k;
     if (!strcmp(arg, "sim battery")) powerSim(0);
@@ -385,34 +391,34 @@ static bool runCommand(char *s) {
     else if (!strcmp(arg, "sim off")) powerSim(-1);
     else if (sscanf(arg, "sleep %d", &a) == 1) powerSetSleepMin(constrain(a, 0, 120));
     else if (sscanf(arg, "divider %f", &k) == 1) powerSetDivider(k);
-    else if (*arg) { Serial.println("power [sim battery|usb|off | sleep <min, 0 never> | divider <k>]"); return true; }
-    Serial.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f cpu:%d screen:%s\n", powerOnUsb(), powerBatteryMv(),
+    else if (*arg) { Con.println("power [sim battery|usb|off | sleep <min, 0 never> | divider <k>]"); return true; }
+    Con.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f cpu:%d screen:%s\n", powerOnUsb(), powerBatteryMv(),
                   powerBatteryPct(), powerCharging(), powerSleepMin(), powerSimMode(), powerDivider(), (int)getCpuFrequencyMhz(), uiScreenState());
   } else if (cmd == "theme") {
     if (!strcmp(arg, "default")) uiThemeReset();
     int t = *arg && strcmp(arg, "default") ? uiThemeFind(arg) : uiTheme();
     if (t < 0) {
-      Serial.print("theme");
-      for (int i = 0; i < uiThemeCount(); i++) Serial.printf(" %s", uiThemeId(i));
-      Serial.println();
+      Con.print("theme");
+      for (int i = 0; i < uiThemeCount(); i++) Con.printf(" %s", uiThemeId(i));
+      Con.println();
     } else {
       if (*arg) uiSetTheme(t);
-      Serial.printf("theme %s\n", uiThemeId(t));
+      Con.printf("theme %s\n", uiThemeId(t));
     }
   } else if (cmd == "click") {
     if (*arg) feedbackSetClick(!strcmp(arg, "on"));
-    Serial.printf("click %s\n", feedbackClickOn() ? "on" : "off");
+    Con.printf("click %s\n", feedbackClickOn() ? "on" : "off");
   } else if (cmd == "hostname") {
-    if (!*arg) Serial.println("hostname <name>");
-    else Serial.println(bleSetHostName(arg) ? "hostname set" : "ERR no host connected");
+    if (!*arg) Con.println("hostname <name>");
+    else Con.println(bleSetHostName(arg) ? "hostname set" : "ERR no host connected");
   } else if (cmd == "toast") {
     uiToast(arg);
-    Serial.println("toast");
+    Con.println("toast");
   } else if (cmd == "sheet") {
     if (!strcmp(arg, "close")) uiCloseSheet(); else uiOpenSheet();
-    Serial.printf("ui %s\n", uiModeName());
+    Con.printf("ui %s\n", uiModeName());
   } else {
-    Serial.println("unknown");
+    Con.println("unknown");
   }
   return true;
 }
@@ -432,47 +438,57 @@ static void handleLine(char *s, size_t n) {
     unsigned size = 0;
     unsigned long crc = 0;
     if (sscanf(s + 12, "%63s %u crc=%8lx", path, &size, &crc) != 3 || size == 0 || size > UPLOAD_MAX) {
-      Serial.println("ERR usage: ###BEGINB### <path> <size> crc=<crc32>");
+      Con.println("ERR usage: ###BEGINB### <path> <size> crc=<crc32>");
       prompt();
     } else if (!uploadOpen(path, true, size, crc)) prompt();
   } else if (!strncmp(s, "###BEGIN###", 11)) {
     char *t = s + 11;
     while (*t == ' ') t++;
-    if (!*t) { Serial.println("Usage: ###BEGIN### filename.json"); prompt(); }
+    if (!*t) { Con.println("Usage: ###BEGIN### filename.json"); prompt(); }
     else if (!uploadOpen(t, false, 0, 0)) prompt();
   } else if (!*s) {
     prompt();
-  } else if (runCommand(s)) {
-    prompt();
+  } else {
+    // An edit from Studio lights a dark screen so it shows; feeds (widget, settime) and readouts don't.
+    static const char *const WAKES[] = { "setprofile", "page", "setkey", "sethold", "setface", "show", "theme", "setbrightness", "sheet" };
+    for (const char *w : WAKES) {
+      size_t l = strlen(w);
+      if (!strncmp(s, w, l) && s[l] == ' ') { uiWake(); break; }
+    }
+    if (runCommand(s)) prompt();
   }
 }
 
 void cliBegin() {
   up.on = false;
-  lineLen = 0;
+  inUsb.len = inBle.len = 0;
   prompt();
+}
+
+static void feed(LineIn &in, char ch, uint8_t src) {
+  if (ch == '\r') return;
+  if (ch != '\n') {
+    if (in.len < sizeof in.buf - 1) in.buf[in.len++] = ch;
+    else in.tooLong = true;
+    return;
+  }
+  in.buf[in.len] = 0;
+  size_t n = in.len;
+  in.len = 0;
+  curSrc = src;
+  if (in.tooLong) {
+    in.tooLong = false;
+    if (up.on) up.failed = true;   // a line longer than CLI_LINE_MAX: the upload is corrupt
+    else { Con.printf("ERR line longer than %d bytes\n", CLI_LINE_MAX - 1); prompt(); }
+    return;
+  }
+  handleLine(in.buf, n);
 }
 
 void handleSerialInput() {
   if (up.on && millis() - up.last > UPLOAD_TIMEOUT_MS) uploadAbort("Upload timed out; discarded.");
   uint32_t t0 = millis();
-  while (Serial.available() && millis() - t0 < 25) {   // bounded so touch and drawing stay live
-    char ch = Serial.read();
-    if (ch == '\r') continue;
-    if (ch != '\n') {
-      if (lineLen < sizeof line - 1) line[lineLen++] = ch;
-      else lineTooLong = true;
-      continue;
-    }
-    line[lineLen] = 0;
-    size_t n = lineLen;
-    lineLen = 0;
-    if (lineTooLong) {
-      lineTooLong = false;
-      if (up.on) up.failed = true;   // a line longer than CLI_LINE_MAX: the upload is corrupt
-      else { Serial.printf("ERR line longer than %d bytes\n", CLI_LINE_MAX - 1); prompt(); }
-      continue;
-    }
-    handleLine(line, n);
-  }
+  while (Serial.available() && millis() - t0 < 25) feed(inUsb, Serial.read(), 0);   // bounded: touch and drawing stay live
+  int c;
+  while (millis() - t0 < 25 && (c = bleConsoleRead()) >= 0) feed(inBle, (char)c, 1);
 }

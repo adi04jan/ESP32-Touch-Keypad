@@ -155,7 +155,7 @@ function renderTop() {
   const c = state.conn, pill = $("conn-pill");
   pill.className = `pill ${c.connected ? "ok" : "off"}`;
   pill.lastElementChild.textContent = c.connected
-    ? `Touch Keypad · ${c.path} · fw ${(c.status && c.status.ver) || "?"}`
+    ? `Touch Keypad · ${c.path === "BLE" ? "Bluetooth" : c.path} · fw ${(c.status && c.status.ver) || "?"}`
     : c.noSerial ? "Serial disabled" : "Offline · looking for the keypad";
 }
 
@@ -473,12 +473,14 @@ async function renderDevice() {
   if (look && look.theme) state.theme = look.theme;
   const dis = c.connected ? "" : "disabled";
   const pct = (v) => (look ? `${Math.round(v / 2.55)}%` : "—");
+  const pw = look && look.power, onBle = c.path === "BLE";
+  const power = !pw ? "—" : pw.usb ? (pw.pct < 0 ? "USB" : pw.charging ? `USB · charging, ${pw.pct}%` : "USB · battery full") : `Battery · ${pw.pct}%`;
   el.innerHTML = `
     <div class="book"><h2>Connection</h2>
       <label class="field"><span>Port</span><select id="d-port">${ports.map((p) => `<option value="${esc(p.path)}" ${p.path === c.path ? "selected" : ""}>${esc(p.label)}${p.ch340 ? " (CH340)" : ""}</option>`).join("") || "<option value=''>No serial ports</option>"}</select></label>
       <div class="row"><button class="primary" id="d-detect">${ico("search")} Find keypad</button><button id="d-connect">${ico("plug")} Connect to port</button><button class="ghost" id="d-disc" ${dis}>${ico("unplug")} Disconnect</button></div>
-      <label class="check"><input type="checkbox" id="d-auto" ${state.settings.auto_connect ? "checked" : ""}> Connect automatically when the keypad is plugged in</label>
-      <dl class="kv"><dt>Firmware</dt><dd>${esc(st.ver || "—")}</dd><dt>Active profile</dt><dd>${esc(c.activeSlot || "—")} · page ${esc(c.page || "—")}</dd>
+      <label class="check"><input type="checkbox" id="d-auto" ${state.settings.auto_connect ? "checked" : ""}> Connect automatically, over USB or Bluetooth</label>
+      <dl class="kv"><dt>Link</dt><dd>${c.connected ? (onBle ? "Bluetooth" : `USB · ${esc(c.path)}`) : "—"}</dd><dt>Power</dt><dd>${power}</dd><dt>Firmware</dt><dd>${esc(st.ver || "—")}</dd><dt>Active profile</dt><dd>${esc(c.activeSlot || "—")} · page ${esc(c.page || "—")}</dd>
         <dt>Bluetooth</dt><dd>${+st.ble > 0 ? "host connected" : c.connected ? "advertising" : "—"}</dd><dt>Touch</dt><dd>${st.cal === "1" ? "calibrated" : c.connected ? "not calibrated" : "—"}</dd>
         <dt>Storage</dt><dd>${fs ? `${Math.round(fs.used / 1024)} KB of ${Math.round(fs.total / 1024)} KB` : "—"}</dd></dl>
       <div class="row"><button id="d-refresh" ${dis}>${ico("refresh-cw")} Refresh</button><button id="d-cal" ${dis}>${ico("crosshair")} Calibrate touch</button></div></div>
@@ -488,14 +490,16 @@ async function renderDevice() {
       <div class="field"><span>Status LED</span><div class="seg" role="group" aria-label="LED pattern">${LED_PATTERNS.map((p) => `<button data-led="${p}" aria-pressed="${!!look && look.led === p}" ${dis}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div></div>
       <div class="field"><span>LED colour · solid and breathe</span><div class="swatches">${TINTS.map((t) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="LED colour ${t.join(",")}" ${dis}></button>`).join("")}</div></div>
       <label class="field"><span>LED brightness · ${pct(look && look.ledBright)}</span><input type="range" id="d-ledb" min="0" max="255" value="${look ? look.ledBright : 153}" ${dis}></label>
-      <label class="check"><input type="checkbox" id="d-click" ${look && look.click ? "checked" : ""} ${dis}> Key click</label></div>
+      <label class="check"><input type="checkbox" id="d-click" ${look && look.click ? "checked" : ""} ${dis}> Key click</label>
+      <label class="field"><span>On battery, sleep after</span><select id="d-sleep" ${dis}>${[[1, "1 minute"], [2, "2 minutes"], [5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [30, "30 minutes"], [0, "Never"]].map(([m, t]) => `<option value="${m}" ${pw && pw.sleep === m ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <p class="hint">On battery the screen dims after 20 seconds and turns off after a minute; a touch wakes it. Asleep, the keypad wakes on a touch and reconnects. On USB it stays at full power.</p></div>
     <div class="book"><h2>Bluetooth hosts</h2>
       ${ble.slots.length ? `<table><thead><tr><th>Host</th><th>State</th><th></th></tr></thead><tbody>${ble.slots.map((b) => `<tr><td>${esc(b.name)}</td><td>${b.state === "connected" ? `<span class="pill ok">connected</span>` : "paired"}</td><td><span class="row" style="flex-wrap:nowrap; justify-content:flex-end">${b.state !== "connected" ? `<button data-use="${b.slot}">Use</button>` : ""}<button class="danger" data-forget="${b.slot}">${ico("trash-2")} Forget</button></span></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">${c.connected ? "No host paired yet." : "Connect the keypad to see its hosts."}</p>`}
       <div class="row"><button id="d-pair" ${dis}>${ico("link")} Pair a new host</button></div>
       <p class="hint">Pairing shows a six-digit code on the keypad; type it on the computer. The keypad remembers three hosts. Forgetting removes the bond on the keypad; remove it on the computer too.</p></div>
     <div class="book"><h2>Firmware</h2>
-      <p>${esc(flash.note)}</p>
+      <p>${esc(flash.note)}</p>${onBle ? `<p class="hint">Connected over Bluetooth. Installing firmware needs the USB cable.</p>` : ""}
       ${flash.available ? `<div class="row"><button class="primary" id="d-flash">${ico("download")} Install firmware ${esc(flash.version || "")}</button></div><div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
     <div class="book wide"><h2>Backups</h2>
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
@@ -512,6 +516,7 @@ async function renderDevice() {
   $("d-bright").onchange = (e) => cmd(`setbrightness ${e.target.value}`);
   $("d-ledb").onchange = (e) => cmd(`ledbright ${e.target.value}`);
   $("d-click").onchange = (e) => cmd(`click ${e.target.checked ? "on" : "off"}`);
+  $("d-sleep").onchange = (e) => cmd(`power sleep ${e.target.value}`);
   el.querySelectorAll("[data-led]").forEach((b) => { b.onclick = () => cmd(`led ${b.dataset.led}`); });
   el.querySelectorAll("[data-theme-set]").forEach((b) => { b.onclick = async () => {
     state.theme = b.dataset.themeSet;

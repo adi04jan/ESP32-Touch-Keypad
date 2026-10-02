@@ -28,6 +28,16 @@ Status: firmware 3.1.0 and Studio 3.1.0 built and tested on hardware (2026-10-02
 
 Done 2026-10-02: firmware 3.2.0 and Studio 3.2.0. 51 board tests (15 for themes: ground and key style per theme, page wave and press at 50+ fps in each, the wipe, the sheet chip, survival across a reboot), Studio 44 unit + 10 hardware, both end-to-end runs. Gradients are dithered (2×2, half an RGB565 step), which also removed banding from the Glass and Aurora skies and a pink cast on near-white tiles.
 
+**3.2.1 task list: power, speed, Studio over Bluetooth** (owner's brief, 2026-10-02: Studio works over Bluetooth alone; smart sleep on battery, full power on USB; a faster screen; the battery level shown with a cell, charging on USB)
+- [x] USB or battery from the CH340's TX line; the Li-ion curve on IO34; the status band shows the charge, a bolt while charging on USB, a plug with no cell; the Battery Service level.
+- [x] Battery policy: dim at 20 s, off at 60 s (CPU 80 MHz, LED dark), deep sleep after `power sleep` minutes (default 5), wake on touch. Edits from Studio light the screen; feeds don't.
+- [x] Faster frames: two-pixel dither stores, a cheaper pop fade, clipped back cards. Every theme animates at 50+ fps on the board.
+- [x] Bluetooth console: a Nordic UART service carries the same CLI to paired hosts; KpLink (C#, Windows GATT) bridges it to Studio, with USB still tried first.
+- [x] Studio: the Link and Power rows, the battery sleep setting, a Bluetooth note on firmware install.
+- [x] Tests: power on the board (readout, battery policy, the wake rule, sleep minutes); Bluetooth port units; the installed-app E2E in both USB and Bluetooth-only modes.
+
+Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit + 10 hardware, media E2E, installed-app E2E on USB and on Bluetooth (15 pass each; the 3 keystroke tests skip while the PC is locked).
+
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.
 - Macropad Studio 3 replaces the planned Web Serial configurator and the Tauri companion. It gets a "Touch Keypad" device type (§10).

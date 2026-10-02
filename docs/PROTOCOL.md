@@ -2,11 +2,12 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.2.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.2.1.
 
 ## Transport
 
 - USB serial through the CH340 (VID `1A86`, PID `7523`), **921600 baud**, 8N1.
+- **Or Bluetooth:** the same console on a Nordic UART service: service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`, write host → device on `…0002` (with or without response), notifications device → host on `…0003`. Writes need an encrypted link, so only a paired host gets in. Output goes out in MTU-sized notifications (the keypad asks for MTU 247), and a prompt with no newline is flushed after 30 ms. Studio reaches it through `studio/native/KpLink` (Windows' GATT API on the paired keypad, no scan). `shot` answers on USB only. A Bluetooth upload doesn't pause the screen the way a USB one does.
 - **Release DTR and RTS after opening the port** (`kp.py` and Studio both do). On the board's auto-reset circuit RTS alone holds EN low (reset; `kp.py reset` uses that on purpose) and DTR alone holds IO0 (BOOT) low, which the keypad reads as a BOOT hold and answers by opening touch calibration after 2 s.
 - Host → device: one command per line, ending `\n` (`\r` is ignored). Longest line: 8191 bytes.
 - The device prints the prompt `macropad:$ ` (no newline) when it is ready for the next command.
@@ -18,7 +19,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | Command | Reply (before the prompt) | Notes |
 |---|---|---|
 | `help` | one line listing the commands | |
-| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.2.0 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1 theme:glass` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `cal:1` once touch is calibrated; `theme:` the device theme |
+| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.2.1 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1 theme:glass pwr:usb bat:96` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `cal:1` once touch is calibrated; `theme:` the device theme; `pwr:` usb or bat; `bat:` the cell's charge in % (-1 when no cell is read) |
 | `ls [dir]` | `path\tsize` per file, recursive, no leading slash (`t/3fa9c2d1.565\t10368`) | default `/` |
 | `cat <file>` | the file, ending with a newline | `ERR no such file: /x` |
 | `rm <file>` | `removed /x` or `ERR no such file: /x` | removing a profile also deletes tiles nothing references |
@@ -42,6 +43,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
 | `theme [id\|title\|1-6\|default]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; `default` forgets the saved theme (Daylight); an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
+| `power [sim battery\|usb\|off \| sleep <min> \| divider <k>]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests), the battery divider (NVS `kp/batk`, a calibration knob), CPU MHz, screen lit/dim/off |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
 | `ble use <n>` | `using <n>` or `ERR no host <n>` | drop the current link and advertise only to bond n |
@@ -83,6 +85,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:PROFILE <n>` | profile loaded |
 | `EVT:UI home\|sheet\|pair\|cal` | the screen mode changed |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
+| `EVT:POWER sleep` | on battery, idle past the sleep time: the keypad goes into deep sleep; a touch wakes it (a reboot) |
 | `EVT:SEEK <s>` | tap on the player's seek bar; the host should seek its media session there |
 | `EVT:CAL start\|point <n> <rx> <ry>\|retry fit <px>\|retry verify <px>\|saved <px>\|redo\|done\|cancel` | calibration progress; `saved` carries the check-point error in px (at most 16) |
 | `EVT:BLE <slot> up\|down` | host link up (encrypted) or down |
@@ -132,6 +135,15 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | key `toggle: true` | the key keeps an on/off state and shows ON; `off_actions` run when it turns off (else `actions` both ways) |
 | widget `media`, span `[5,3]` on cell 1 | the page is the full media player |
 
+## Power
+
+USB is detected from the CH340's TX line, which idles high while USB powers the chip
+(sampled on RX, IO3). The cell is read on IO34 through the board's divider.
+- **On USB:** full power and the owner's dim setting. A reading under 4.25 V is a cell charging (`charging:1`); the status band shows a green battery with a bolt. Higher is the charger with no cell, and the band shows a plug.
+- **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz and the LED goes dark. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it.
+- Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.
+- The Bluetooth Battery Service carries the charge (100 when no cell is read).
+
 ## Pairing
 
 The device is DisplayOnly with LE Secure Connections, MITM and bonding.
@@ -148,6 +160,7 @@ The device is DisplayOnly with LE Secure Connections, MITM and bonding.
 | `kp/prof` | last profile (boot loads it; hold BOOT while the board starts to come up on profile 1) |
 | `kp/bright`, `kp/dim` | backlight 8–255; dim after N s |
 | `kp/ledp`, `kp/ledb`, `kp/ledc`, `kp/click` | LED pattern, LED brightness, LED colour, key click |
+| `kp/bsleep`, `kp/batk` | minutes on battery before deep sleep (default 5, 0 never); the battery divider (default 2.0) |
 | `kp/theme` | the theme index (0 Glass, 1 Paper, 2 Daylight, 3 Aurora, 4 Synth, 5 Retro); missing = Daylight |
 | `kp/defv`, `kp/dcrc1..3` | which default profiles were installed, and their CRCs (an edited default is never replaced) |
 | `touch/aff` | 6 floats: the affine touch calibration. Missing = the calibration screen opens at boot |

@@ -1,5 +1,6 @@
 #include "touch.h"
 #include "board.h"
+#include "console.h"
 #include "display.h"
 #include "ui.h"
 #include <Preferences.h>
@@ -135,7 +136,7 @@ static void classifyRelease() {
   uint8_t kind = G_TAP;
   if (abs(dx) > SWIPE_X_PX && abs(dx) > abs(dy)) kind = dx < 0 ? G_SWIPE_L : G_SWIPE_R;
   else if (abs(dy) > SWIPE_Y_PX && abs(dy) > abs(dx)) kind = dy < 0 ? G_SWIPE_U : G_SWIPE_D;
-  if (verbose) Serial.printf("touch up %d,%d -> %d,%d kind %u raw %d,%d\n", sx, sy, lx, ly, kind, pressRX, pressRY);
+  if (verbose) Con.printf("touch up %d,%d -> %d,%d kind %u raw %d,%d\n", sx, sy, lx, ly, kind, pressRX, pressRY);
   uiGesture(kind, sx, sy, lx, ly);
 }
 
@@ -180,7 +181,7 @@ void scanTouch() {
       rx = tp.x;
       ry = tp.y;
       touchMap(rx, ry, &x, &y);
-      if (verbose) Serial.printf("touch raw %d,%d -> %d,%d\n", rx, ry, x, y);
+      if (verbose) Con.printf("touch raw %d,%d -> %d,%d\n", rx, ry, x, y);
     }
   }
   x = constrain(x, 0, SCR_W - 1);
@@ -218,7 +219,7 @@ void scanTouch() {
   }
   if (injEnd) {
     inj.active = false;
-    Serial.println("OK");
-    Serial.print("macropad:$ ");
+    Con.println("OK");
+    Con.print("macropad:$ ");
   }
 }

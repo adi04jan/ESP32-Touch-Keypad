@@ -4,7 +4,7 @@
     python tools/e2e/keypad_state.py restore <file>
 
 save records the active profile, theme, LED pattern, colour and brightness,
-screen brightness, key click and the HID dry-run state. --free-slot N makes slot N available for the
+screen brightness, key click, battery sleep time and the HID dry-run state. --free-slot N makes slot N available for the
 run: an untouched blank (the file the keypad writes when an empty slot is
 visited) is removed; a real profile there stops the run instead of being
 overwritten. restore puts every recorded value back and removes slot N again.
@@ -38,6 +38,7 @@ def save(path, free):
         "led": led.group(1), "led_color": led.group(2), "led_bright": int(led.group(3)),
         "bright": int(re.search(r"brightness (\d+)", d.cmd("setbrightness")[0]).group(1)),
         "click": d.cmd("click")[0].endswith("on"),
+        "sleep": int(m.group(1)) if (m := re.search(r"sleep:(\d+)", d.cmd("power")[0])) else None,   # firmware 3.2.1+
         "free_slot": free, "status": st,
     }
     if free:
@@ -61,6 +62,7 @@ def restore(path):
         d.cmd(f"rm /profile{s['free_slot']}.json")
     for c in (f"setprofile {s['profile']}", f"theme {s['theme']}", f"led {s['led']} {s['led_color']}",
               f"ledbright {s['led_bright']}", f"setbrightness {s['bright']}", f"click {'on' if s['click'] else 'off'}",
+              *([f"power sleep {s['sleep']}", "power sim off"] if s.get("sleep") is not None else []),
               f"hid dry {'on' if 'dry:1' in s['status'] else 'off'}"):
         d.cmd(c)
     print(d.cmd("status")[0])

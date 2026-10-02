@@ -1,5 +1,6 @@
 #include "ble_hid.h"
 #include "board.h"
+#include "console.h"
 #include "hid_maps.h"
 #include "ui.h"
 #include <NimBLEDevice.h>
@@ -71,13 +72,70 @@ static uint32_t newPasskey() {
   return passkey;
 }
 
+// ---------------------------------------------------------------- Bluetooth console (Nordic UART service)
+// The same line CLI as USB serial, for Studio with no cable. Writes need an encrypted
+// link (a host that paired with the passkey on the screen); the NimBLE task fills a
+// ring that the main loop drains, and output goes out in MTU-sized notifications.
+static NimBLECharacteristic *nusTx;
+static volatile bool nusOn = false;
+static volatile uint16_t nusChunk = 20;
+static uint8_t rxRing[8192];
+static volatile uint16_t rxHead = 0, rxTail = 0;
+static uint8_t txBuf[244];
+static size_t txLen = 0;
+static uint32_t txAt = 0;
+
+class NusRx : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
+    if (!info.isEncrypted()) return;
+    NimBLEAttValue v = c->getValue();
+    for (size_t i = 0; i < v.length(); i++) {
+      uint16_t next = (rxHead + 1) % sizeof rxRing;
+      if (next == rxTail) break;   // full: the loop is far behind; that line fails its checks
+      rxRing[rxHead] = v.data()[i];
+      rxHead = next;
+    }
+  }
+};
+class NusTx : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic *c, NimBLEConnInfo &info, uint16_t subValue) override {
+    nusChunk = min((int)sizeof txBuf, max(20, (int)info.getMTU() - 3));
+    nusOn = subValue && info.isEncrypted();
+  }
+};
+
+static void txSend() {
+  if (!txLen) return;
+  if (nusOn && linkUp)
+    for (int t = 0; t < 60 && !nusTx->notify(txBuf, txLen); t++) delay(3);   // the queue drains
+  txLen = 0;
+}
+void bleConsoleWrite(const uint8_t *b, size_t n) {
+  if (!nusOn) return;
+  for (size_t i = 0; i < n; i++) {
+    txBuf[txLen++] = b[i];
+    if (txLen >= nusChunk || b[i] == '\n') txSend();
+  }
+  txAt = millis();
+}
+void bleConsoleFlush() { txSend(); }
+int bleConsoleRead() {
+  if (rxHead == rxTail) return -1;
+  uint8_t c = rxRing[rxTail];
+  rxTail = (rxTail + 1) % sizeof rxRing;
+  return c;
+}
+bool bleConsoleOpen() { return nusOn; }
+
 class ServerCb : public NimBLEServerCallbacks {
+  void onMTUChange(uint16_t mtu, NimBLEConnInfo &info) override { nusChunk = min((int)sizeof txBuf, max(20, (int)mtu - 3)); }
   void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override {
     bondsAtConnect = NimBLEDevice::getNumBonds();
     s->updateConnParams(info.getConnHandle(), 6, 12, 0, 400);   // 7.5-15 ms
   }
   void onDisconnect(NimBLEServer *s, NimBLEConnInfo &info, int reason) override {
     linkUp = s->getConnectedCount() > 0;
+    if (!linkUp) nusOn = false;
     post(EV_DOWN, slotOf(info.getIdAddress()), reason);
   }
   uint32_t onPassKeyDisplay() override {
@@ -128,6 +186,13 @@ void hidBegin() {
   hid->setHidInfo(0x00, 0x01);
   hid->setReportMap((uint8_t *)reportMap, sizeof(reportMap));
   hid->setBatteryLevel(100);                    // power.cpp updates it once it has a reading
+
+  NimBLEDevice::setMTU(247);                    // console lines in a few notifications, not dozens
+  NimBLEService *nus = server->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+  nus->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
+                            NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::WRITE_ENC)->setCallbacks(new NusRx());
+  nusTx = nus->createCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E", NIMBLE_PROPERTY::NOTIFY);
+  nusTx->setCallbacks(new NusTx());
   server->start();
 
   NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
@@ -143,7 +208,7 @@ static bool sendReport(uint8_t id, const uint8_t *data, size_t len) {
   if (dryRun) {
     char hex[2 * 8 + 1];
     for (size_t i = 0; i < len; i++) sprintf(hex + 2 * i, "%02x", data[i]);
-    Serial.printf("EVT:HID %u %s\n", id, hex);
+    Con.printf("EVT:HID %u %s\n", id, hex);
   }
   if (!linkUp) return dryRun;
   NimBLECharacteristic *c = id == RID_KB ? inKb : id == RID_CONS ? inCons : id == RID_MOUSE ? inMouse : inTel;
@@ -155,7 +220,7 @@ static bool sendReport(uint8_t id, const uint8_t *data, size_t len) {
     if (c->notify(data, len)) return true;
     delay(3);
   }
-  Serial.printf("HID report %u dropped: the link is not draining\n", id);
+  Con.printf("HID report %u dropped: the link is not draining\n", id);
   return false;
 }
 
@@ -203,7 +268,7 @@ bool hidPressKey(const char *name) {
   if (uint8_t code = keyNameToHid(name)) return tap(0, code);
   if (uint8_t m = modifierNameToBit(name)) return tap(m, 0);
   if (strlen(name) == 1) return hidTypeChar(name[0]);
-  Serial.printf("Unknown key '%s'\n", name);
+  Con.printf("Unknown key '%s'\n", name);
   return true;
 }
 
@@ -284,31 +349,32 @@ bool hidDry() { return dryRun; }
 static void pairClose(const char *why) {
   if (!pairOpen) return;
   pairOpen = false;
-  Serial.printf("EVT:BLE pair %s\n", why);
+  Con.printf("EVT:BLE pair %s\n", why);
   uiPairClose();
 }
 
 void blePoll() {
+  if (txLen && millis() - txAt > 30) txSend();   // a partial console line (a prompt) goes out
   BleEvt e;
   while (xQueueReceive(evq, &e, 0) == pdTRUE) {
     switch (e.type) {
       case EV_PASSKEY:
-        if (!pairOpen) { pairOpen = true; pairStart = millis(); Serial.println("EVT:BLE pair open"); }
-        Serial.printf("EVT:PASSKEY %06lu\n", (unsigned long)e.val);
+        if (!pairOpen) { pairOpen = true; pairStart = millis(); Con.println("EVT:BLE pair open"); }
+        Con.printf("EVT:PASSKEY %06lu\n", (unsigned long)e.val);
         uiPairShow(e.val);
         break;
       case EV_UP:
-        Serial.printf("EVT:BLE %d up\n", e.slot);
-        if (e.newBond) { if (pairOpen) pairClose("ok"); else { Serial.println("EVT:BLE pair ok"); uiPairClose(); } }
+        Con.printf("EVT:BLE %d up\n", e.slot);
+        if (e.newBond) { if (pairOpen) pairClose("ok"); else { Con.println("EVT:BLE pair ok"); uiPairClose(); } }
         uiMarkStatus();
         break;
       case EV_DOWN:
-        Serial.printf("EVT:BLE %d down\n", e.slot);
+        Con.printf("EVT:BLE %d down\n", e.slot);
         uiMarkStatus();
         break;
       case EV_FAIL:
       case EV_REJECT:
-        Serial.printf("EVT:BLE pair %s\n", e.type == EV_FAIL ? "fail" : "rejected");
+        Con.printf("EVT:BLE pair %s\n", e.type == EV_FAIL ? "fail" : "rejected");
         pairOpen = false;
         uiPairClose();
         break;
@@ -329,8 +395,8 @@ void blePairOpen() {
   newPasskey();
   pairOpen = true;
   pairStart = millis();
-  Serial.println("EVT:BLE pair open");
-  Serial.printf("EVT:PASSKEY %06lu\n", (unsigned long)passkey);
+  Con.println("EVT:BLE pair open");
+  Con.printf("EVT:PASSKEY %06lu\n", (unsigned long)passkey);
   uiPairShow(passkey);
   NimBLEDevice::getAdvertising()->start();
 }
@@ -352,9 +418,9 @@ void bleList() {
     bool up = false;
     for (uint16_t h : server->getPeerDevices())
       if (server->getPeerInfoByHandle(h).getIdAddress() == a) up = true;
-    Serial.printf("%d %s %s %s\n", i, a.toString().c_str(), up ? "connected" : "bonded", bleHostName(i).c_str());
+    Con.printf("%d %s %s %s\n", i, a.toString().c_str(), up ? "connected" : "bonded", bleHostName(i).c_str());
   }
-  Serial.printf("hosts:%d connected:%d advertising:%d pairing:%d\n", n, (int)server->getConnectedCount(),
+  Con.printf("hosts:%d connected:%d advertising:%d pairing:%d\n", n, (int)server->getConnectedCount(),
                 (int)NimBLEDevice::getAdvertising()->isAdvertising(), (int)pairOpen);
 }
 

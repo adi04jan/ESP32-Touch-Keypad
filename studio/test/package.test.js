@@ -16,3 +16,9 @@ test("the installer packages every folder Studio loads at run time", () => {
     assert.ok(pkg.build.files.some((f) => f === m[1] || f.startsWith(`${m[1]}/`)), `main.js loads ${m[1]} but the installer leaves it out`);
   }
 });
+
+test("the installer ships the Bluetooth helper where bleport.js looks for it", () => {
+  assert.ok(pkg.build.extraResources.some((r) => r.from === "native/dist" && r.to === "kplink"));
+  assert.match(pkg.scripts.dist, /npm run kplink/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "services", "bleport.js"), "utf8"), /"kplink", "KpLink\.exe"/);
+});

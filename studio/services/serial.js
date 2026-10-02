@@ -10,6 +10,7 @@
 
 const { EventEmitter } = require("events");
 const { buildBinaryUploadLines } = require("./tiles");
+const { BLE_PATH } = require("./bleport");
 
 const PROMPT = "macropad:$";
 const CAPTURE_TIMEOUT_MS = 4000;
@@ -68,9 +69,10 @@ class SerialLink extends EventEmitter {
       const ports = await this._impl().list();
       return ports.map((p) => ({
         path: p.path,
-        label: `${p.path}${p.friendlyName ? " · " + p.friendlyName : ""}`,
+        label: p.path === BLE_PATH ? "Bluetooth · paired keypad" : `${p.path}${p.friendlyName ? " · " + p.friendlyName : ""}`,
         vendorId: (p.vendorId || "").toUpperCase(), productId: (p.productId || "").toUpperCase(),
         ch340: (p.vendorId || "").toUpperCase() === CH340.vendorId && (p.productId || "").toUpperCase() === CH340.productId,
+        ble: p.path === BLE_PATH,
       }));
     } catch (e) {
       this.emit("log", `Port list error: ${e.message}\n`);
@@ -86,16 +88,19 @@ class SerialLink extends EventEmitter {
       const Impl = this._impl();
       const port = new Impl({ path, baudRate: baud }, (err) => {
         if (err) {
-          this.emit("log", `Connection error: ${err.message}\n`);
+          // The 3 s search retries Bluetooth while the keypad is away: say each reason once.
+          if (err.message !== this._lastError) this.emit("log", `Connection error: ${err.message}\n`);
+          this._lastError = err.message;
           this.port = null;
           return resolve(false);
         }
+        this._lastError = null;
         this._partial = "";
         this.path = path;
         // Release DTR/RTS: on the CH340 auto-reset circuit DTR alone pulls IO0 (BOOT) low,
         // and the keypad reads a 2 s BOOT hold as "open touch calibration".
         if (port.set) port.set({ dtr: false, rts: false }, () => {});
-        this.emit("log", `Connected to ${path} at ${baud} baud.\n`);
+        this.emit("log", path === BLE_PATH ? "Connected over Bluetooth.\n" : `Connected to ${path} at ${baud} baud.\n`);
         this.emit("open");
         resolve(true);
       });
@@ -210,18 +215,18 @@ class SerialLink extends EventEmitter {
     return this.command(`cat ${filename}`, undefined, quiet).then(stripCatEcho);
   }
 
-  // Find the keypad: CH340 port whose `status` reply carries model:touch.
+  // Find the keypad: a CH340 port, then Bluetooth, whose `status` reply carries model:touch.
   async detect(baud = DEFAULT_BAUD) {
     if (this.isOpen()) {
       const st = parseStatus(await this.command("status"));
       return st.model === "touch" ? { path: this.path, status: st } : null;
     }
-    for (const p of (await this.listPorts()).filter((x) => x.ch340)) {
+    for (const p of (await this.listPorts()).filter((x) => x.ch340 || x.ble)) {
       if (!(await this.connect(p.path, baud))) continue;
       await this.waitReady();
       const st = parseStatus(await this.command("status"));
       if (st.model === "touch") return { path: p.path, status: st };
-      this.emit("log", `${p.path} is a CH340 but not a Touch Keypad; skipping.\n`);
+      this.emit("log", `${p.path} did not answer as a Touch Keypad; skipping.\n`);
       this.disconnect();
     }
     return null;

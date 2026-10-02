@@ -11,7 +11,8 @@
     "test": "node --test \"test/*.test.js\"",
     "test:hw": "node --test test/hw.test.js",
     "smoke": "node test/boot-smoke.js",
-    "dist": "node scripts/stage-firmware.js && electron-builder --win"
+    "kplink": "dotnet publish native/KpLink -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:PublishTrimmed=true -p:DebugType=none -o native/dist",
+    "dist": "node scripts/stage-firmware.js && npm run kplink && electron-builder --win"
   },
   "build": {
     "appId": "com.adi04jan.touchkeypadstudio",
@@ -28,7 +29,7 @@
       "services/**/*",
       "assets/**/*"
     ],
-    "extraResources": [{ "from": "fw-bundle", "to": "firmware" }],
+    "extraResources": [{ "from": "fw-bundle", "to": "firmware" }, { "from": "native/dist", "to": "kplink" }],
     "win": { "target": "nsis", "icon": "assets/icon.ico" },
     "directories": { "output": "dist-build" }
   },

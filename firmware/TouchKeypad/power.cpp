@@ -1,5 +1,6 @@
 #include "power.h"
 #include "board.h"
+#include "console.h"
 #include "display.h"
 #include "ui.h"
 #include "leds.h"
@@ -116,8 +117,8 @@ void powerSave(bool on) {
 }
 
 void powerDeepSleep() {
-  Serial.println("EVT:POWER sleep");
-  Serial.flush();
+  Con.println("EVT:POWER sleep");
+  Con.flush(); Serial.flush();
   ledsDark(true);
   ledsTick();
   digitalWrite(PIN_AMP_EN, HIGH);                    // amp off

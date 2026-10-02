@@ -1,10 +1,11 @@
 #include "storage.h"
 #include "board.h"
+#include "console.h"
 #include <LittleFS.h>
 
 bool fsBegin() {
   if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS mount failed");
+    Con.println("LittleFS mount failed");
     return false;
   }
   if (!LittleFS.exists("/backups")) LittleFS.mkdir("/backups");
@@ -72,16 +73,16 @@ bool commitTmp(const char *path, bool backup) {
 
 void catFile(const char *path) {
   File f = LittleFS.open(path, "r");
-  if (!f || f.isDirectory()) { Serial.printf("ERR no such file: %s\n", path); return; }
+  if (!f || f.isDirectory()) { Con.printf("ERR no such file: %s\n", path); return; }
   uint8_t buf[256];
   int last = '\n';
   while (f.available()) {
     int n = f.read(buf, sizeof buf);
-    Serial.write(buf, n);
+    Con.write(buf, n);
     if (n > 0) last = buf[n - 1];
   }
   f.close();
-  if (last != '\n') Serial.println();
+  if (last != '\n') Con.println();
 }
 
 void listFiles(const char *dir) {
@@ -92,6 +93,6 @@ void listFiles(const char *dir) {
     if (!p.endsWith("/")) p += "/";
     p += f.name();
     if (f.isDirectory()) listFiles(p.c_str());
-    else Serial.printf("%s\t%u\n", p.c_str() + 1, (unsigned)f.size());
+    else Con.printf("%s\t%u\n", p.c_str() + 1, (unsigned)f.size());
   }
 }

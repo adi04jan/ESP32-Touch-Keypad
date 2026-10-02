@@ -110,6 +110,7 @@ def dev():
     if old: d.upload_text(f"profile{SLOT}.json", old)
     else: d.cmd(f"rm /profile{SLOT}.json")   # and its tile goes with it
     d.cmd(f"hid dry {'on' if dry and dry.group(1) == '1' else 'off'}")
+    d.cmd("power sim off")
     d.cmd("setdim 120")
     d.close()
 
@@ -369,8 +370,11 @@ def test_pairing_screen(d):
 def test_volume_panel(d):
     base = d.shot().getpixel((250, 152))
     d.ok('widget volume {"level":50,"muted":false}')
-    time.sleep(0.3)
-    assert d.shot().getpixel((250, 152)) != base
+    for _ in range(5):                                   # the panel slides in; a busy frame can lag a shot
+        time.sleep(0.3)
+        if d.shot().getpixel((250, 152)) != base:
+            return
+    raise AssertionError(f"no volume panel over {base}")
 
 
 # ---------------------------------------------------------------- calibration
@@ -558,3 +562,30 @@ def test_sheet_theme_chip_switches_the_theme(d):
     assert "theme:synth" in d.cmd("status")[0]
     assert luma(img.getpixel((300, 40))) > 200            # the sheet is now the light grey ply
     d.ok("sheet close")
+
+
+# ---------------------------------------------------------------- power
+def test_power_readout_and_battery_policy(d):
+    p = d.cmd("power")[0]
+    assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ sim:-1 .*cpu:240 screen:lit$", p), p
+    try:
+        d.ok("setdim 2")                                   # on battery the dim time is min(setdim, 20 s)
+        d.ok("power sim battery")
+        assert re.search(r"pwr:bat bat:\d+$", d.cmd("status")[0])
+        time.sleep(3)
+        assert d.cmd("theme") == ["theme glass"]           # a readout leaves the screen dark
+        assert "screen:dim" in d.cmd("power")[0]
+        d.ok("theme glass")                                # an edit from Studio lights it
+        assert "screen:lit" in d.cmd("power")[0]
+    finally:
+        d.cmd("power sim off")
+        d.ok("setdim 0")
+    assert "pwr:usb" in d.cmd("status")[0]
+
+
+def test_power_sleep_minutes(d):
+    old = re.search(r"sleep:(\d+)", d.cmd("power")[0]).group(1)
+    assert " sleep:7 " in d.cmd("power sleep 7")[0]
+    assert " sleep:0 " in d.cmd("power sleep 0")[0]        # never
+    assert " sleep:120 " in d.cmd("power sleep 500")[0]    # clamped
+    d.cmd(f"power sleep {old}")
