@@ -196,13 +196,13 @@ Toast: a 40 px pill under the status band with the profile line dot. Volume: a 2
 
 ## Themes
 
-Six whole-device themes (3.2), one setting for the whole keypad (Settings → Display, Studio's Device view, `theme <id>`), Glass by default. Each is a table of the roles above plus a key style, in `firmware/TouchKeypad/themes.h`; Studio's preview mirrors them in `studio/renderer/styles.css`.
+Six whole-device themes (3.2), one setting for the whole keypad (Settings → Display, Studio's Device view, `theme <id>`), Daylight by default (`theme default` returns to it). Each is a table of the roles above plus a key style, in `firmware/TouchKeypad/themes.h`; Studio's preview mirrors them in `studio/renderer/styles.css`.
 
 **The Backlight Rule.** The panel is a TFT: its black glows grey under the backlight. Dark themes sit on deep coloured grounds (Glass navy, Aurora indigo to teal), never on near-black fields; light themes carry their contrast with ink, not with black. Gradients are dithered in a 2×2 checkerboard at half an RGB565 step, so skies and white tiles do not band (the pixel theme keeps its exact palette).
 
 | Theme | From | Ground | Key | Current / selectable |
 |---|---|---|---|---|
-| Glass | Apple Watch | navy #121c28 → #0a1119 | lit glass in the tint, white glyph | magenta / cyan |
+| Glass | Apple Watch (the 3.1 look) | navy #121c28 → #0a1119 | lit glass in the tint, white glyph | magenta / cyan |
 | Paper | the toy-theatre papercraft this screen replaced | cream #f4ecda → kraft #e5d6b6, faint laid rows | a cut card in the tint over a darker card, ink outline; a press slides it onto the card behind | crimson #a52f3d / teal #23697a |
 | Daylight | iOS Control Centre, Car Thing | sky #c7daf1 → #e9f0f8 | frosted white tile, the glyph in the tint (darkened to read); an engaged toggle fills with the tint | pink #c23a8c / blue #0a6fd6 |
 | Aurora | the northern lights | indigo #1e1450 → blue #1c2d6e → teal #0c5b62 | a translucent pane computed from the sky behind it, a luminous rim in the tint | pink #ff7cd8 / cyan #6ae6f8 |

@@ -41,7 +41,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `led [rainbow\|breathe\|solid\|status\|off] [r g b]` | `led <pattern> color <r g b> brightness <n> showing <r g b>` | the RGB status LED; rainbow is the default; the colour is for solid and breathe; no argument reports |
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
-| `theme [id\|title\|1-6]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
+| `theme [id\|title\|1-6\|default]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; `default` forgets the saved theme (Daylight); an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
 | `ble use <n>` | `using <n>` or `ERR no host <n>` | drop the current link and advertise only to bond n |
@@ -148,9 +148,9 @@ The device is DisplayOnly with LE Secure Connections, MITM and bonding.
 | `kp/prof` | last profile (boot loads it; hold BOOT while the board starts to come up on profile 1) |
 | `kp/bright`, `kp/dim` | backlight 8–255; dim after N s |
 | `kp/ledp`, `kp/ledb`, `kp/ledc`, `kp/click` | LED pattern, LED brightness, LED colour, key click |
-| `kp/theme` | the theme index (0 Glass, 1 Paper, 2 Daylight, 3 Aurora, 4 Synth, 5 Retro) |
+| `kp/theme` | the theme index (0 Glass, 1 Paper, 2 Daylight, 3 Aurora, 4 Synth, 5 Retro); missing = Daylight |
 | `kp/defv`, `kp/dcrc1..3` | which default profiles were installed, and their CRCs (an edited default is never replaced) |
 | `touch/aff` | 6 floats: the affine touch calibration. Missing = the calibration screen opens at boot |
-| `hosts/<address>` | the name Studio gave each bonded host |
+| `hosts/<address>` | the name Studio gave each bonded host; forgetting the host removes it |
 | `lcd/invert`, `lcd/bgr`, `lcd/mhz` | panel knobs |
 | NimBLE store | bonds |

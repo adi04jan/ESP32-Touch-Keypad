@@ -124,3 +124,4 @@ static const Theme THEMES[] = {
     HEXC(0x0f380f), HEXC(0x306230), 4 },
 };
 static const int THEME_COUNT = sizeof THEMES / sizeof THEMES[0];
+static const int THEME_DEFAULT = 2;   // Daylight, out of the box (indices are stored in NVS: append, don't reorder)

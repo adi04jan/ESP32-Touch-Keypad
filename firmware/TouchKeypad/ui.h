@@ -45,6 +45,7 @@ int  uiTheme();
 int  uiThemeCount();
 const char *uiThemeId(int i);
 int  uiThemeFind(const char *id);    // by id, title or 1-based number; -1 if none
+void uiThemeReset();                 // drop the saved theme: back to the default (Daylight)
 void uiCalibrate();                  // touch calibration screen (also on first boot and BOOT held 2 s)
 void uiCalibrateCancel();
 bool uiCalibrating();

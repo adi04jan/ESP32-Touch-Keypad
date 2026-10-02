@@ -378,7 +378,8 @@ static bool runCommand(char *s) {
     if (*arg) ledsSetBrightness(constrain(atoi(arg), 0, 255));
     Serial.printf("ledbright %d\n", ledsBrightness());
   } else if (cmd == "theme") {
-    int t = *arg ? uiThemeFind(arg) : uiTheme();
+    if (!strcmp(arg, "default")) uiThemeReset();
+    int t = *arg && strcmp(arg, "default") ? uiThemeFind(arg) : uiTheme();
     if (t < 0) {
       Serial.print("theme");
       for (int i = 0; i < uiThemeCount(); i++) Serial.printf(" %s", uiThemeId(i));

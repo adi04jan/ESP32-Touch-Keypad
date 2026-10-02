@@ -2,7 +2,7 @@
 
 A Stream Deck–style BLE macropad on the LCDwiki 4.0" ESP32-32E board (E32R40T: ESP32-WROOM-32E, ST7796S 480×320, XPT2046 resistive touch), with Macropad Studio for Windows.
 
-Six device themes (Glass, Paper, Daylight, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), three ready profiles, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps.
+Six device themes (Daylight by default, Glass, Paper, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), three ready profiles, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps.
 
 | Path | What |
 |---|---|

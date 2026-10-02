@@ -3,8 +3,9 @@
     python -m pytest tools/tests -v          # board on the first CH340, or KP_PORT=COMx
 
 HID runs dry (reports logged as EVT:HID, nothing reaches a host). The tests use
-profile slot 8, switch back to profile 1 at the end, and put the touch
-calibration and the theme back exactly as they found them.
+profile slot 8 and put the active profile, the touch calibration, the theme
+and the HID dry-run state back exactly as they found them, so the suite can
+run on a keypad that is in use.
 """
 import json
 import re
@@ -83,7 +84,13 @@ def dev():
     d.ready()
     d.cmd("calibrate cancel")
     cal = d.cmd("touchcal")[0]
-    theme = re.search(r"theme:(\w+)", d.cmd("status")[0])
+    st0 = d.cmd("status")[0]
+    theme = re.search(r"theme:(\w+)", st0)
+    profile = re.search(r"Profile:(\d+)", st0)
+    dry = re.search(r"dry:(\d)", st0)
+    led = re.match(r"led (\w+) color (\d+ \d+ \d+) brightness (\d+)", d.cmd("led")[0])
+    old = d.cmd(f"cat /profile{SLOT}.json")   # someone's slot 8, put back at the end
+    old = None if not old or old[0].startswith("ERR") else "\n".join(old)
     d.ok("setdim 0")
     d.ok("hid dry on")
     r = d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
@@ -95,9 +102,14 @@ def dev():
     d.cmd("calibrate cancel")
     m = re.match(r"cal:(\d) (.*)", cal)
     d.cmd(f"touchcal set {m.group(2)}" if m and m.group(1) == "1" else "touchcal clear")
-    d.cmd("led rainbow")
-    d.cmd(f"theme {theme.group(1) if theme else 'glass'}")
-    d.cmd("setprofile 1")
+    d.cmd(f"led {led.group(1)} {led.group(2)}" if led else "led rainbow")
+    if led:
+        d.cmd(f"ledbright {led.group(3)}")
+    d.cmd(f"theme {theme.group(1) if theme else 'daylight'}")
+    d.cmd(f"setprofile {profile.group(1) if profile else 1}")
+    if old: d.upload_text(f"profile{SLOT}.json", old)
+    else: d.cmd(f"rm /profile{SLOT}.json")   # and its tile goes with it
+    d.cmd(f"hid dry {'on' if dry and dry.group(1) == '1' else 'off'}")
     d.cmd("setdim 120")
     d.close()
 
@@ -481,6 +493,13 @@ def test_theme_command_lists_switches_and_reports(d):
     d.wait_event(r"^EVT:THEME aurora$", 3, since)
     assert "theme:aurora" in d.cmd("status")[0]
     assert d.cmd("theme 5") == ["theme synth"]          # and 1-based numbers
+
+
+def test_theme_default_is_daylight(d):
+    since = len(d.events)
+    assert d.cmd("theme default") == ["theme daylight"]   # forgets the saved choice
+    d.wait_event(r"^EVT:THEME daylight$", 3, since)
+    assert "theme:daylight" in d.cmd("status")[0]
 
 
 @pytest.mark.parametrize("name", THEMES)

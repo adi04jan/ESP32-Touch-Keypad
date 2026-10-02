@@ -211,7 +211,7 @@ class SimDevice extends EventEmitter {
         const ids = ["glass", "paper", "daylight", "aurora", "synth", "retro"];
         if (arg && !ids.includes(arg)) return this.println(`theme ${ids.join(" ")}`);
         if (arg) { this.theme = arg; this.event(`THEME ${arg}`); }
-        return this.println(`theme ${this.theme || "glass"}`);
+        return this.println(`theme ${this.theme || "daylight"}`);
       }
       case "led": {
         const [name, ...c] = arg.split(/\s+/).filter(Boolean);

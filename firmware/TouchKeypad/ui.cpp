@@ -17,8 +17,8 @@
 #include <functional>
 
 // ---------------------------------------------------------------- palette: the current theme's roles (themes.h)
-static uint8_t themeIdx = 0;
-static const Theme *T = &THEMES[0];
+static uint8_t themeIdx = THEME_DEFAULT;
+static const Theme *T = &THEMES[THEME_DEFAULT];
 static const C3 WHITE = HEXC(0xffffff), BLACK = HEXC(0x000000);
 #define PLY (T->ply)
 #define PLY2 (T->ply2)
@@ -1139,7 +1139,7 @@ void uiBegin() {
   p.begin("kp", true);
   brightness = p.getUChar("bright", 200);
   dimAfterS = p.getUShort("dim", DIM_DEFAULT_S);
-  themeIdx = constrain(p.getUChar("theme", 0), 0, THEME_COUNT - 1);
+  themeIdx = constrain(p.getUChar("theme", THEME_DEFAULT), 0, THEME_COUNT - 1);
   p.end();
   applyTheme(themeIdx);
   fontsBegin();
@@ -1206,6 +1206,13 @@ void uiSetTheme(int i, bool save) {
   wipeMs = 320;
 }
 int uiTheme() { return themeIdx; }
+void uiThemeReset() {   // forget the saved choice: the out-of-box theme
+  Preferences p;
+  p.begin("kp", false);
+  p.remove("theme");
+  p.end();
+  uiSetTheme(THEME_DEFAULT, false);
+}
 int uiThemeCount() { return THEME_COUNT; }
 const char *uiThemeId(int i) { return i >= 0 && i < THEME_COUNT ? THEMES[i].id : ""; }
 int uiThemeFind(const char *id) {

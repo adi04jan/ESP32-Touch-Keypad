@@ -351,6 +351,8 @@ void bleList() {
                 (int)NimBLEDevice::getAdvertising()->isAdvertising(), (int)pairOpen);
 }
 
+static String nameKey(const NimBLEAddress &a);
+
 bool bleForget(int n) {
   if (n < 0 || n >= NimBLEDevice::getNumBonds()) return false;
   NimBLEAddress a = NimBLEDevice::getBondedAddress(n);
@@ -360,6 +362,10 @@ bool bleForget(int n) {
   // host refuses the unpair then; blePoll() restarts advertising.
   NimBLEDevice::getAdvertising()->stop();
   bool ok = NimBLEDevice::deleteBond(a);
+  Preferences p;   // the name goes with the bond, or the next pairing from this address inherits it
+  p.begin("hosts", false);
+  p.remove(nameKey(a).c_str());
+  p.end();
   uiMarkStatus();
   return ok;
 }

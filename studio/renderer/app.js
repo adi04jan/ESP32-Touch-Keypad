@@ -75,7 +75,7 @@ const isPlayerPage = (page) => !!(page.keys[0] && page.keys[0].widget);
 /* ============ state ============ */
 const state = {
   slots: Object.fromEntries(Array.from({ length: NUM_PROFILES }, (_, i) => [i + 1, blankProfile(i + 1)])),
-  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "glass",
+  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight",
   conn: { connected: false }, settings: {}, np: { title: "", album: "", artist: "", app: "", pos: 0, len: 0, playing: false }, art: null,
 };
 const prof = () => state.slots[state.slot];
@@ -519,7 +519,7 @@ api.onEvent(({ type, data }) => {
 /* ============ boot ============ */
 (async () => {
   state.settings = await api.getSettings();
-  state.theme = state.settings.preview_theme || "glass";
+  state.theme = state.settings.preview_theme || "daylight";
   state.conn = { ...state.conn, ...(await api.state()) };
   if (!state.conn.connected) setSave("off", state.conn.noSerial ? "Serial disabled" : "Offline · edits are backed up on this PC");
   renderStudio();
