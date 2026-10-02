@@ -18,6 +18,7 @@ const DEFAULTS = {
   obs_url: "ws://127.0.0.1:4455",
   obs_password: "",
   nowplaying_enabled: true,
+  art_enabled: true,             // album art to the keypad's player page
   settime_enabled: true,
 };
 

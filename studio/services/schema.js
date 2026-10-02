@@ -15,7 +15,8 @@ const MAX_LABEL = 14;
 const HOST_SLOTS = 48;
 const MAX_UPLOAD_BYTES = 64 * 1024;
 const AXIS_MIN = -127, AXIS_MAX = 127;
-const WIDGETS = { now_playing: [3, 2] };
+const WIDGETS = { media: [5, 3], now_playing: [3, 2] };   // media: the full-page player
+const ANIMS = ["eq", "pulse", "rec"];                         // eq while playing, pulse while off, rec while on
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const DIGITS = "0123456789".split("");
@@ -275,6 +276,7 @@ function validateProfile(p) {
   if (typeof p.profile_name !== "string") e.push("profile_name must be a string");
   if (!Number.isInteger(p.default_delay) || p.default_delay < 0) e.push("default_delay must be a non-negative integer");
   if (p.brightness !== undefined && (!Number.isInteger(p.brightness) || p.brightness < 0 || p.brightness > 255)) e.push("brightness must be 0..255");
+  if (p.color !== undefined && !isRgb(p.color)) e.push("color must be [r,g,b]");
   if (!Array.isArray(p.pages) || !p.pages.length) return { ok: false, errors: [...e, "pages must be a non-empty array"] };
   const nPages = p.pages.length;
   p.pages.forEach((pg, pi) => {
@@ -293,6 +295,8 @@ function validateProfile(p) {
       if (covered.has(i)) e.push(`${kp} is covered by a widget and must be null`);
       if (k.id !== i + 1) e.push(`${kp}.id must be ${i + 1}`);
       if (typeof k.name !== "string" || k.name.length > MAX_LABEL) e.push(`${kp}.name must be a string of at most ${MAX_LABEL} chars`);
+      if (k.anim !== undefined && !ANIMS.includes(k.anim)) e.push(`${kp}.anim must be one of ${ANIMS.join(", ")}`);
+      if (k.toggle !== undefined && typeof k.toggle !== "boolean") e.push(`${kp}.toggle must be true or false`);
       if (k.widget !== undefined) {
         const span = WIDGETS[k.widget];
         if (!span) e.push(`${kp}.widget '${k.widget}' unknown`);
@@ -302,8 +306,8 @@ function validateProfile(p) {
         if (!isRgb(k.led_color)) e.push(`${kp}.led_color must be [r,g,b]`);
         if (k.tile !== undefined && !/^[0-9a-f]{8}$/.test(k.tile)) e.push(`${kp}.tile must be 8 lowercase hex chars`);
       }
-      for (const field of ["actions", "hold_actions"]) {
-        if (field === "hold_actions" && k[field] === undefined) continue;
+      for (const field of ["actions", "hold_actions", "off_actions"]) {
+        if (field !== "actions" && k[field] === undefined) continue;
         if (!Array.isArray(k[field])) { e.push(`${kp}.${field} must be an array`); continue; }
         k[field].forEach((a, ai) => {
           e.push(...validateAction(a, `${kp}.${field}[${ai}]`));
@@ -327,11 +331,14 @@ function repairKey(k, i) {
     if (typeof k.icon === "string" && k.icon) out.icon = k.icon;
     out.led_color = fixRgb(k.led_color ?? k.glow) || [110, 100, 92];
     if (typeof k.tile === "string" && /^[0-9a-fA-F]{8}$/.test(k.tile)) out.tile = k.tile.toLowerCase();
+    if (ANIMS.includes(k.anim)) out.anim = k.anim;
+    if (k.toggle === true) out.toggle = true;
   }
   out.actions = repairActions(k.actions || []);
-  if (Array.isArray(k.hold_actions)) {
-    const h = repairActions(k.hold_actions);
-    if (h.length) out.hold_actions = h;
+  for (const f of ["hold_actions", "off_actions"]) {
+    if (!Array.isArray(k[f])) continue;
+    const list = repairActions(k[f]);
+    if (list.length) out[f] = list;
   }
   return out;
 }
@@ -371,6 +378,8 @@ function repairProfile(p) {
     default_delay: Number.isInteger(p.default_delay) && p.default_delay >= 0 ? p.default_delay : 20,
   };
   if (p.brightness !== undefined) out.brightness = clampInt(p.brightness, 0, 255, 200);
+  const color = fixRgb(p.color);
+  if (color) out.color = color;
   const pages = Array.isArray(p.pages) && p.pages.length ? p.pages : [{ name: "Main", keys: [] }];
   out.pages = pages.map(repairPage);
   // page actions pointing past the last page are clamped.
@@ -401,7 +410,7 @@ function hostActions(p) {
 
 module.exports = {
   SCHEMA_VERSION, MAX_TEXT_LEN, MAX_REPEAT_COUNT, NUM_PROFILES, COLS, ROWS, CELLS, MAX_LABEL,
-  HOST_SLOTS, MAX_UPLOAD_BYTES, WIDGETS,
+  HOST_SLOTS, MAX_UPLOAD_BYTES, WIDGETS, ANIMS,
   KEY_NAMES, MODIFIER_NAMES, KEY_AND_MODIFIER, MEDIA_NAMES, TELEPHONY_NAMES,
   MOUSE_BUTTONS, LED_ANIM_VALUES, ACTION_TYPES, ALIASES,
   normKey, validateAction, validateActions, isValidActions, repairAction, repairActions,

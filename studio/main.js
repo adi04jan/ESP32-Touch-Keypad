@@ -10,6 +10,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell, globalShortcut } = require("electron");
 const path = require("path");
+const os = require("os");
 const fs = require("fs");
 const { spawn } = require("child_process");
 
@@ -18,6 +19,7 @@ const store = require("./services/store");
 const backup = require("./services/backup");
 const activewin = require("./services/activewin");
 const feeds = require("./services/feeds");
+const flasher = require("./services/flasher");
 const hostbridge = require("./services/hostbridge");
 const { contextForProcess, CONTEXT_MATCH } = require("./services/contexts");
 const { SerialLink } = require("./services/serial");
@@ -48,10 +50,11 @@ function initServices() {
 
   link = new SerialLink({ SerialPort: SIM ? simPort() : NO_SERIAL ? offlinePort() : undefined });
   bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log });
-  device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles") });
+  device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname() });
 
   for (const ev of ["log", "fs-info", "key", "page", "profile", "ble", "idle"]) link.on(ev, (d) => send(ev, d));
   link.on("tx", (t) => send("tx", t));
+  link.on("seek", (sec) => feeds.seekNowPlaying(sec));     // tap-to-seek on the keypad's player
   link.on("rx", (t) => send("rx", t));
   link.on("disconnect", () => { send("state", device.state()); schedulePoll(); });
   device.on("state", (s) => send("state", s));
@@ -70,11 +73,13 @@ function offlinePort() {
   return class { static async list() { return []; } constructor(_o, cb) { setImmediate(() => cb(new Error("serial disabled (STUDIO_NO_SERIAL)"))); } on() {} };
 }
 
-// Demo/dev: a simulated keypad preloaded with the viewer's sample profiles.
+// Demo/dev: a simulated keypad preloaded with the profiles the keypad ships with.
 function simPort() {
   const { SimDevice, makeSimPort } = require("./test/sim-device");
   const sim = new SimDevice();
-  for (const [n, f] of [[1, "daily"], [2, "code"]]) sim.files.set(`/profile${n}.json`, fs.readFileSync(path.join(__dirname, "test", "fixtures", `${f}.json`)));
+  const w = {};
+  new Function("window", fs.readFileSync(path.join(__dirname, "..", "docs", "device", "profiles.js"), "utf8"))(w);
+  w.DEFAULT_PROFILES.forEach((p, i) => sim.files.set(`/profile${i + 1}.json`, Buffer.from(JSON.stringify(p))));
   return makeSimPort(sim);
 }
 
@@ -106,7 +111,8 @@ function startContextSwitching() {
   });
 }
 function startNowPlaying() {
-  feeds.startNowPlaying((np) => { send("nowplaying", np); device.nowPlaying(np); }, (e) => log(`Now Playing helper: ${e}\n`));
+  feeds.startNowPlaying((np) => { send("nowplaying", np); device.nowPlaying(np); }, (e) => log(`Now Playing helper: ${e}\n`),
+    (bmp, key) => { send("art", `data:image/bmp;base64,${bmp.toString("base64")}`); device.art(bmp, key); });
 }
 
 function createWindow() {
@@ -199,10 +205,11 @@ ipcMain.handle("device:loadProfile", (_e, slot) => device.loadProfile(slot));
 ipcMain.handle("device:setActive", (_e, slot) => device.setActiveProfile(slot));
 ipcMain.handle("device:showPage", (_e, slot, page) => device.showPage(slot, page));
 ipcMain.handle("device:save", (_e, slot, profile) => device.save(slot, profile));
-ipcMain.handle("device:putTile", (_e, rgba) => device.putTile(rgba));
 ipcMain.on("device:edit", (_e, payload) => device.edit(payload));
 ipcMain.handle("device:bleList", () => device.bleList());
 ipcMain.handle("device:bleForget", (_e, n) => device.bleForget(n));
+ipcMain.handle("device:bleUse", (_e, n) => device.bleUse(n));
+ipcMain.handle("device:look", () => device.look());
 
 ipcMain.handle("backup:list", () => { try { return backup.listBackups(); } catch (_) { return []; } });
 ipcMain.handle("backup:read", (_e, id) => { try { return { ok: true, profile: schema.repairProfile(backup.readBackup(id)) }; } catch (e) { return { ok: false, error: e.message }; } });
@@ -245,5 +252,23 @@ ipcMain.handle("dialog:export", async (_e, profile) => {
   try { fs.writeFileSync(r.filePath, JSON.stringify(schema.repairProfile(profile), null, 2)); return { ok: true, path: r.filePath }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
-// ponytail: flasher placeholder; DTR/RTS auto-reset via bundled esptool comes later (PLAN.md §10).
-ipcMain.handle("flash:info", () => ({ available: false, note: "Flashing from Studio is not implemented yet. Use the firmware project's tools." }));
+const fwResources = () => (app.isPackaged ? process.resourcesPath : null);
+ipcMain.handle("flash:info", () => flasher.info(fwResources()));
+// Install firmware: release the port, run esptool, then reconnect to the same port.
+ipcMain.handle("flash:run", async () => {
+  if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
+  const port = link.path || ((await link.listPorts()).find((p) => p.ch340) || {}).path;
+  if (!port) return { ok: false, error: "no keypad found on USB" };
+  manualDisconnect = true;
+  device.disconnect();
+  await new Promise((r) => setTimeout(r, 400));
+  const r = await flasher.flash(port, fwResources(), (p) => send("flash", p));
+  log(r.ok ? `Firmware installed on ${port}.\n` : `Firmware install failed: ${r.error}\n${r.log.slice(-1500)}\n`);
+  manualDisconnect = false;
+  setTimeout(async () => {
+    if (link.isOpen() || connecting) return;
+    connecting = true;
+    try { await device.connect(port); } finally { connecting = false; }
+  }, 3500);
+  return { ok: r.ok, error: r.error };
+});

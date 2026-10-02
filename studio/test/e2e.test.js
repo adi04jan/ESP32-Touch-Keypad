@@ -156,11 +156,12 @@ test("device panel: status, BLE slots, forget, profile switch, events, now playi
   await dev.connect("SIM1");
   assert.equal(dev.status.ver, "3.0.0");
   const ble = await dev.bleList();
-  assert.deepEqual(ble.slots, [{ slot: 0, name: "ADITYA-PC", state: "connected" }, { slot: 1, name: "MacBook-Air", state: "bonded" }, { slot: 2, name: "", state: "empty" }]);
+  assert.deepEqual(ble.slots.map(({ slot, name, state }) => ({ slot, name, state })), [{ slot: 0, name: "ADITYA-PC", state: "connected" }, { slot: 1, name: "MacBook-Air", state: "bonded" }]);
+  assert.deepEqual(await dev.look(), { led: "rainbow", ledColor: "255 255 255", ledBright: 153, brightness: 200, click: true });
   const events = [];
   link.on("ble", (b) => events.push(b));
   await dev.bleForget(0);
-  assert.equal(sim.ble[0], null);
+  assert.equal(sim.ble[0].name, "MacBook-Air");
   assert.deepEqual(events, [{ slot: 0, up: false }]);
 
   sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
@@ -179,6 +180,11 @@ test("device panel: status, BLE slots, forget, profile switch, events, now playi
   assert.equal(dev.nowPlaying({ title: "Midnight City", artist: "M83", app: "Spotify.exe", pos: 92, len: 243, playing: true }), true);
   assert.equal(dev.nowPlaying({ title: "Midnight City", artist: "M83", app: "Spotify.exe", pos: 93, len: 243, playing: true }), false, "position drift < 5 s is not resent");
   await until(() => sim.widgets.now_playing);
-  assert.deepEqual(sim.widgets.now_playing, { title: "Midnight City", artist: "M83", app: "Spotify", pos: 92, len: 243, playing: true });
+  assert.deepEqual(sim.widgets.now_playing, { title: "Midnight City", album: "", artist: "M83", app: "Spotify", pos: 92, len: 243, playing: true });
+  const seeks = [];
+  link.on("seek", (s) => seeks.push(s));
+  sim.event("SEEK 42");
+  await until(() => seeks.length);
+  assert.deepEqual(seeks, [42]);
   link.disconnect();
 });

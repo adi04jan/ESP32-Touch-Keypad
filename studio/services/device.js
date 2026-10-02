@@ -25,6 +25,7 @@ class Device extends EventEmitter {
     this.settings = deps.settings;
     this.bridge = deps.bridge || null;
     this.tileDir = deps.tileDir || null;
+    this.hostName = deps.hostName || null;   // names this PC on the keypad's status bar and host list
     this.pushMs = deps.pushMs ?? 300;
     this.saveMs = deps.saveMs ?? 1500;
     this.profiles = {};            // slot -> latest editor profile
@@ -37,12 +38,14 @@ class Device extends EventEmitter {
     this._save = new Map();
     this._clock = null;
     this._np = null;
+    this._art = null;
 
     const l = this.link;
     l.on("open", () => this.emit("state", this.state()));
     l.on("disconnect", () => { clearInterval(this._clock); this.status = null; this.emit("state", this.state()); });
     l.on("profile", (n) => { this.activeSlot = n; this.devicePage = 1; this.emit("state", this.state()); });
     l.on("page", (n) => { this.devicePage = n; this.emit("state", this.state()); });
+    l.on("ble", (b) => { if (b.up && this.hostName) this.link.command(`hostname ${this.hostName}`); });
   }
 
   state() {
@@ -78,6 +81,7 @@ class Device extends EventEmitter {
       if (this._clock.unref) this._clock.unref();
     }
     this.deviceTiles = tiles.parseTileList(await this.link.command("ls /t"));
+    if (this.hostName && +status.ble > 0) await this.link.command(`hostname ${this.hostName}`);
     this.emit("state", this.state());
   }
 
@@ -240,16 +244,27 @@ class Device extends EventEmitter {
   }
 
   // ---- device panel ----
+  // `ble list`: "<n> <address> connected|bonded <name>" per bond, then a hosts: summary.
   async bleList() {
     const raw = await this.link.command("ble list");
     const slots = [];
     for (const line of raw.split("\n")) {
-      const m = line.trim().match(/^(\d+)[:\s]+(.+?)\s+(connected|bonded|empty|advertising|\S+)$/i);
-      if (m) slots.push({ slot: +m[1], name: m[2] === "-" ? "" : m[2], state: m[3].toLowerCase() });
+      const m = line.trim().match(/^(\d+)\s+(\S+)\s+(connected|bonded)(?:\s+(.+))?$/i);
+      if (m) slots.push({ slot: +m[1], addr: m[2], state: m[3].toLowerCase(), name: m[4] || `Host ${+m[1] + 1}` });
     }
     return { slots, raw };
   }
   bleForget(n) { return this.link.command(`ble forget ${parseInt(n, 10)}`); }
+  bleUse(n) { return this.link.command(`ble use ${parseInt(n, 10)}`); }
+
+  // Screen brightness, LED pattern/colour/brightness and key click, read without changing anything.
+  async look() {
+    if (!this.link.isOpen()) return null;
+    const led = (await this.link.command("led")).match(/led (\w+) color (\d+) (\d+) (\d+) brightness (\d+)/);
+    const br = (await this.link.command("setbrightness")).match(/brightness (\d+)/);
+    const ck = (await this.link.command("click")).match(/click (on|off)/);
+    return { led: led ? led[1] : "", ledColor: led ? `${led[2]} ${led[3]} ${led[4]}` : "", ledBright: led ? +led[5] : 0, brightness: br ? +br[1] : 0, click: !!ck && ck[1] === "on" };
+  }
 
   async fsinfo() {
     const m = (await this.link.command("fsinfo")).match(/FS_INFO:(\d+),(\d+)/);
@@ -264,12 +279,26 @@ class Device extends EventEmitter {
     this.emit("state", this.state());
   }
 
+  // Album art: the helper's 128x128 BMP -> RGB565 straight into the player's RAM buffer.
+  // key = "title|artist|album" of the track it belongs to.
+  art(bmp, key = "") {
+    try { this._art = { buf: feeds.bmpToRgb565(bmp), key }; } catch (e) { this.emit("log", `Album art skipped: ${e.message}\n`); return Promise.resolve(false); }
+    return this._sendArt();
+  }
+  async _sendArt() {
+    if (!this._art || !this.link.isOpen() || this.settings.load().art_enabled === false) return false;
+    return (await this.link.uploadBinary("ram:art", this._art.buf)).ok;
+  }
+
   // Now Playing: push to the widget when something the device can't extrapolate changed.
+  // A new title clears the keypad's cover, so a cover we already hold for it goes again.
   nowPlaying(np) {
     const now = Date.now();
     if (!this.link.isOpen() || !feeds.shouldSend(this._np && this._np.data, np, this._np ? this._np.at : 0, now)) return false;
+    const newTrack = !this._np || this._np.data.title !== np.title;
     this._np = { data: np, at: now };
     this.link.command(feeds.nowPlayingCommand(np));
+    if (newTrack && this._art && this._art.key === `${np.title ?? ""}|${np.artist ?? ""}|${np.album ?? ""}`) this._sendArt();
     return true;
   }
 }

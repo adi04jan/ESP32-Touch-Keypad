@@ -1,6 +1,6 @@
-/* Tile bytes: RGBA (from the renderer's 72x72 canvas) -> RGB565 -> CRC32 name
- * -> `###BEGINB###` base64 upload lines (PLAN.md §8.3). Drawing happens in the
- * renderer (renderer/tiledraw.js); everything here is pure and testable. */
+/* Tile bytes: custom 72x72 key images (a key's `tile`; built-in icons need
+ * none) RGBA -> RGB565 -> CRC32 name -> `###BEGINB###` base64 upload lines
+ * (PLAN.md §8.3). Everything here is pure and testable. */
 "use strict";
 
 const zlib = require("zlib");

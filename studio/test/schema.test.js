@@ -118,3 +118,17 @@ test("oversized profile is flagged against the 64 KB cap", () => {
   p.pages.push({ name: "Two", keys });
   assert.match(schema.validateProfile(p).errors.join(), /at most 65536/);
 });
+
+// The profiles the keypad ships with (tools/gen_defaults.py) must pass Studio's
+// validator untouched and use only icons both the device and Studio draw.
+test("device default profiles validate and use built-in icons", () => {
+  const load = (f) => { const w = {}; new Function("window", require("fs").readFileSync(require.resolve(f), "utf8"))(w); return w; };
+  const { DEFAULT_PROFILES } = load("../../docs/device/profiles.js");
+  const { KEY_ICONS } = load("../renderer/keyicons.js");
+  assert.equal(DEFAULT_PROFILES.length, 3);
+  for (const p of DEFAULT_PROFILES) {
+    assert.deepEqual(schema.validateProfile(p).errors, [], p.profile_name);
+    assert.deepEqual(schema.repairProfile(p), p, `${p.profile_name} survives repair unchanged`);
+    for (const pg of p.pages) for (const k of pg.keys) if (k && !k.widget) assert.ok(KEY_ICONS[k.icon], `${p.profile_name}: icon ${k.icon}`);
+  }
+});

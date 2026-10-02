@@ -203,16 +203,26 @@ class SimDevice extends EventEmitter {
         this.time = { epoch: +epoch, tz };
         return this.println("time set");
       }
-      case "setled": case "setidle": case "setbrightness": return this.println(`${cmd} ok`);
+      case "setled": case "setidle": return this.println(`${cmd} ok`);
+      case "setbrightness": if (arg) this.bright = +arg; return this.println(`brightness ${this.bright ?? 200}`);
+      case "ledbright": if (arg) this.ledBright = +arg; return this.println(`ledbright ${this.ledBright ?? 153}`);
+      case "click": if (arg) this.click = arg === "on"; return this.println(`click ${this.click === false ? "off" : "on"}`);
+      case "led": {
+        const [name, ...c] = arg.split(/\s+/).filter(Boolean);
+        if (name) this.led = name;
+        if (c.length === 3) this.ledColor = c.join(" ");
+        return this.println(`led ${this.led || "rainbow"} color ${this.ledColor || "255 255 255"} brightness ${this.ledBright ?? 153} showing 0 0 0`);
+      }
       case "ble": {
         const [sub, n] = arg.split(/\s+/);
         if (sub === "list") {
-          this.ble.forEach((b, i) => this.println(b ? `${i} ${b.name} ${b.state}` : `${i} - empty`));
-          return;
+          const bonds = this.ble.filter(Boolean);
+          bonds.forEach((b, i) => this.println(`${i} aa:bb:cc:dd:ee:0${i} ${b.state} ${b.name}`));
+          return this.println(`hosts:${bonds.length} connected:${bonds.filter((b) => b.state === "connected").length} advertising:0 pairing:0`);
         }
-        if (sub === "forget" && /^[0-2]$/.test(n || "")) {
-          const was = this.ble[+n];
-          this.ble[+n] = null;
+        if (sub === "forget" && /^[0-2]$/.test(n || "") && this.ble.filter(Boolean)[+n]) {
+          const was = this.ble.filter(Boolean)[+n];
+          this.ble = [...this.ble.filter((b) => b && b !== was), null];
           if (was && was.state === "connected") this.event(`BLE ${n} down`);
           return this.println(`forgot ${n}`);
         }

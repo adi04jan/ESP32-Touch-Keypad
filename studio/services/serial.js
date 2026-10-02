@@ -92,6 +92,9 @@ class SerialLink extends EventEmitter {
         }
         this._partial = "";
         this.path = path;
+        // Release DTR/RTS: on the CH340 auto-reset circuit DTR alone pulls IO0 (BOOT) low,
+        // and the keypad reads a 2 s BOOT hold as "open touch calibration".
+        if (port.set) port.set({ dtr: false, rts: false }, () => {});
         this.emit("log", `Connected to ${path} at ${baud} baud.\n`);
         this.emit("open");
         resolve(true);
@@ -232,6 +235,7 @@ class SerialLink extends EventEmitter {
       case "PAGE": this.emit("page", +t[1]); break;
       case "BLE": this.emit("ble", { slot: +t[1], up: t[2] === "up" }); break;
       case "IDLE": this.emit("idle", t[1] || "none"); break;
+      case "SEEK": this.emit("seek", +t[1]); break;
       default: this.emit("event", body);
     }
   }

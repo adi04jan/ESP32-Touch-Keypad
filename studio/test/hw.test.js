@@ -125,4 +125,12 @@ test("device panel: BLE list, fsinfo, now playing, clock", { skip: !HW }, async 
   assert.ok(dev.nowPlaying({ title: "Paper Moon", artist: "Band", app: "Spotify.exe", pos: 5, len: 180, playing: true }));
   await sleep(200);
   assert.match(await dev.syncTime(), /time set/);
+  const look = await dev.look();
+  assert.ok(look.brightness >= 8 && look.led, JSON.stringify(look));
+  assert.match(b.raw, /^\d+ \S+ (connected|bonded) .+$|hosts:0/m, "ble list names each host");
+});
+
+test("an open Studio link never reads as a BOOT hold (no calibration screen)", { skip: !HW }, async () => {
+  await sleep(2600);
+  assert.match(await link.command("status"), /ui:home/);
 });

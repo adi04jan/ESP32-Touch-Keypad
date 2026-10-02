@@ -17,10 +17,11 @@ contextBridge.exposeInMainWorld("api", {
   setActive: call("device:setActive"),
   showPage: call("device:showPage"),
   save: call("device:save"),
-  putTile: call("device:putTile"),          // (Uint8ClampedArray rgba 72x72) -> tile name
   edit: (payload) => ipcRenderer.send("device:edit", payload),
   bleList: call("device:bleList"),
   bleForget: call("device:bleForget"),
+  bleUse: call("device:bleUse"),
+  lookState: call("device:look"),
   backupList: call("backup:list"),
   backupRead: call("backup:read"),
   backupAll: call("backup:all"),
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld("api", {
   importProfile: call("dialog:import"),
   exportProfile: call("dialog:export"),
   flashInfo: call("flash:info"),
+  flash: call("flash:run"),
   ready: (info) => ipcRenderer.send("app:ready", info),
   onEvent: (cb) => {
     const h = (_e, payload) => cb(payload);

@@ -4,7 +4,16 @@ A BLE macropad in the style of Stream Deck, built on the LCDwiki 4.0" ESP32-32E 
 
 Interactive viewer with device simulator, Studio mock, reference design, architecture, protocol, landscape and roadmap: [`docs/viewer/index.html`](viewer/index.html). Open it in any browser. The viewer is styled as a toy-theatre, papercraft world, including the device's on-screen UI; that style belongs to the viewer and does not constrain the firmware.
 
-Status: design, v0.2 (2026-10-01).
+Status: firmware 3.1.0 and Studio 3.1.0 built and tested on hardware (2026-10-02). v0.2 of this plan (2026-10-01) is kept below; where 3.1 differs, §6.4, §6.9 and §6.10 say so.
+
+**What 3.1 shipped**
+- The device screen is a glass / avionics design (firmware/DESIGN.md) drawn by its own renderer: damage rects, double-buffered DMA, 80 MHz SPI, every animation at 50–62 fps (tested).
+- Keys use 214 built-in icons (Lucide, Simple Icons); keys can animate (`eq`, `pulse`, `rec`) and act as toggles with `off_actions`.
+- Three default profiles (Daily, Code, Stream), full pages, each with a line colour.
+- A full-page media player: album art, title, album, artist and source, live progress, tap to seek, transport keys. Studio feeds it from the Windows media session and seeks back.
+- Touch calibration: an affine fit from four targets, a check point (≤ 16 px) and a test pad. It runs on first boot, from the sheet, or by holding BOOT for 2 s.
+- Settings sheet tabs: Display, Profiles, Bluetooth (three hosts, switch, forget, pair), LED (rainbow default, breathe, solid, status, off), Device (key click, calibrate, about).
+- Studio: a glass device preview, icon search, tints, animation and toggle fields, LED and display controls, and a firmware installer (esptool, bundled in the installer).
 
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.
@@ -279,6 +288,7 @@ Same shape as v2.1:
 NimBLE runs in its own task on core 0. The loop owns the shared LCD and touch SPI bus, so it needs no locks.
 
 ### 6.4 Device UI (480×320 landscape)
+As built in 3.1 (docs/device/index.html is the pixel-exact mock, firmware/DESIGN.md the rules): a 30 px status band (clock, profile dot and name, page fraction, host name or "No host", gear); 66 px glass keys in 96×90 cells with PC / HOLD / ON tags; page stations on the profile's line at y 310; the media player as a whole page instead of a 3×2 widget; a five-tab settings sheet; the pairing screen with a 60 s ring; the calibration screen; toast and volume HUD. The list below is the v0.2 plan.
 - **Status bar** (top): clock, `profile · page`, BLE host state, battery or USB, and a gear. Studio pushes the time with `settime`; the clock stays blank until it has done so since boot.
 - **Grid:** 5×3 cells of about 96×94 px (estimate until the layout is final). Each cell shows a 72×72 tile and a one-line label of up to 14 characters drawn by the firmware. A small badge marks tiles with a host action ("PC") or a hold action.
 - **Page dots** (bottom): one per page; tap a dot to jump.
@@ -322,7 +332,7 @@ v2.1's engine, unchanged in structure. It runs one step per `tick()`, waits `def
 - Tiles are content-addressed, so a shared tile is stored once and re-syncs skip unchanged tiles.
 
 ### 6.9 RAM budget (estimates)
-Measured on firmware 3.0.0: about 147 KB heap free with NimBLE up and the 96×90 cell sprite allocated, with a largest block of 110 KB. That is enough to buffer a 64 KB upload in RAM (§8.3). The UI composes one cell at a time in a 17 KB sprite instead of DMA ping-pong line buffers.
+Measured on firmware 3.1.0: about 114 KB heap free with NimBLE up, two 96×90 DMA chunk buffers (17 KB each) and the 32 KB album-art buffer. That is enough to buffer a 64 KB upload in RAM (§8.3). The renderer composes damaged regions in chunks of at most 96×90 px and pushes one chunk by DMA while it draws the next. (3.0.0: 147 KB with a single cell sprite.)
 
 | Item | Size |
 |---|---|
@@ -335,7 +345,7 @@ Measured on firmware 3.0.0: about 147 KB heap free with NimBLE up and the 96×90
 
 ### 6.10 Power and feedback
 - **Backlight PWM on IO27:** dims to 20% after 2 minutes, turns off after 10, and wakes on touch.
-- **RGB LED:** solid blue when connected, blinking blue while advertising, magenta in pairing mode, amber when config is unlocked, red on error. `led` and `led_anim` actions tint it and the tile glow.
+- **RGB LED:** in 3.1 a selectable pattern (rainbow by default, breathe, solid, status, off) with its own colour and brightness, from the sheet or Studio (`led`, `ledbright`). Pairing blinks magenta and errors show red over any pattern. The v0.2 plan was solid blue when connected, blinking blue while advertising, magenta in pairing mode, amber when config is unlocked, red on error. `led` and `led_anim` actions tint it.
 - **Key click:** a 4 ms DAC tone on IO26 with the amp enabled on IO4. The amp is disabled between clicks to avoid hiss and save power.
 - **Battery mode (M5):** dims sooner and uses a slower connection interval when idle. If USB power is lost and the battery is low, show a warning and stop advertising below a cutoff.
 
