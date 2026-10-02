@@ -4,7 +4,9 @@ test window, check the text, then run a host action through Studio, unpair.
     python tools/e2e/run_e2e.py          # board on USB (KP_TEST build), BLE on this PC
 
 Keystrokes only ever go to KpHelper's own topmost window, which keeps focus
-while the test runs. No media keys. The host action is a reserved
+while the test runs. The one media key (Play/Pause from the player page) is
+pressed only while KpHelper's own silent media session is the one Windows
+routes media keys to, and pressed twice so it ends playing. The host action is a reserved
 Ctrl+Alt+Shift+F18 combo that Studio's global shortcut consumes. The keypad's
 bonds are cleared before and after (it is a test device); this PC's pairing
 with it is removed at the end.
@@ -27,7 +29,8 @@ OUT = ROOT / "build" / "e2e-keys.txt"
 NAME = "Touch Keypad"
 SLOT = 6
 TEXT = "kp-e2e: Hello, Paper Theatre 123!"
-EXPECT = TEXT + "K\r\nsecond lin"   # text, Shift+K, multiline, then one backspace
+EXPECT = TEXT + "K\r\nsecond lin[on][off]"   # text, Shift+K, multiline, one backspace, toggle on then off
+PLAY_XY = (274, 248)                           # the player page's Play/Pause button
 HOST_OK = ROOT / "build" / "e2e-host-ok.txt"
 HOST_SLOT = 5                                  # Ctrl+Alt+Shift+F18
 HOST_CMD = f"run echo host-ok> {HOST_OK}"
@@ -41,7 +44,12 @@ def profile():
     keys[3] = {"id": 4, "name": "Bksp", "led_color": [122, 31, 43], "actions": [{"type": "key", "value": "BACKSPACE"}]}
     keys[4] = {"id": 5, "name": "Probe", "led_color": [47, 107, 79], "actions": [{"type": "text", "value": "."}]}
     keys[5] = {"id": 6, "name": "Host", "led_color": [100, 80, 160], "actions": [{"type": "host", "cmd": HOST_CMD, "slot": HOST_SLOT}]}
-    return {"schema_version": 2, "profile_name": "E2E", "default_delay": 20, "pages": [{"name": "BLE", "keys": keys}]}
+    keys[6] = {"id": 7, "name": "Toggle", "icon": "power", "led_color": [82, 214, 143], "toggle": True,
+               "actions": [{"type": "text", "value": "[on]"}], "off_actions": [{"type": "text", "value": "[off]"}]}
+    player = [None] * 15
+    player[0] = {"id": 1, "name": "Now Playing", "widget": "media", "span": [5, 3], "actions": [{"type": "media", "value": "PLAY_PAUSE"}]}
+    return {"schema_version": 2, "profile_name": "E2E", "default_delay": 20,
+            "pages": [{"name": "BLE", "keys": keys}, {"name": "Media", "keys": player}]}
 
 
 def cell_xy(cell):
@@ -89,7 +97,7 @@ class Helper:
             l = self.next(0.2)
             if l is None:
                 break
-            if l:
+            if l and not l.startswith("POS "):
                 log(f"helper: {l}")
             if l and l.startswith(prefix):
                 return l
@@ -183,6 +191,9 @@ def main():
             if time.time() > deadline:
                 raise RuntimeError("host never connected")
             time.sleep(0.5)
+        names = d.cmd("hostname E2E-PC") + d.cmd("ble list")
+        named = any(l.endswith(" connected E2E-PC") for l in names)
+        log("PASS: the connected host carries Studio's name" if named else f"FAIL: host name not set: {names}")
         window = Helper("window", str(OUT), "150")
         window.wait_for("OK window", 15)
         log("host connected; probing until Windows delivers keystrokes to the window")
@@ -195,7 +206,7 @@ def main():
         time.sleep(1.5)
         prefix = typed()
         log(f"keyboard ready (probe typed {prefix!r})")
-        for cell, pause in ((1, 2.5), (2, 1.0), (3, 1.5), (4, 1.0)):
+        for cell, pause in ((1, 2.5), (2, 1.0), (3, 1.5), (4, 1.0), (7, 1.2), (7, 1.2)):
             log(f"tap cell {cell}")
             d.touch(*cell_xy(cell))
             time.sleep(pause)
@@ -226,7 +237,27 @@ def main():
         quiet = typed() == before
         log("PASS: Studio ran the host command" if host_ok else "FAIL: host command did not run")
         log("PASS: the combo never reached the window" if quiet else f"FAIL: window got {typed()[len(before):]!r}")
-        ok = ok and host_ok and quiet
+        ok = ok and host_ok and quiet and named
+
+        log("media key: Play/Pause from the player page into KpHelper's silent session")
+        media = Helper("media", "60", "KP E2E Media")
+        try:
+            cur = media.wait_for("CURRENT", 15) or ""
+            if "KpHelper" not in cur:
+                log(f"SKIP: Windows routes media keys to {cur!r}, not the test session")
+            else:
+                d.ok("page 2")
+                time.sleep(0.8)
+                d.touch(*PLAY_XY)
+                paused = media.wait_for("STATE Paused", 6)
+                d.touch(*PLAY_XY)
+                resumed = media.wait_for("STATE Playing", 6)
+                both = bool(paused and resumed)
+                log("PASS: Play/Pause over BLE paused and resumed the session" if both else f"FAIL: media key: paused={paused!r} resumed={resumed!r}")
+                ok = ok and both
+                d.ok("page 1")
+        finally:
+            media.stop()
     finally:
         if studio:
             subprocess.run(["taskkill", "/PID", str(studio.pid), "/T", "/F"], capture_output=True)

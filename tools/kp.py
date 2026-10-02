@@ -31,6 +31,7 @@ import serial
 ROOT = Path(__file__).resolve().parents[1]
 SKETCH = ROOT / "firmware" / "TouchKeypad"
 BUILD = ROOT / "build" / "fw"
+BUILD_RELEASE = ROOT / "build" / "fw-release"   # no KP_TEST: what Studio installs and bundles
 ARDUINO_CLI = os.environ.get("KP_ARDUINO_CLI", r"C:\Program Files\Arduino CLI\arduino-cli.exe")
 FQBN = "esp32:esp32:esp32:FlashSize=4M,UploadSpeed=921600"
 APP_MAX = 0x1D0000          # factory partition size in partitions.csv
@@ -309,7 +310,7 @@ def rgb565_to_rgb(data):
 # ---------------------------------------------------------------- toolchain
 def build(release=False):
     flags = "" if release else "-DKP_TEST=1"
-    cmd = [ARDUINO_CLI, "compile", "--fqbn", FQBN, "--build-path", str(BUILD),
+    cmd = [ARDUINO_CLI, "compile", "--fqbn", FQBN, "--build-path", str(BUILD_RELEASE if release else BUILD),
            "--build-property", f"upload.maximum_size={APP_MAX}",
            "--build-property", f"compiler.cpp.extra_flags={flags}",
            "--warnings", "default", str(SKETCH)]
@@ -322,7 +323,7 @@ def build(release=False):
 def flash(no_build=False, release=False):
     if not no_build:
         build(release)
-    cmd = [ARDUINO_CLI, "upload", "--fqbn", FQBN, "-p", PORT, "--input-dir", str(BUILD), str(SKETCH)]
+    cmd = [ARDUINO_CLI, "upload", "--fqbn", FQBN, "-p", PORT, "--input-dir", str(BUILD_RELEASE if release else BUILD), str(SKETCH)]
     print("$", " ".join(cmd), flush=True)
     for attempt in range(3):
         if subprocess.run(cmd).returncode == 0:

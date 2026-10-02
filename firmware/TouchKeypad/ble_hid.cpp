@@ -345,7 +345,7 @@ void bleList() {
     bool up = false;
     for (uint16_t h : server->getPeerDevices())
       if (server->getPeerInfoByHandle(h).getIdAddress() == a) up = true;
-    Serial.printf("%d %s %s\n", i, a.toString().c_str(), up ? "connected" : "bonded");
+    Serial.printf("%d %s %s %s\n", i, a.toString().c_str(), up ? "connected" : "bonded", bleHostName(i).c_str());
   }
   Serial.printf("hosts:%d connected:%d advertising:%d pairing:%d\n", n, (int)server->getConnectedCount(),
                 (int)NimBLEDevice::getAdvertising()->isAdvertising(), (int)pairOpen);

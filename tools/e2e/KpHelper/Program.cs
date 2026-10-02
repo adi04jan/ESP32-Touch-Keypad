@@ -3,6 +3,7 @@
 //   KpHelper pair  [name] [timeoutSec]    -> pairs; prints NEED_PIN when Windows asks, reads the 6-digit pin from stdin
 //   KpHelper unpair [name]                -> unpairs every paired device matching name
 //   KpHelper window <outFile> [seconds]   -> topmost window with a text box; mirrors its text to outFile until closed or timeout
+//   KpHelper media [seconds] [title]      -> silent media session with a magenta cover; prints CURRENT <session>, POS <sec>, STATE <state>
 // Output is line based for the Python runner: OK ..., ERR ..., NEED_PIN, DEVICE <id> | <name> | paired=<bool>.
 using System.Runtime.InteropServices;
 using Windows.Devices.Bluetooth;
@@ -25,6 +26,7 @@ static class Program
                 "pair" => Pair(Arg(args, 1, DefaultName), int.Parse(Arg(args, 2, "45"))).GetAwaiter().GetResult(),
                 "unpair" => Unpair(Arg(args, 1, DefaultName)).GetAwaiter().GetResult(),
                 "window" => Window(Arg(args, 1, "keys.txt"), int.Parse(Arg(args, 2, "0"))),
+                "media" => Task.Run(() => Media(int.Parse(Arg(args, 1, "60")), Arg(args, 2, "KP Test Track"))).GetAwaiter().GetResult(),
                 _ => Help(),
             };
         }
@@ -117,6 +119,61 @@ static class Program
         form.Shown += (_, _) => { ForceForeground(form.Handle); box.Focus(); refocus.Start(); Console.WriteLine("OK window"); };
         if (seconds > 0) { var t = new System.Windows.Forms.Timer { Interval = seconds * 1000 }; t.Tick += (_, _) => form.Close(); t.Start(); }
         Application.Run(form);
+        return 0;
+    }
+
+    // A silent media session (volume 0, silent WAV) with known title/artist/album and a
+    // solid magenta cover, so the media-player test needs no real player. Seeks from the
+    // media session land on the player through its CommandManager; POS lines report them.
+    static int Media(int seconds, string title)
+    {
+        const int rate = 8000, len = 240;
+        var wav = new byte[44 + rate * 2 * len];
+        void U32(int o, int v) => BitConverter.GetBytes(v).CopyTo(wav, o);
+        void U16(int o, short v) => BitConverter.GetBytes(v).CopyTo(wav, o);
+        System.Text.Encoding.ASCII.GetBytes("RIFF").CopyTo(wav, 0); U32(4, wav.Length - 8);
+        System.Text.Encoding.ASCII.GetBytes("WAVEfmt ").CopyTo(wav, 8); U32(16, 16); U16(20, 1); U16(22, 1);
+        U32(24, rate); U32(28, rate * 2); U16(32, 2); U16(34, 16);
+        System.Text.Encoding.ASCII.GetBytes("data").CopyTo(wav, 36); U32(40, rate * 2 * len);
+
+        // The cover must be a file: an in-memory stream never reaches the media session's readers.
+        var pngPath = Path.Combine(Path.GetTempPath(), "kp-e2e-cover.png");
+        using (var bmp = new System.Drawing.Bitmap(300, 300))
+        {
+            using (var g = System.Drawing.Graphics.FromImage(bmp)) g.Clear(System.Drawing.Color.FromArgb(255, 0, 255));
+            bmp.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        var cover = Windows.Storage.StorageFile.GetFileFromPathAsync(pngPath).AsTask().GetAwaiter().GetResult();
+
+        var player = new Windows.Media.Playback.MediaPlayer { Volume = 0 };
+        var item = new Windows.Media.Playback.MediaPlaybackItem(Windows.Media.Core.MediaSource.CreateFromStream(new MemoryStream(wav).AsRandomAccessStream(), "audio/wav"));
+        var props = item.GetDisplayProperties();
+        props.Type = Windows.Media.MediaPlaybackType.Music;
+        props.MusicProperties.Title = title;
+        props.MusicProperties.Artist = "Keypad Test";
+        props.MusicProperties.AlbumTitle = "E2E Album";
+        props.Thumbnail = Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(cover);
+        item.ApplyDisplayProperties(props);
+        player.Source = item;
+        player.Play();
+        Console.WriteLine("OK playing");
+        // Which session Windows hands media keys to; the runner only presses keys when it is this one.
+        Thread.Sleep(1500);
+        var mgr = Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask().GetAwaiter().GetResult();
+        Console.WriteLine($"CURRENT {mgr.GetCurrentSession()?.SourceAppUserModelId ?? "-"}");
+        var end = DateTime.UtcNow.AddSeconds(seconds);
+        int last = -1;
+        var lastState = player.PlaybackSession.PlaybackState;
+        while (DateTime.UtcNow < end)
+        {
+            Thread.Sleep(200);
+            int p = (int)player.PlaybackSession.Position.TotalSeconds;
+            if (p != last) { last = p; Console.WriteLine($"POS {p}"); }
+            var st = player.PlaybackSession.PlaybackState;
+            if (st != lastState) { lastState = st; Console.WriteLine($"STATE {st}"); }
+            Console.Out.Flush();
+        }
+        player.Dispose();
         return 0;
     }
 

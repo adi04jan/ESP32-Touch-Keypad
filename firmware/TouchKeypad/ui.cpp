@@ -938,7 +938,7 @@ bool uiWake() {
 }
 
 void uiSetBrightness(int level) {
-  brightness = constrain(level, 0, 255);
+  brightness = constrain(level, 8, 255);     // never fully dark: the screen is the only way back
   Preferences p;
   p.begin("kp", false);
   p.putUChar("bright", brightness);
@@ -1035,6 +1035,7 @@ void uiSetTime(uint32_t epoch, int tz) {
 // ---------------------------------------------------------------- public: media
 void uiNowPlaying(JsonObjectConst o) {
   bool wasPlaying = np.playing;
+  if (strcmp(np.title, o["title"] | "")) artOk = false;   // new track: the old cover is wrong until Studio sends one
   strlcpy(np.title, o["title"] | "", sizeof np.title);
   strlcpy(np.album, o["album"] | "", sizeof np.album);
   strlcpy(np.artist, o["artist"] | "", sizeof np.artist);

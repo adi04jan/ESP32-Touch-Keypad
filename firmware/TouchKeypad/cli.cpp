@@ -326,7 +326,7 @@ static bool runCommand(char *s) {
   } else if (cmd == "setidle") {
     Serial.println("setidle ok");   // v2.1 key-LED idle animations: this board has no key LEDs
   } else if (cmd == "setbrightness") {
-    uiSetBrightness(atoi(arg));
+    if (*arg) uiSetBrightness(atoi(arg));   // no argument: just report
     Serial.printf("brightness %d\n", uiBrightness());
   } else if (cmd == "setdim") {
     uiSetDim(atoi(arg));
@@ -375,7 +375,7 @@ static bool runCommand(char *s) {
   } else if (cmd == "led") {
     cmdLed(arg);
   } else if (cmd == "ledbright") {
-    ledsSetBrightness(constrain(atoi(arg), 0, 255));
+    if (*arg) ledsSetBrightness(constrain(atoi(arg), 0, 255));
     Serial.printf("ledbright %d\n", ledsBrightness());
   } else if (cmd == "click") {
     if (*arg) feedbackSetClick(!strcmp(arg, "on"));
