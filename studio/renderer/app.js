@@ -37,7 +37,7 @@ const ANIMS = [["", "None"], ["eq", "Equalizer while playing"], ["pulse", "Pulse
 const LED_PATTERNS = ["rainbow", "breathe", "solid", "status", "off"];
 // The keypad's themes (firmware/TouchKeypad/themes.h); the preview draws the chosen one.
 const THEMES = [["glass", "Glass"], ["paper", "Paper"], ["daylight", "Daylight"], ["aurora", "Aurora"], ["synth", "Synth"], ["retro", "Retro"]];
-const NUM_PROFILES = 8;
+const NUM_PROFILES = 16;
 
 /* ============ helpers ============ */
 const $ = (id) => document.getElementById(id);
@@ -465,11 +465,13 @@ function showView(v) {
 
 /* ---- Device page ---- */
 async function renderDevice() {
+  const gen = state.devGen = (state.devGen || 0) + 1;   // a newer render (the link came back) wins
   const el = $("device-pane"), c = state.conn, st = c.status || {};
   const [ports, backups, flash] = await Promise.all([api.listPorts(), api.backupList(), api.flashInfo()]);
   const fs = c.connected ? await api.fsinfo() : null;
   const ble = c.connected ? await api.bleList() : { slots: [] };
   const look = c.connected ? await api.lookState() : null;
+  if (gen !== state.devGen) return;
   if (look && look.theme) state.theme = look.theme;
   const dis = c.connected ? "" : "disabled";
   const pct = (v) => (look ? `${Math.round(v / 2.55)}%` : "—");
@@ -573,6 +575,11 @@ async function renderSettings() {
     <div class="book"><h2>About</h2>
       <dl class="kv"><dt>Macropad Studio</dt><dd>${esc(state.conn.appVersion || "—")}</dd><dt>Keypad firmware</dt><dd>${esc((state.conn.status && state.conn.status.ver) || "not connected")}</dd><dt>Firmware Studio installs</dt><dd>${esc((await api.flashInfo()).version || "—")}</dd></dl>
       <p class="hint">Keys work as a Bluetooth keyboard with nothing installed; Studio adds editing, host actions, the media player feed and firmware installs. Docs: README.md, docs/PROTOCOL.md, firmware/DESIGN.md.</p></div>
+    <div class="book"><h2>Autogenerate with Claude</h2>
+      <p class="hint">On the keypad, tap the profile name, then <b>Generate</b>: the app in front gets its own profile and the keypad switches to it. An app that already has a profile just switches; a new app goes to Claude through Claude Code on this PC (your claude.ai login). Sent: the app's name, its window title and your minutes per app this session. Never keystrokes.</p>
+      <dl class="kv"><dt>App in front</dt><dd id="ag-app">—</dd></dl>
+      <div class="row"><button id="ag-run">${ico("sparkles")} Generate for it</button><button id="ag-force">${ico("refresh-cw")} Regenerate with Claude</button></div>
+      <p class="hint" id="ag-msg"></p></div>
     <div class="book"><h2>Switch profile by app</h2>
       <label class="check"><input type="checkbox" data-set="auto_switch_enabled" ${s.auto_switch_enabled ? "checked" : ""}> When the focused app changes, switch the keypad's profile</label>
       <table><thead><tr><th>App</th><th>Profile</th></tr></thead><tbody>${ctxRows}</tbody></table></div>`;
@@ -591,6 +598,18 @@ async function renderSettings() {
     });
   });
   el.querySelectorAll("[data-test]").forEach((b) => { b.onclick = async () => { const r = await api.bridgeTest(b.dataset.test); cli("host", r.ok ? `host: ran ${b.dataset.test}` : `! host: ${r.error}`); }; });
+  const ag = await api.autogenState();
+  $("ag-app").textContent = ag.last ? `${ag.last.proc}${ag.last.title ? ` · ${ag.last.title}` : ""}` : "none yet: switch to an app";
+  const gen = async (force) => {
+    if (!state.conn.connected) { $("ag-msg").textContent = "Connect the keypad first."; return; }
+    $("ag-run").disabled = $("ag-force").disabled = true;
+    $("ag-msg").textContent = force ? "Asking Claude… this takes about a minute." : "Working…";
+    const r = await api.autogen(force);
+    $("ag-run").disabled = $("ag-force").disabled = false;
+    $("ag-msg").textContent = r.ok ? `${r.profile ? r.profile.profile_name : "Profile"} is on profile ${r.slot}${r.cached ? " (already made, no Claude call)" : ""}.` : `Could not: ${r.error}`;
+  };
+  $("ag-run").onclick = () => gen(false);
+  $("ag-force").onclick = () => gen(true);
 }
 
 /* ============ events from main ============ */
@@ -634,6 +653,12 @@ api.onEvent(({ type, data }) => {
       break;
     }
     case "profile": state.conn.activeSlot = data; renderTop(); break;
+    case "profile-saved":   // Autogenerate wrote a slot: the editor shows what the keypad has
+      state.slots[data.slot] = data.profile;
+      state.empty[data.slot] = false;
+      if (state.slot === data.slot && state.view === "editor") renderStudio(); else renderTop();
+      cli("sys", `Autogenerate: ${data.profile.profile_name} on profile ${data.slot}`);
+      break;
     case "page": state.conn.page = data; break;
     case "nowplaying": state.np = data; if (playerShown()) renderStudio(true); break;
     case "art": state.art = data; if (playerShown()) renderStudio(true); break;

@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.2.1.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.3.0.
 
 ## Transport
 
@@ -25,7 +25,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `rm <file>` | `removed /x` or `ERR no such file: /x` | removing a profile also deletes tiles nothing references |
 | `fsinfo` | `FS_INFO:<total>,<used>` | bytes |
 | `reboot` | `rebooting` | no prompt; the board restarts |
-| `setprofile <1-8>` | `profile <n>` plus `EVT:PROFILE <n>` | an unreadable profile is restored to the default |
+| `setprofile <1-16>` | `Loaded profile <n> (<name>)` plus `EVT:PROFILE <n>` | an unreadable profile is restored to the default |
 | `page <n>` | `page <n>` plus `EVT:PAGE <n>` | 1-based; `invalid page` |
 | `setkey <id> <json-array>` | `Key <id> updated in RAM` | `actions` of a cell on the current page; RAM only |
 | `sethold <id> <json-array>` | `Key <id> updated in RAM` | `hold_actions`; RAM only |
@@ -51,7 +51,8 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `ble pair` | `pair open` plus `EVT:BLE pair open`, `EVT:PASSKEY <6 digits>` | 60 s pairing window; the screen shows the passkey |
 | `ble cancel` | `pair closed` | |
 | `calibrate [cancel]` | `ui cal` / `ui home` | opens the calibration screen (four targets, a check point, a test pad); progress as `EVT:CAL` |
-| `sheet [close]` | `ui sheet` / `ui home` | the settings sheet |
+| `sheet [close\|profiles]` | `ui sheet` / `ui home` | the settings sheet; `profiles` opens it on Profiles (what the status band's profile button does) |
+| `autogen busy\|done\|fail <text>` | `autogen <state>` | Studio's progress for `EVT:AUTOGEN`: `busy` holds a toast with a breathing dot, `done` and `fail` end it |
 | `toast <text>` | `toast` | a toast under the status band |
 
 Cell ids are 1–15, row by row, on a 5×3 grid. Unknown commands reply `unknown`.
@@ -86,6 +87,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:UI home\|sheet\|pair\|cal` | the screen mode changed |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
 | `EVT:POWER sleep` | on battery, idle past the sleep time: the keypad goes into deep sleep; a touch wakes it (a reboot) |
+| `EVT:AUTOGEN` | the Generate button in Profiles: the host should give the app in front a profile (Autogenerate below) |
 | `EVT:SEEK <s>` | tap on the player's seek bar; the host should seek its media session there |
 | `EVT:CAL start\|point <n> <rx> <ry>\|retry fit <px>\|retry verify <px>\|saved <px>\|redo\|done\|cancel` | calibration progress; `saved` carries the check-point error in px (at most 16) |
 | `EVT:BLE <slot> up\|down` | host link up (encrypted) or down |
@@ -143,6 +145,12 @@ USB is detected from the CH340's TX line, which idles high while USB powers the 
 - **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz and the LED goes dark. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it.
 - Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.
 - The Bluetooth Battery Service carries the charge (100 when no cell is read).
+
+## Quick switch and Autogenerate
+
+- The status band's profile name is a button: it opens the sheet on Profiles, a 4 x 4 grid of all 16 slots (tap one to switch) with **Generate** beside Done.
+- Generate sends `EVT:AUTOGEN`, closes the sheet and shows "Asking Studio..." until Studio answers with `autogen busy <text>`. With no answer in 4 s the keypad says Studio isn't running; a `busy` with no `done` or `fail` in 3 minutes ends as "Claude took too long".
+- Studio (`studio/services/autogen.js`) picks the app in front (the focused window, Studio itself excluded). If that app already has a profile, mapped in Studio's auto-switch table and still on the keypad, it just switches. If Studio kept a copy from an earlier generation, it restores it. Otherwise it asks Claude through Claude Code (`claude -p --output-format json --json-schema ...`, the user's claude.ai login, no tools), sending the app's name, its window title and the minutes per app this session (never keystrokes). The answer is repaired, validated, saved to the app's slot or the first free one, mapped, kept in Studio's data folder and loaded.
 
 ## Pairing
 

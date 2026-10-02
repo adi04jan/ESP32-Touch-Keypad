@@ -141,7 +141,7 @@ class SimDevice extends EventEmitter {
       case "ls": {
         const dir = arg.replace(/\/+$/, "");
         for (const [name, buf] of this.files) {
-          if (dir === "/t" ? name.startsWith("/t/") : !name.startsWith("/t/")) this.println(`${name.split("/").pop()}\t${buf.length}`);
+          if (dir === "/t" ? name.startsWith("/t/") : !name.startsWith("/t/")) this.println(`${dir === "/t" ? name.split("/").pop() : name.slice(1)}\t${buf.length}`);
         }
         return;
       }
@@ -151,7 +151,7 @@ class SimDevice extends EventEmitter {
       }
       case "setprofile": {
         const n = parseInt(arg, 10);
-        if (!(n >= 1 && n <= 8)) return this.println("invalid");
+        if (!(n >= 1 && n <= 16)) return this.println("invalid");
         this._load(n);
         this.event(`PROFILE ${n}`);
         return this.println(`profile ${n}`);
@@ -240,6 +240,7 @@ class SimDevice extends EventEmitter {
         return this.println("ble list | ble forget <n>");
       }
       case "reboot": return this.println("rebooting");
+      case "autogen": (this.toasts = this.toasts || []).push(arg); return this.println(`autogen ${arg.split(" ")[0]}`);
       default: return this.println("unknown");
     }
   }

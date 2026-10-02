@@ -1,6 +1,6 @@
 /* Schema v2 for the Touch Keypad (PLAN.md §7). Adapted from Macropad Studio 2.1
  * services/schema.js: same 16 v1 action types and aliases, plus `page`, `back`,
- * `host`; F13–F24; 8 profiles; pages of 15 cells; hold_actions; widgets.
+ * `host`; F13–F24; 16 profiles; pages of 15 cells; hold_actions; widgets.
  * Everything sent to the device goes through repairProfile + validateProfile. */
 
 "use strict";
@@ -9,7 +9,7 @@ const SCHEMA_VERSION = 2;
 const MAX_TEXT_LEN = 4096;
 const MAX_REPEAT_COUNT = 50;
 const MAX_REPEAT_DEPTH = 4;
-const NUM_PROFILES = 8;
+const NUM_PROFILES = 16;
 const COLS = 5, ROWS = 3, CELLS = COLS * ROWS;
 const MAX_LABEL = 14;
 const HOST_SLOTS = 48;

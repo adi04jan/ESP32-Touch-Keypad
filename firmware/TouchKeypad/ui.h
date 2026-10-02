@@ -26,6 +26,10 @@ void uiBack();
 void uiSetProfile(int n);            // emits EVT:PROFILE, shows a toast
 void uiFlash(int cell, bool ok);     // ok / alert ring on a key
 void uiToast(const char *text);
+// Autogenerate a profile for the PC's current app (Studio asks Claude). The sheet's
+// Generate button sends EVT:AUTOGEN and shows AG_ASK; Studio answers with `autogen`.
+enum { AG_ASK, AG_BUSY, AG_DONE, AG_FAIL };
+void uiAutogen(int state, const char *text);
 void uiSetTime(uint32_t epoch, int tzMin);
 void uiNowPlaying(JsonObjectConst o);   // {title, album, artist, app, pos, len, playing}
 void uiVolume(JsonObjectConst o);       // {level 0-100, muted}: the volume panel shows the real level
@@ -34,7 +38,7 @@ uint8_t *uiArtBuffer(size_t size);      // album art upload target: 128x128 big-
 void uiArtDone(bool ok);
 void uiPairShow(uint32_t passkey);
 void uiPairClose();
-void uiOpenSheet();
+void uiOpenSheet(int tab = -1);         // tab 1 = Profiles (the status band's profile button)
 void uiCloseSheet();
 bool uiSheetOpen();
 void uiSetBrightness(int level);     // 0-255, live + NVS

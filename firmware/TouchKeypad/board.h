@@ -2,7 +2,7 @@
    and firmware limits. Arduino-ESP32 core 3.2.1. */
 #pragma once
 
-#define FW_VERSION      "3.2.1"
+#define FW_VERSION      "3.3.0"
 #define SCHEMA_VERSION  2
 
 #ifndef KP_TEST                 // tools/kp.py builds with -DKP_TEST=1
@@ -42,7 +42,7 @@
 #define SERIAL_BAUD         921600
 #define SERIAL_RX_BUF       16384
 #define CLI_LINE_MAX        8192     // longest CLI line (setkey JSON)
-#define NUM_PROFILES        8
+#define NUM_PROFILES        16   // a profile is 4-7 KB; LittleFS has 2 MB
 #define MAX_TEXT_LEN        4096
 #define MAX_REPEAT_COUNT    50
 #define TEXT_CHAR_DELAY_MS  12

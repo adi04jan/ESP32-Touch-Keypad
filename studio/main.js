@@ -21,10 +21,11 @@ const activewin = require("./services/activewin");
 const feeds = require("./services/feeds");
 const flasher = require("./services/flasher");
 const hostbridge = require("./services/hostbridge");
-const { contextForProcess, CONTEXT_MATCH } = require("./services/contexts");
+const { CONTEXT_MATCH } = require("./services/contexts");
 const { SerialLink } = require("./services/serial");
 const { withBluetooth, BLE_PATH } = require("./services/bleport");
 const { Device } = require("./services/device");
+const { Autogen, appKey } = require("./services/autogen");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
@@ -32,7 +33,7 @@ const SMOKE = process.env.STUDIO_SMOKE === "1";
 const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: tests the Bluetooth link with the cable in
 const ICON = path.join(__dirname, "assets", "icon.ico");
 
-let win = null, tray = null, link = null, device = null, bridge = null;
+let win = null, tray = null, link = null, device = null, bridge = null, autogen = null;
 let manualDisconnect = false, connecting = false, pollTimer = null, currentContext = "global";
 
 function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send("evt", { type, data }); }
@@ -69,10 +70,14 @@ function initServices() {
   device.on("save-state", (s) => send("save-state", s));
   device.on("log", log);
   device.on("bridge", (r) => send("bridge", r));
+  // The keypad's Generate button: the app in front gets a profile (cached, else from Claude).
+  autogen = new Autogen({ device, link, settings: store, cacheDir: path.join(dataDir, "data", "autogen"), log,
+    onSaved: (slot, profile) => send("profile-saved", { slot, profile }) });
+  link.on("event", (body) => { if (body === "AUTOGEN") autogen.run(); });
 
   const s = store.load();
   send("bridge", bridge.apply(s.host_slots));
-  if (s.auto_switch_enabled) startContextSwitching();
+  startFocusWatch();
   if (s.nowplaying_enabled) startNowPlaying();
 }
 
@@ -109,9 +114,12 @@ function schedulePoll() {
   tryAutoConnect();
 }
 
-function startContextSwitching() {
-  activewin.start((proc) => {
-    const ctx = contextForProcess(proc);
+// The app in front, always: Autogenerate needs it; auto-switch (when on) acts on it.
+function startFocusWatch() {
+  activewin.start((proc, title) => {
+    autogen.usage.focus(proc, title);
+    if (!store.load().auto_switch_enabled) return;
+    const ctx = appKey(proc);   // a known context (chrome, vscode...) or the process name (generated profiles)
     if (ctx === currentContext) return;
     currentContext = ctx;
     const map = store.load().context_profiles || {};
@@ -236,7 +244,7 @@ ipcMain.handle("backup:all", async () => {
 ipcMain.handle("settings:get", () => store.load());
 ipcMain.handle("settings:set", (_e, patch) => {
   const before = store.load(), s = store.save(patch || {});
-  if (before.auto_switch_enabled !== s.auto_switch_enabled) { if (s.auto_switch_enabled) startContextSwitching(); else { activewin.stop(); currentContext = "global"; } }
+  if (before.auto_switch_enabled !== s.auto_switch_enabled) currentContext = "global";   // the next focus change applies
   if (before.nowplaying_enabled !== s.nowplaying_enabled) { if (s.nowplaying_enabled) startNowPlaying(); else feeds.stopNowPlaying(); }
   if (patch && "host_slots" in patch) send("bridge", bridge.apply(s.host_slots));
   if (patch && patch.auto_connect) { manualDisconnect = false; tryAutoConnect(); }
@@ -249,7 +257,12 @@ ipcMain.handle("bridge:state", (_e, profile) => ({
   conflicts: profile ? hostbridge.findActionConflicts(profile) : [],
 }));
 ipcMain.handle("bridge:test", (_e, cmd) => bridge.execute(cmd));
-ipcMain.handle("contexts:list", () => ["global", ...CONTEXT_MATCH.map(([id]) => id)]);
+ipcMain.handle("contexts:list", () => {
+  const known = ["global", ...CONTEXT_MATCH.map(([id]) => id)];
+  return [...known, ...Object.keys(store.load().context_profiles || {}).filter((k) => !known.includes(k))];   // + generated apps
+});
+ipcMain.handle("autogen:run", (_e, force) => autogen.run(!!force));
+ipcMain.handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
 
 ipcMain.handle("dialog:import", async () => {
   const r = await dialog.showOpenDialog(win, { filters: [{ name: "JSON", extensions: ["json"] }], properties: ["openFile"] });

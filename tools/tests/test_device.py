@@ -1,9 +1,9 @@
-"""Hardware tests for the Touch Keypad firmware (3.2) over USB serial.
+"""Hardware tests for the Touch Keypad firmware (3.3) over USB serial.
 
     python -m pytest tools/tests -v          # board on the first CH340, or KP_PORT=COMx
 
 HID runs dry (reports logged as EVT:HID, nothing reaches a host). The tests use
-profile slot 8 and put the active profile, the touch calibration, the theme
+profile slot 16 and put the active profile, the touch calibration, the theme
 and the HID dry-run state back exactly as they found them, so the suite can
 run on a keypad that is in use.
 """
@@ -19,7 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import kp  # noqa: E402
 
-SLOT = 8
+SLOT = 16                         # the last slot: 1-13 hold the owner's profiles
 TILE_W = 72
 G_LINE = 310                      # page stations
 FPS_FLOOR = 50                    # every animation, measured by the firmware's `perf`
@@ -89,7 +89,7 @@ def dev():
     profile = re.search(r"Profile:(\d+)", st0)
     dry = re.search(r"dry:(\d)", st0)
     led = re.match(r"led (\w+) color (\d+ \d+ \d+) brightness (\d+)", d.cmd("led")[0])
-    old = d.cmd(f"cat /profile{SLOT}.json")   # someone's slot 8, put back at the end
+    old = d.cmd(f"cat /profile{SLOT}.json")   # someone's slot 16, put back at the end
     old = None if not old or old[0].startswith("ERR") else "\n".join(old)
     d.ok("setdim 0")
     d.ok("hid dry on")
@@ -165,7 +165,7 @@ def fps(d, action, wait=0.8):
 # ---------------------------------------------------------------- protocol
 def test_status_identifies_touch_keypad(d):
     st = d.cmd("status")[0]
-    assert "model:touch" in st and "ver:3.2" in st and "theme:" in st and "pages:3" in st and "ui:home" in st and re.search(r"cal:[01]", st)
+    assert "model:touch" in st and "ver:3." in st and "theme:" in st and "pages:3" in st and "ui:home" in st and re.search(r"cal:[01]", st)
 
 
 def test_default_profiles_are_installed(dev):
@@ -589,3 +589,56 @@ def test_power_sleep_minutes(d):
     assert " sleep:0 " in d.cmd("power sleep 0")[0]        # never
     assert " sleep:120 " in d.cmd("power sleep 500")[0]    # clamped
     d.cmd(f"power sleep {old}")
+
+
+# ---------------------------------------------------------------- quick switch and autogenerate
+TOAST_PX = (240, 56)                                     # inside the toast pill, over key 3
+
+
+def test_profile_chip_opens_profiles_and_a_card_switches(d):
+    since = len(d.events)
+    d.touch(30, 14)                                      # the profile chip (and the clock beside it)
+    d.wait_event(r"^EVT:UI sheet$", 3, since)
+    time.sleep(0.5)
+    since = len(d.events)
+    d.touch(128 + 40, 96 + 23)                           # card 1 of the 4 x 4 grid
+    d.wait_event(r"^EVT:PROFILE 1$", 3, since)
+    d.ok("sheet close")
+    time.sleep(0.4)
+    d.ok(f"setprofile {SLOT}")
+
+
+def test_sixteen_profile_slots(d):
+    assert d.cmd("setprofile 17") == ["invalid"]
+    assert f"profile {SLOT} " in d.cmd(f"setprofile {SLOT}")[0]
+
+
+def test_generate_asks_studio_and_holds_progress_until_done(d):
+    time.sleep(2.4)                                      # any earlier toast has gone
+    base = d.shot().getpixel(TOAST_PX)
+    d.ok("sheet profiles")
+    d.wait_event(r"^EVT:UI sheet$")
+    time.sleep(0.5)
+    since = len(d.events)
+    d.touch(248 + 66, 64)                                # Generate, left of Done
+    d.wait_event(r"^EVT:AUTOGEN$", 3, since)
+    assert d.cmd("autogen busy Asking Claude for Test...") == ["autogen busy"]
+    time.sleep(3.0)                                      # a plain toast is gone by 2.1 s; this one holds
+    assert d.shot().getpixel(TOAST_PX) != base
+    assert d.cmd("autogen done Test ready: profile 16") == ["autogen done"]
+    time.sleep(2.6)
+    assert d.shot().getpixel(TOAST_PX) == base
+
+
+def test_generate_without_studio_says_so(d):
+    time.sleep(2.4)
+    base = d.shot().getpixel(TOAST_PX)
+    d.ok("sheet profiles")
+    d.wait_event(r"^EVT:UI sheet$")
+    time.sleep(0.5)
+    d.touch(248 + 66, 64)
+    time.sleep(3.0)
+    assert d.shot().getpixel(TOAST_PX) != base           # "Asking Studio..." waits for an answer
+    time.sleep(4.0)                                      # 4 s without one: "Open Macropad Studio", then it fades
+    assert d.shot().getpixel(TOAST_PX) == base
+    assert d.cmd("autogen nope") == ["autogen busy|done|fail <text>"]

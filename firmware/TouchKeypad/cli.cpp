@@ -253,7 +253,7 @@ static bool runCommand(char *s) {
   if (cmd == "help") {
     Con.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
                    "setface <id> <tile> <r> <g> <b> title <id> <text> show <id> ok|alert widget <name> <json> "
-                   "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> "
+                   "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> "
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
@@ -414,8 +414,16 @@ static bool runCommand(char *s) {
   } else if (cmd == "toast") {
     uiToast(arg);
     Con.println("toast");
+  } else if (cmd == "autogen") {
+    // Studio's progress for EVT:AUTOGEN: busy holds a pulsing toast, done / fail end it.
+    char st[8] = "";
+    int n = 0;
+    sscanf(arg, "%7s %n", st, &n);
+    int s = !strcmp(st, "busy") ? AG_BUSY : !strcmp(st, "done") ? AG_DONE : !strcmp(st, "fail") ? AG_FAIL : -1;
+    if (s < 0) Con.println("autogen busy|done|fail <text>");
+    else { uiAutogen(s, arg + n); Con.printf("autogen %s\n", st); }
   } else if (cmd == "sheet") {
-    if (!strcmp(arg, "close")) uiCloseSheet(); else uiOpenSheet();
+    if (!strcmp(arg, "close")) uiCloseSheet(); else uiOpenSheet(!strcmp(arg, "profiles") ? 1 : -1);
     Con.printf("ui %s\n", uiModeName());
   } else {
     Con.println("unknown");

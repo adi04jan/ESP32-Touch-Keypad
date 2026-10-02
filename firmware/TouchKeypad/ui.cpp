@@ -93,6 +93,8 @@ static bool artOk = false;
 static char toastText[48];
 static uint32_t toast0 = 0;
 static bool toastOn = false;
+static uint8_t agState = 0xff;    // AG_ASK / AG_BUSY while a sticky autogenerate toast is up
+static uint32_t agAt = 0;
 static uint32_t hud0 = 0;
 static bool hudOn = false, hudMuted = false;
 static int hudLevel = -1, hudDir = 1;   // dir: 1 up, -1 down
@@ -510,6 +512,9 @@ static int drawBattery(int cx, int cy) {
   return textW(fRead, b) + 8;
 }
 
+static int profChipX = 0, profChipW = 0;   // the status band's profile button
+static bool onProfChip(int x, int y) { return y < STATUS_H && x < profChipX + profChipW + 4; }   // the clock too: a bigger target
+
 static void drawStatus() {
   if (!gfxHits(0, 0, SCR_W, STATUS_H)) return;
   fillRect(0, 28, SCR_W, T->crisp ? 2 : 1, HAIR, T->hairA);
@@ -523,15 +528,19 @@ static void drawStatus() {
     text(fTitle, x, 21, b, TXT);
     x += textW(fTitle, b) + 12;
   }
+  // The profile chip is the quick switch: a tap opens Profiles (and Generate).
   C3 line = lineC();
+  String name = ellipsize(fBodyB, profileName, 150);
+  char pg[12];
+  sprintf(pg, "%d/%d", currentPage + 1, pageCount);
+  profChipX = x - 6;
+  profChipW = 14 + textW(fBodyB, name.c_str()) + 6 + textW(fRead, pg) + 12;
+  rrFill(profChipX, 2, profChipW, 24, 12, ctlFill());
   ringC(x + 4, 14, 5, 2, line, 77);
   circle(x + 4, 14, 4, line);
   x += 14;
-  String name = ellipsize(fBodyB, profileName, 150);
   text(fBodyB, x, 19, name.c_str(), TXT);
   x += textW(fBodyB, name.c_str()) + 6;
-  char pg[12];
-  sprintf(pg, "%d/%d", currentPage + 1, pageCount);
   text(fRead, x, 19, pg, TXT2);
 
   rrFill(454, 2, 24, 24, 12, ctlFill());
@@ -661,6 +670,12 @@ static const char *const DIM_TXT[5] = { "30 s", "1 min", "2 min", "5 min", "Neve
 static const C3 SWATCH[8] = { HEXC(0x4f8cff), HEXC(0x3fc6e0), HEXC(0x52d68f), HEXC(0xf2b746), HEXC(0xff8a3d), HEXC(0xff5f57), HEXC(0xff6fae), HEXC(0x9b7bff) };
 #define PANE_X 128
 #define PANE_W 338
+#define CARD_Y 96              // Profiles: 4 x 4 cards under the title row
+#define CARD_W 80
+#define CARD_H 46
+#define CARD_GAP 6
+#define GEN_X 248              // the Generate button, left of Done
+#define GEN_W 132
 
 static void refreshInfo() {
   info.used = LittleFS.usedBytes();
@@ -723,25 +738,22 @@ static void drawPane() {
       themeChips();
       break;
     }
-    case 1: {
-      float w = (PANE_W - 24) / 4.0f;
+    case 1: {   // all slots, 4 x 4: tap one to switch
+      button(GEN_X, 42, GEN_W, 44, "Generate", "sparkles", 0, pressedBtn == 60);
       for (int i = 0; i < NUM_PROFILES; i++) {
-        float x = PANE_X + (i % 4) * (w + 8);
-        int y = 92 + (i / 4) * 108;
+        float x = PANE_X + (i % 4) * (CARD_W + CARD_GAP);
+        int y = CARD_Y + (i / 4) * (CARD_H + CARD_GAP);
         bool cur = i + 1 == currentProfile;
         if (slots[i].ok) {
-          rrFill(x, y, w, 100, T->crisp ? 4 : 12, cardFill());
-          rrFill(x + 10, y + 10, 22, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
-          text(fBodyB, (int)x + 10, y + 38, ellipsize(fBodyB, slots[i].name, (int)w - 16).c_str(), TXT);
-          sprintf(v, "%d page%s", slots[i].pages, slots[i].pages == 1 ? "" : "s");
-          text(fRead, (int)x + 10, y + 56, cur ? "Active" : v, cur ? MAG : TXT2);
+          rrFill(x, y, CARD_W, CARD_H, T->crisp ? 4 : 10, cardFill());
+          rrFill(x + 8, y + 7, 18, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
+          text(fBodyB, (int)x + 8, y + 34, ellipsize(fBodyB, slots[i].name, CARD_W - 14).c_str(), cur ? MAG : TXT);
         } else {
-          rrRing(x + 0.5f, y + 0.5f, w - 1, 99, 11.5f, 1, mix(PLY, HAIR, 20));
-          sprintf(v, "Slot %d", i + 1);
-          text(fBodyB, (int)x + 10, y + 38, v, TXT3);
-          text(fRead, (int)x + 10, y + 56, "Empty", TXT3);
+          rrRing(x + 0.5f, y + 0.5f, CARD_W - 1, CARD_H - 1, 9.5f, 1, mix(PLY, HAIR, 20));
+          sprintf(v, "%d", i + 1);
+          text(fRead, (int)x + 8, y + 32, v, TXT3);
         }
-        if (cur) rrRing(x + 1, y + 1, w - 2, 98, 11, 2, MAG);
+        if (cur) rrRing(x + 1, y + 1, CARD_W - 2, CARD_H - 2, 9, 2, MAG);
       }
       break;
     }
@@ -934,6 +946,7 @@ static void toastRect(int *x, int *y, int *w, int *h) {
 }
 static float toastProg(uint32_t now) {
   uint32_t t = now - toast0;
+  if (agState <= AG_BUSY) return t < 160 ? easeOut(t / 160.0f) : 1;   // sticky until Studio answers
   if (t < 160) return easeOut(t / 160.0f);
   if (t < 1960) return 1;
   if (t < 2120) return 1 - easeOut((t - 1960) / 160.0f);
@@ -948,7 +961,10 @@ static void drawToast(uint32_t now) {
   gfxClip(0, 0, SCR_W, y + (int)((h + 14) * p));
   softShadow(x, y, w, h, 220);
   rrFill(x, y, w, h, 20, pillFill());
-  circle(x + 18, y + 20, 5, lineC());
+  if (agState <= AG_BUSY) {   // working: the dot breathes
+    float b = 0.5f + 0.5f * sinf(now * 0.008f);
+    circle(x + 18, y + 20, 6, MAG, (uint8_t)(90 + 165 * b));
+  } else circle(x + 18, y + 20, 5, lineC());
   text(fBodyB, x + 30, y + 25, toastText, TXT);
   gfxUnclip();
 }
@@ -1090,8 +1106,17 @@ static bool animate(uint32_t now) {
     int x, y, w, h;
     toastRect(&x, &y, &w, &h);
     uint32_t t = now - toast0;
-    if (t < 180 || (t > 1950 && t < 2140)) { mark(x - 6, y, w + 12, h + 16); live = true; }
-    if (t >= 2140) { toastOn = false; mark(x - 6, y, w + 12, h + 16); }
+    if (agState <= AG_BUSY) {
+      if (t < 180) mark(x - 6, y, w + 12, h + 16);   // the pill slides in
+      else mark(x + 8, y + 10, 22, 22);               // then only the breathing dot
+      live = true;
+      // No answer: Studio isn't running (4 s), or Claude never finished (3 min).
+      if (now - agAt > (agState == AG_ASK ? 4000UL : 180000UL))
+        uiAutogen(AG_FAIL, agState == AG_ASK ? "Open Macropad Studio to generate" : "Claude took too long");
+    } else {
+      if (t < 180 || (t > 1950 && t < 2140)) { mark(x - 6, y, w + 12, h + 16); live = true; }
+      if (t >= 2140) { toastOn = false; mark(x - 6, y, w + 12, h + 16); }
+    }
   }
   if (hudOn) {
     uint32_t t = now - hud0;
@@ -1323,9 +1348,15 @@ void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
 void uiToast(const char *t) {
   int x, y, w, h;
   if (toastOn) { toastRect(&x, &y, &w, &h); mark(x - 6, y, w + 12, h + 16); }
-  strlcpy(toastText, t, sizeof toastText);
+  agState = 0xff;
+  strlcpy(toastText, ellipsize(fBodyB, t, 390).c_str(), sizeof toastText);
   toast0 = millis();
   toastOn = true;
+}
+
+void uiAutogen(int state, const char *text) {
+  uiToast(*text ? text : state == AG_DONE ? "Profile ready" : state == AG_FAIL ? "Could not generate" : "Generating...");
+  if (state <= AG_BUSY) { agState = state; agAt = millis(); }
 }
 
 void uiSetProfile(int n) {
@@ -1425,8 +1456,9 @@ void uiPairClose() {
   markScreen();
 }
 
-void uiOpenSheet() {
-  if (mode == M_SHEET && !sheetClosing) return;
+void uiOpenSheet(int tab) {
+  if (tab >= 0 && tab < 5) sheetTab = tab;
+  if (mode == M_SHEET && !sheetClosing) { mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
   if (mode != M_HOME && mode != M_SHEET) return;
   loadSlots();
   mode = M_SHEET;
@@ -1533,6 +1565,7 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
     if (inRect(x, y, PANE_X, 266, PANE_W, 44)) return 30;
   }
   if (sheetTab == 4 && inRect(x, y, PANE_X + PANE_W - 130, 140, 130, 44)) return 40;
+  if (sheetTab == 1 && inRect(x, y, GEN_X, 42, GEN_W, 44)) return 60;
   return -1;
 }
 
@@ -1550,6 +1583,12 @@ static void sheetTap(int x, int y) {
   if (b >= 20 && b < 23) { bleForget(b - 20); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
   if (b == 30) { mode = M_HOME; blePairOpen(); return; }
   if (b == 40) { uiCalibrate(); return; }
+  if (b == 60) {   // Studio takes it from here: current app, usage, Claude, upload, setprofile
+    Con.println("EVT:AUTOGEN");
+    uiCloseSheet();
+    uiAutogen(AG_ASK, "Asking Studio...");
+    return;
+  }
   switch (sheetTab) {
     case 0:
       if (inRect(x, y, PANE_X, 182, PANE_W, 44)) {
@@ -1561,10 +1600,10 @@ static void sheetTap(int x, int y) {
       }
       break;
     case 1:
-      if (y >= 92 && y < 300) {
-        int col = (x - PANE_X) * 4 / PANE_W, row = (y - 92) / 108;
-        int n = row * 4 + constrain(col, 0, 3) + 1;
-        if (n >= 1 && n <= NUM_PROFILES) uiSetProfile(n);
+      if (y >= CARD_Y && x >= PANE_X) {
+        int col = (x - PANE_X) / (CARD_W + CARD_GAP), row = (y - CARD_Y) / (CARD_H + CARD_GAP);
+        int n = row * 4 + col + 1;
+        if (col < 4 && row < 4 && n <= NUM_PROFILES && slots[n - 1].ok) uiSetProfile(n);
       }
       break;
     case 3:
@@ -1639,6 +1678,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
         np.at = now;
         mark(SEEK_X - 8, 140, SEEK_W + 16, 56);
       } else if (y0 < STATUS_H && x0 >= 440) uiOpenSheet();
+      else if (onProfChip(x0, y0)) uiOpenSheet(1);
       else if (y0 >= LINE_Y) {
         int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
@@ -1690,6 +1730,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       release(c);
       if (fire) { runKey(c, false); if (c >= 0) uiFlash(c, true); }
       else if (c < 0 && y0 < STATUS_H && x0 >= 440) uiOpenSheet();
+      else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
       else if (c < 0 && y0 >= LINE_Y && pageCount > 1) {
         int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }

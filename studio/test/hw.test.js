@@ -12,7 +12,7 @@ const { Device } = require("../services/device");
 const backup = require("../services/backup");
 
 const HW = process.env.KP_HW === "1" || process.env.npm_lifecycle_event === "test:hw";
-const SLOT = 7;
+const SLOT = 14;   // scratch: 1-13 hold the owner's profiles
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 5000) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error("timed out waiting"); await sleep(20); } };
 const cellXY = (id) => [((id - 1) % 5) * 96 + 48, 30 + Math.floor((id - 1) / 5) * 90 + 40];
@@ -45,7 +45,7 @@ test.before(async () => {
 
 test.after(async () => {
   if (!HW || !link.isOpen()) return;
-  if (found && found.slot7) await link.uploadJson(`profile${SLOT}.json`, JSON.parse(found.slot7));
+  if (found && found.slotOld) await link.uploadJson(`profile${SLOT}.json`, JSON.parse(found.slotOld));
   else await link.command(`rm /profile${SLOT}.json`);
   await link.command(`setprofile ${found ? found.profile : 1}`);
   await link.command(`hid dry ${found && found.dry ? "on" : "off"}`);
@@ -59,7 +59,7 @@ test("detect finds the keypad by CH340 + model:touch", { skip: !HW }, async () =
   assert.equal(r.status.model, "touch");
   assert.match(r.status.ver, /^3\./);
   const cat = await link.readFile(`profile${SLOT}.json`);
-  found = { profile: +r.status.profile || 1, dry: r.status.dry === "1", slot7: /^\s*\{/.test(cat) ? cat : null };
+  found = { profile: +r.status.profile || 1, dry: r.status.dry === "1", slotOld: /^\s*\{/.test(cat) ? cat : null };
   await link.command("hid dry on");
   await link.command("setdim 0");
 });

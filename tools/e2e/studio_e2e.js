@@ -10,7 +10,7 @@
  * on this PC (typed text in KpHelper's window, a silent media session, a file
  * a host action writes), and on screen (DevTools screenshots).
  *
- * Edits only scratch slot 8 and restores the keypad's theme, LED, brightness,
+ * Edits only scratch slot 16 and restores the keypad's theme, LED, brightness,
  * click and active profile. Studio runs with a throwaway data folder, so the
  * installed app's own settings stay untouched. Keystrokes go only to
  * KpHelper's focused window; the one media key goes only to KpHelper's silent
@@ -25,7 +25,7 @@ const path = require("path");
 const EXE = process.env.STUDIO_EXE || path.join(process.env.LOCALAPPDATA, "Programs", "touch-keypad-studio", "Macropad Studio Touch.exe");
 const HELPER = path.join(__dirname, "bin", "KpHelper.exe");
 const OUT = path.join(__dirname, "..", "..", "build", "studio-e2e");
-const PORT = 9223, SLOT = 8;
+const PORT = 9223, SLOT = 16;   // scratch: the last slot (1-13 hold the owner's profiles)
 const BLE = process.env.E2E_BLE === "1";
 const TYPED = path.join(OUT, "typed.txt"), HOST_FILE = path.join(OUT, "host-ok.txt");
 const STATE_PY = path.join(__dirname, "keypad_state.py"), STATE_FILE = path.join(OUT, "keypad-before.json");
@@ -84,12 +84,12 @@ function helperProc(args, onLine) {
 const typed = () => (fs.existsSync(TYPED) ? fs.readFileSync(TYPED, "utf8") : "");
 
 // ---------------------------------------------------------------- tests
-let before, saved;   // the keypad's state before the run (saved over USB), put back after
+let before, saved, genSlot = null;   // genSlot: the slot Autogenerate wrote, removed after the run   // the keypad's state before the run (saved over USB), put back after
 const T = [];
 const test = (name, fn) => T.push([name, fn]);
 
 test(`installed Studio boots and finds the keypad on ${BLE ? "Bluetooth" : "USB"}`, async () => {
-  const pill = await until("connection pill", async () => { const t = await text("#conn-pill"); return /Touch Keypad/.test(t) && /fw 3\.2/.test(t) && t; }, 30000);
+  const pill = await until("connection pill", async () => { const t = await text("#conn-pill"); return /Touch Keypad/.test(t) && /fw 3\.\d/.test(t) && t; }, 30000);
   if (!(BLE ? /Bluetooth/ : /COM\d+/).test(pill)) throw new Error(`wrong link in "${pill}"`);
   log(`keypad: profile ${before.Profile}, theme ${before.theme}, ble ${before.ble}, cal ${before.cal}`);
 });
@@ -257,6 +257,41 @@ test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bl
   await until("playing", async () => mediaLines.slice(n1).includes("STATE Playing"), 6000);
 });
 
+// The keypad's Generate button, end to end: keypad -> Studio -> Claude Code -> keypad. Paint is the
+// app in front (not one of the owner's profiled apps, and closed again after); its profile lands in
+// the first free slot and is deleted at the end. A second tap must reuse it without asking Claude.
+test("Autogenerate: Generate on the keypad gets Claude's profile for the app in front, then reuses it", async () => {
+  needsDesktop();
+  if (/mspaint\.exe/i.test(execSync('tasklist /FI "IMAGENAME eq mspaint.exe"', { encoding: "utf8" }))) { const e = new Error("Paint is already open; not touching it"); e.skip = true; throw e; }
+  spawn("mspaint.exe", [], { stdio: "ignore", detached: true }).unref();
+  try {
+    await until("Paint in front", async () => {
+      try { execFileSync(HELPER, ["focus", "mspaint"], { stdio: "ignore", timeout: 5000 }); } catch (_) {}   // Windows won't let a new window take focus on its own
+      const st = await run(() => api.autogenState());
+      return st.last && st.last.proc === "mspaint" && st;
+    }, 30000, 1500);
+    await cmd("sheet profiles");
+    await sleep(700);
+    await cmd("touch 314 64 80");                                       // Generate, left of Done
+    genSlot = await until("Claude's profile mapped", async () => (await run(async () => (await api.getSettings()).context_profiles || {})).mspaint, 240000, 2000);
+    const p = await readCat(genSlot);
+    const n = p ? p.pages.reduce((a, g) => a + g.keys.filter(Boolean).length, 0) : 0;
+    if (!p || !/paint/i.test(p.profile_name) || n < 6) throw new Error(`profile ${genSlot}: ${p ? `"${p.profile_name}", ${n} keys` : "unreadable"}`);
+    await until("keypad on it", async () => (await statusOf()).Profile === String(genSlot), 10000, 500);
+    await shot("08-autogen");
+    await cmd("setprofile 1");
+    await cmd("sheet profiles");
+    await sleep(700);
+    const t0 = Date.now();
+    await cmd("touch 314 64 80");
+    await until("cached switch", async () => (await statusOf()).Profile === String(genSlot), 10000, 200);
+    log(`autogen: Paint -> profile ${genSlot} (${n} keys, "${p.pages[0].keys.filter(Boolean).slice(0, 4).map((k) => k.name).join(", ")}..."); reused in ${Date.now() - t0} ms`);
+    if (Date.now() - t0 > 8000) throw new Error("the second tap was not served from the cache");
+  } finally {
+    try { execSync("taskkill /IM mspaint.exe /F", { stdio: "ignore" }); } catch (_) {}
+  }
+});
+
 test("Device view: power readout, and the battery sleep time reaches the keypad", async () => {
   await view("device");
   const pane = await text("#device-pane");
@@ -284,7 +319,7 @@ test("Device view: Studio installs its bundled firmware and everything survives"
   }
   await click("#d-flash");
   await until("installed", async () => /Installed/.test(await text("#flash-msg")), 120000, 1000);
-  await until("reconnected", async () => (await run(() => state.conn.connected)) && /fw 3\.2/.test(await text("#conn-pill")), 40000, 1000);
+  await until("reconnected", async () => (await run(() => state.conn.connected)) && /fw 3\.\d/.test(await text("#conn-pill")), 40000, 1000);
   const s = await statusOf();
   if (s.cal !== before.cal) throw new Error(`calibration changed: ${s.cal}`);
   if (((await keyOf(0, 0)) || {}).name !== "Renamed") throw new Error(`slot ${SLOT} lost`);
@@ -293,6 +328,7 @@ test("Device view: Studio installs its bundled firmware and everything survives"
 
 test("Device view: back up all profiles writes them to this PC", async () => {
   await view("device");
+  await until("Device view connected", async () => run(() => { const b = document.querySelector("#b-all"); return b && !b.disabled; }), 15000, 300);
   await click("#b-all");
   const m = await until("backup line", async () => (await text("#st-log")).match(/Backed up (\d+) profiles to (.+?\.json|[^\s]+)/), 15000, 300);
   if (+m[1] < 4) throw new Error(`only ${m[1]} profiles`);
@@ -311,7 +347,7 @@ test("Device view: back up all profiles writes them to this PC", async () => {
   const results = [];
   try {
     cdp = await connectCdp();
-    const only = process.env.E2E_ONLY && new RegExp(process.env.E2E_ONLY, "i");   // rerun a few: E2E_ONLY="slot 8|host"
+    const only = process.env.E2E_ONLY && new RegExp(process.env.E2E_ONLY, "i");   // rerun a few: E2E_ONLY="slot 16|host"
     for (const [name, fn] of T.filter(([n], i) => !only || i === 0 || only.test(n))) {
       const t0 = Date.now();
       try { await fn(); results.push([true, name]); log(`PASS ${name} (${Date.now() - t0} ms)`); }
@@ -324,6 +360,7 @@ test("Device view: back up all profiles writes them to this PC", async () => {
   for (const p of [typing, media]) if (p) try { p.kill(); } catch (_) {}
   try { execSync(`taskkill /PID ${studio.pid} /T /F`, { stdio: "ignore" }); } catch (_) {}
   await sleep(1500);   // Windows releases the COM port
+  if (genSlot) try { execFileSync("python", [path.join(__dirname, "..", "kp.py"), "cmd", `rm /profile${genSlot}.json`], { stdio: "ignore" }); } catch (_) {}
   try { log(`restored: ${execFileSync("python", [STATE_PY, "restore", STATE_FILE], { encoding: "utf8" }).trim()}`); }
   catch (e) { log(`RESTORE FAILED: ${e.message}`); }
   const failed = results.filter((r) => r[0] === false), skipped = results.filter((r) => r[0] === null);

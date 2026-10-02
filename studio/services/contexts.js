@@ -18,6 +18,10 @@ const CONTEXT_MATCH = [
   ["notion", ["notion"]],
   ["teams", ["teams", "ms-teams"]],
   ["zoom", ["zoom"]],
+  ["signal", ["signal"]],
+  ["claude", ["claude"]],
+  ["notepadpp", ["notepad++"]],
+  ["bruno", ["bruno"]],
 ];
 
 function contextForProcess(proc) {

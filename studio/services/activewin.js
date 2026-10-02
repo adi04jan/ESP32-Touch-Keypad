@@ -1,6 +1,6 @@
-/* Reports the focused window's process name (Windows). Spawns one long-lived
- * PowerShell that polls the foreground window and prints the process name only
- * when it changes — no per-poll process spawn, no native dependency. */
+/* Reports the focused window's process name and title (Windows). Spawns one long-lived
+ * PowerShell that polls the foreground window and prints "name<TAB>title" only when
+ * either changes — no per-poll process spawn, no native dependency. */
 "use strict";
 const { spawn } = require("child_process");
 
@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 public class Fg {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h, out int p);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
 }
 '@
 $last = ""
@@ -20,14 +21,17 @@ while ($true) {
     $procId = 0
     [void][Fg]::GetWindowThreadProcessId($h, [ref]$procId)
     $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
-    if ($name -and $name -ne $last) { $last = $name; Write-Output $name }
+    $sb = New-Object System.Text.StringBuilder 256
+    [void][Fg]::GetWindowText($h, $sb, 256)
+    $line = "$name" + [char]9 + ($sb.ToString() -replace '\\s+', ' ')
+    if ($name -and $line -ne $last) { $last = $line; [Console]::Out.WriteLine($line) }
   } catch {}
   Start-Sleep -Milliseconds 1200
 }`;
 
 let child = null;
 
-function start(onProcess) {
+function start(onFocus) {   // onFocus(processName, windowTitle)
   if (process.platform !== "win32" || child) return;
   const enc = Buffer.from(PS, "utf16le").toString("base64");
   try {
@@ -39,7 +43,8 @@ function start(onProcess) {
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
-      if (line) try { onProcess(line); } catch (_) {}
+      const [name, title = ""] = line.split("\t");
+      if (name) try { onFocus(name, title); } catch (_) {}
     }
   });
   child.on("exit", () => { child = null; });

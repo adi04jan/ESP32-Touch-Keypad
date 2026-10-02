@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("api", {
   bridgeState: call("bridge:state"),
   bridgeTest: call("bridge:test"),
   contexts: call("contexts:list"),
+  autogen: call("autogen:run"),              // (force) — the app in front gets a profile
+  autogenState: call("autogen:state"),
   importProfile: call("dialog:import"),
   exportProfile: call("dialog:export"),
   flashInfo: call("flash:info"),

@@ -4,6 +4,7 @@
 //   KpHelper unpair [name]                -> unpairs every paired device matching name
 //   KpHelper window <outFile> [seconds]   -> topmost window with a text box; mirrors its text to outFile until closed or timeout
 //   KpHelper media [seconds] [title]      -> silent media session with a magenta cover; prints CURRENT <session>, POS <sec>, STATE <state>
+//   KpHelper focus <process>              -> brings that process's main window to the front
 //   KpHelper hidread [match] [seconds]    -> HID reports Windows received from the keypad (consumer, telephony): OPEN/DENIED <col>, REPORT <col> <hex>
 // Output is line based for the Python runner: OK ..., ERR ..., NEED_PIN, DEVICE <id> | <name> | paired=<bool>.
 using System.Runtime.InteropServices;
@@ -28,6 +29,7 @@ static class Program
                 "unpair" => Unpair(Arg(args, 1, DefaultName)).GetAwaiter().GetResult(),
                 "window" => Window(Arg(args, 1, "keys.txt"), int.Parse(Arg(args, 2, "0"))),
                 "media" => Task.Run(() => Media(int.Parse(Arg(args, 1, "60")), Arg(args, 2, "KP Test Track"))).GetAwaiter().GetResult(),
+                "focus" => Focus(Arg(args, 1, "")),
                 "hidread" => HidRead(Arg(args, 1, "VID&02303A_PID&80C6"), int.Parse(Arg(args, 2, "10"))).GetAwaiter().GetResult(),
                 _ => Help(),
             };
@@ -212,6 +214,16 @@ static class Program
         Console.Out.Flush();
         await Task.WhenAll(reads);
         Console.WriteLine("OK done");
+        return 0;
+    }
+
+    // Bring an app's main window to the front (tests that need a given app in front).
+    static int Focus(string name)
+    {
+        var p = System.Diagnostics.Process.GetProcessesByName(name).FirstOrDefault(x => x.MainWindowHandle != IntPtr.Zero);
+        if (p is null) { Console.WriteLine($"ERR no window for {name}"); return 3; }
+        ForceForeground(p.MainWindowHandle);
+        Console.WriteLine(GetForegroundWindow() == p.MainWindowHandle ? "OK focus" : "ERR still behind");
         return 0;
     }
 

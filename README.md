@@ -2,7 +2,7 @@
 
 A Stream Deck–style BLE macropad on the LCDwiki 4.0" ESP32-32E board (E32R40T: ESP32-WROOM-32E, ST7796S 480×320, XPT2046 resistive touch), with Macropad Studio for Windows.
 
-Six device themes (Daylight by default, Glass, Paper, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), three ready profiles, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps. On a battery it shows the charge, dims, turns its screen off and deep-sleeps after an idle time you choose; on USB it runs at full power and shows charging.
+Six device themes (Daylight by default, Glass, Paper, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), sixteen profile slots with a quick switch on the status band, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps. On a battery it shows the charge, dims, turns its screen off and deep-sleeps after an idle time you choose; on USB it runs at full power and shows charging.
 
 | Path | What |
 |---|---|
@@ -38,14 +38,16 @@ python tools/kp.py build --release && cd studio && npm run dist   # installer wi
 
 Studio's editor shows the keypad's screen in its current theme; keys edit live (Ctrl+Z undoes, Ctrl+C / Ctrl+V copy keys, arrows move). It tells you when the keypad needs calibrating or has older firmware than Studio bundles, and its Device view installs that firmware over USB (profiles, pairings and calibration are kept). Without a keypad Studio only previews: profiles live on the keypad.
 
+Studio follows the app in front: each mapped app (VS Code, Chrome, Slack, Terminal, Signal, Claude, File Explorer, Notepad++, Bruno, from `tools/profiles/app_profiles.py`) switches the keypad to its profile. For any other app, tap the profile name on the keypad, then **Generate**. Studio asks Claude (through Claude Code on this PC) for that app's shortcuts and loads the result; the next tap reuses it.
+
 Studio connects over USB or, with no cable, over Bluetooth to a keypad paired with this PC (the keypad's console on a Nordic UART service, through `native/KpLink`). Everything works over Bluetooth except installing firmware, which needs the cable. The Device view shows USB or battery and the charge, and sets how long the keypad waits on battery before it sleeps.
 
 ## Tests, from fastest to fullest
 
 ```
-cd studio && npm test                # 49 unit tests against a simulated keypad and a fake Bluetooth helper
+cd studio && npm test                # 53 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
 cd studio && npm run smoke           # Electron boots and draws the glass preview with all icons
-python -m pytest tools/tests -v      # 54 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power
+python -m pytest tools/tests -v      # 58 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power, quick switch, Generate
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
 python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): media keys read from Windows' HID stack, types, toggles, host action through Studio, Play/Pause

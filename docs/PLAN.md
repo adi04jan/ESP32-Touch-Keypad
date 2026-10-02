@@ -38,6 +38,13 @@ Done 2026-10-02: firmware 3.2.0 and Studio 3.2.0. 51 board tests (15 for themes:
 
 Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit + 10 hardware, media E2E, installed-app E2E on USB and on Bluetooth (18/18 each), BLE E2E (media keys read from Windows' HID stack, typing with the 120-character line, host action, Play/Pause).
 
+**3.3 task list: app profiles, quick switch, Autogenerate** (owner's brief, 2026-10-02: research the most used shortcuts of the apps used most and make a profile for each; a quick profile switch on the screen; a main-screen option that asks Claude, in real time, for a profile for the current app; keep Opus and cache a profile once made)
+- [x] Usage from Windows' own records (UserAssist focus time): VS Code, Chrome, Slack, Windows Terminal, Signal, Claude, File Explorer, plus Notepad++ and Bruno.
+- [x] Nine profiles from each app's documented default shortcuts (`tools/profiles/app_profiles.py`, sources in its header), slots 5–13, mapped in Studio's auto-switch table.
+- [x] Sixteen profile slots (firmware, schema, Studio); the status band's profile name opens a 4 x 4 Profiles grid.
+- [x] Generate: `EVT:AUTOGEN`, the `autogen` progress toast, Studio's Claude Code call (default model, structured output), one retry on a weak answer, the app mapped and cached; a second tap switches without asking Claude.
+- [x] Tests: 4 board tests (button, grid switch, progress, no Studio), autogen units with a fake Claude Code, a live installed-app E2E (Paint, real Claude, then the cached switch).
+
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.
 - Macropad Studio 3 replaces the planned Web Serial configurator and the Tauri companion. It gets a "Touch Keypad" device type (§10).

@@ -7,12 +7,12 @@ const key = (id, extra = {}) => ({ id, name: `K${id}`, icon: "zap", led_color: [
 const profile = (keys) => ({ schema_version: 2, profile_name: "T", default_delay: 20, pages: [{ name: "Main", keys }] });
 const blank = () => Array(15).fill(null);
 
-test("19 action types, F13–F24 and 8 profiles", () => {
+test("19 action types, F13–F24 and 16 profiles", () => {
   assert.equal(schema.ACTION_TYPES.length, 19);
   for (const t of ["page", "back", "host"]) assert.ok(schema.ACTION_TYPES.includes(t));
   assert.ok(schema.KEY_NAMES.includes("F13") && schema.KEY_NAMES.includes("F24"));
-  assert.deepEqual(schema.validateActions([{ type: "profile", value: 8 }]).errors, []);
-  assert.equal(schema.validateActions([{ type: "profile", value: 9 }]).ok, false);
+  assert.deepEqual(schema.validateActions([{ type: "profile", value: 16 }]).errors, []);
+  assert.equal(schema.validateActions([{ type: "profile", value: 17 }]).ok, false);
 });
 
 test("validateAction covers every type", () => {

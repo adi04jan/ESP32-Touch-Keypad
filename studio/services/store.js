@@ -12,7 +12,7 @@ const DEFAULTS = {
   auto_connect: true,
   baud: 921600,
   auto_switch_enabled: false,
-  context_profiles: {},          // context id -> profile slot (1..8)
+  context_profiles: {},          // context id or process name -> profile slot (1..16)
   host_slots: {},                // "0".."47" -> host cmd (PLAN.md §9)
   obs_enabled: false,
   obs_url: "ws://127.0.0.1:4455",
