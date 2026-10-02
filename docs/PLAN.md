@@ -36,7 +36,7 @@ Done 2026-10-02: firmware 3.2.0 and Studio 3.2.0. 51 board tests (15 for themes:
 - [x] Studio: the Link and Power rows, the battery sleep setting, a Bluetooth note on firmware install.
 - [x] Tests: power on the board (readout, battery policy, the wake rule, sleep minutes); Bluetooth port units; the installed-app E2E in both USB and Bluetooth-only modes.
 
-Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit + 10 hardware, media E2E, installed-app E2E on USB and on Bluetooth (15 pass each; the 3 keystroke tests skip while the PC is locked).
+Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit + 10 hardware, media E2E, installed-app E2E on USB and on Bluetooth (18/18 each), BLE E2E (media keys read from Windows' HID stack, typing with the 120-character line, host action, Play/Pause).
 
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.

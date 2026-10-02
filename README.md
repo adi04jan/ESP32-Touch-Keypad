@@ -48,12 +48,12 @@ cd studio && npm run smoke           # Electron boots and draws the glass previe
 python -m pytest tools/tests -v      # 54 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
-python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): types, toggles, host action through Studio, Play/Pause
+python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): media keys read from Windows' HID stack, types, toggles, host action through Studio, Play/Pause
 node tools/e2e/studio_e2e.js         # the installed Studio driven through its UI against the keypad, on USB
 E2E_BLE=1 node tools/e2e/studio_e2e.js   # the same over Bluetooth only (USB hidden from Studio)
 ```
 
-The BLE E2E types only into the window it opens and keeps focused, and presses Play/Pause only while its own silent media session is the one Windows routes media keys to. When this PC is already paired it reuses that pairing and leaves it in place; `--fresh-pairing` clears the bonds and pairs again. Both runs save the keypad's settings first and put them back after. While the PC is locked, the lock screen takes every keystroke, so those tests report SKIP.
+The BLE E2E types only into the window it opens and keeps focused, and presses Play/Pause only while its own silent media session is the one Windows routes media keys to. When this PC is already paired it reuses that pairing and leaves it in place; `--fresh-pairing` clears the bonds and pairs again. Both runs save the keypad's settings first and put them back after. While the PC is locked, the lock screen takes every keystroke, so those tests report SKIP; the media-key check reads Windows' HID stack directly and runs either way.
 
 ## Hardware notes found in bring-up
 

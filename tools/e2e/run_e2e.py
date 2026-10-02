@@ -58,6 +58,8 @@ def profile():
     keys[4] = {"id": 5, "name": "Probe", "led_color": [47, 107, 79], "actions": [{"type": "text", "value": "."}]}
     keys[5] = {"id": 6, "name": "Host", "led_color": [100, 80, 160], "actions": [{"type": "host", "cmd": HOST_CMD, "slot": HOST_SLOT}]}
     keys[7] = {"id": 8, "name": "Long", "icon": "type", "led_color": [79, 140, 255], "actions": [{"type": "text", "value": LONG}]}
+    keys[9] = {"id": 10, "name": "Vol up", "icon": "volume-2", "led_color": [138, 152, 171], "actions": [{"type": "media", "value": "VOLUME_UP"}]}
+    keys[10] = {"id": 11, "name": "Vol down", "icon": "volume-1", "led_color": [138, 152, 171], "actions": [{"type": "media", "value": "VOLUME_DOWN"}]}
     keys[6] = {"id": 7, "name": "Toggle", "icon": "power", "led_color": [82, 214, 143], "toggle": True,
                "actions": [{"type": "text", "value": "[on]"}], "off_actions": [{"type": "text", "value": "[off]"}]}
     player = [None] * 15
@@ -186,6 +188,28 @@ def pc_locked():
     return "LogonUI.exe" in out
 
 
+def hid_media_check(d):
+    """Media keys read straight from Windows' HID stack (KpHelper hidread): the Bluetooth HID
+    path end to end, with no focus needed, so it runs on a locked PC too. Vol up then Vol down."""
+    h = Helper("hidread", "VID&02303A_PID&80C6", "10")
+    try:
+        h.wait_for("OPEN col02", 15)
+        d.touch(*cell_xy(15))              # an empty cell: wakes a dimmed screen, sends nothing
+        time.sleep(0.6)
+        for cell in (10, 11):
+            d.touch(*cell_xy(cell))
+            time.sleep(0.7)
+        got = []
+        while (l := h.next(12)) and not l.startswith("OK"):
+            got.append(l)
+    finally:
+        h.stop()
+    want = ["REPORT col02 02e900", "REPORT col02 020000", "REPORT col02 02ea00", "REPORT col02 020000"]
+    ok = [l for l in got if l.startswith("REPORT col02")] == want
+    log("PASS: Vol up and Vol down reached Windows' HID stack over BLE" if ok else f"FAIL: HID reports {got!r}")
+    return ok
+
+
 def main():
     OUT.parent.mkdir(exist_ok=True)
     keypad_state.save(STATE, SLOT)          # also frees slot 6 (or stops if it holds a real profile)
@@ -220,8 +244,11 @@ def main():
         named = any(l.endswith(" connected E2E-PC") for l in names)
         log("PASS: the connected host carries Studio's name" if named else f"FAIL: host name not set: {names}")
         d.cmd(f"hostname {socket.gethostname()}")   # this PC's real name back
+        hid_ok = hid_media_check(d)
         if pc_locked():
-            raise RuntimeError("SKIP: this PC is locked; keystrokes go to the lock screen. Unlock it and run again")
+            log("SKIP: this PC is locked, and the lock screen takes keystrokes: typing, the host action and Play/Pause need it unlocked")
+            ok = hid_ok
+            return 0 if ok else 1
         window = Helper("window", str(OUT), "150")
         window.wait_for("OK window", 15)
         log("host connected; probing until Windows delivers keystrokes to the window")
@@ -246,7 +273,7 @@ def main():
                 break
             time.sleep(0.3)
         d.shot(str(ROOT / "build" / "e2e-screen.png"))
-        ok = got == EXPECT
+        ok = got == EXPECT and hid_ok
         log(f"typed {got!r}")
         log("PASS: keystrokes over BLE match" if ok else f"FAIL: expected {EXPECT!r}")
 

@@ -4,6 +4,7 @@
 //   KpHelper unpair [name]                -> unpairs every paired device matching name
 //   KpHelper window <outFile> [seconds]   -> topmost window with a text box; mirrors its text to outFile until closed or timeout
 //   KpHelper media [seconds] [title]      -> silent media session with a magenta cover; prints CURRENT <session>, POS <sec>, STATE <state>
+//   KpHelper hidread [match] [seconds]    -> HID reports Windows received from the keypad (consumer, telephony): OPEN/DENIED <col>, REPORT <col> <hex>
 // Output is line based for the Python runner: OK ..., ERR ..., NEED_PIN, DEVICE <id> | <name> | paired=<bool>.
 using System.Runtime.InteropServices;
 using Windows.Devices.Bluetooth;
@@ -27,6 +28,7 @@ static class Program
                 "unpair" => Unpair(Arg(args, 1, DefaultName)).GetAwaiter().GetResult(),
                 "window" => Window(Arg(args, 1, "keys.txt"), int.Parse(Arg(args, 2, "0"))),
                 "media" => Task.Run(() => Media(int.Parse(Arg(args, 1, "60")), Arg(args, 2, "KP Test Track"))).GetAwaiter().GetResult(),
+                "hidread" => HidRead(Arg(args, 1, "VID&02303A_PID&80C6"), int.Parse(Arg(args, 2, "10"))).GetAwaiter().GetResult(),
                 _ => Help(),
             };
         }
@@ -177,6 +179,42 @@ static class Program
         return 0;
     }
 
+    // What Windows' Bluetooth HID stack received from the keypad, read from its shareable
+    // collections (consumer control, telephony). Works while the PC is locked; the keyboard
+    // and mouse collections are the system's alone. Prints OPEN/DENIED per collection, then
+    // REPORT <collection> <hex> (report id first) until the time is up.
+    static async Task<int> HidRead(string addr, int seconds)
+    {
+        var aqs = "System.Devices.InterfaceClassGuid:=\"{4D1E55B2-F16F-11CF-88CB-001111000030}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+        var ifaces = await DeviceInformation.FindAllAsync(aqs, null, DeviceInformationKind.DeviceInterface);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
+        var reads = new List<Task>();
+        foreach (var d in ifaces.Where(d => d.Id.Contains(addr, StringComparison.OrdinalIgnoreCase)))
+        {
+            var col = System.Text.RegularExpressions.Regex.Match(d.Id, @"col\d+", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Value.ToLowerInvariant();
+            var h = CreateFile(d.Id, 0x80000000, 3, IntPtr.Zero, 3, 0x40000000, IntPtr.Zero);
+            if (h.IsInvalid) { Console.WriteLine($"DENIED {col} {Marshal.GetLastWin32Error()}"); continue; }
+            Console.WriteLine($"OPEN {col}");
+            var fs = new FileStream(h, FileAccess.Read, 1, true);
+            reads.Add(Task.Run(async () =>
+            {
+                var buf = new byte[64];
+                try
+                {
+                    int n;
+                    while ((n = await fs.ReadAsync(buf, stop.Token)) > 0)
+                        lock (Console.Out) { Console.WriteLine($"REPORT {col} {Convert.ToHexString(buf, 0, n).ToLowerInvariant()}"); Console.Out.Flush(); }
+                }
+                catch (OperationCanceledException) { }
+                finally { fs.Dispose(); }
+            }));
+        }
+        Console.Out.Flush();
+        await Task.WhenAll(reads);
+        Console.WriteLine("OK done");
+        return 0;
+    }
+
     // Windows refuses SetForegroundWindow from background processes; a synthetic Alt press lifts the lock.
     static void ForceForeground(IntPtr h)
     {
@@ -199,6 +237,8 @@ static class Program
     }
 
     [DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr sec, uint disposition, uint flags, IntPtr template);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
