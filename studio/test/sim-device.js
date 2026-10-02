@@ -135,7 +135,7 @@ class SimDevice extends EventEmitter {
       case "status": {
         if (!this.doc) this._load(this.profileN);
         const up = this.ble.filter((b) => b && b.state === "connected").length;
-        return this.println(`Profile:${this.profileN} loaded:1 idle:0 mode:ble ver:${this.version} model:${this.model} page:${this.page} ble:${up}`);
+        return this.println(`Profile:${this.profileN} loaded:1 idle:0 mode:ble ver:${this.version} model:${this.model} page:${this.page} ble:${up} dry:0 ui:${this.cal === 0 ? "cal" : "home"} cal:${this.cal ?? 1} theme:${this.theme || "daylight"}`);
       }
       case "fsinfo": return this.println(`FS_INFO:${this.fsTotal},${this._used()}`);
       case "ls": {

@@ -71,6 +71,10 @@ function lineFor(c) {
 }
 const mmss = (s) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padStart(2, "0")}`;
 const isPlayerPage = (page) => !!(page.keys[0] && page.keys[0].widget);
+// Profiles live on the keypad: without it Studio only previews (an offline edit would be
+// replaced by the keypad's profile on connect, or overwrite it with a blank one).
+const editable = () => !!(state.conn.connected || state.conn.smoke);
+const newer = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 
 /* ============ state ============ */
 const state = {
@@ -155,15 +159,40 @@ function renderTop() {
 function renderStudio(keepSide = false) {
   const p = prof(), page = pg();
   renderTop();
-  $("st-pages").innerHTML = p.pages.map((g, i) => `<button aria-pressed="${i === state.page}" data-stpg="${i}">${esc(g.name)}</button>`).join("") + `<button data-addpage>${ico("plus")} Page</button>`;
+  const ed = editable();
+  $("st-pages").innerHTML = p.pages.map((g, i) => `<button aria-pressed="${i === state.page}" data-stpg="${i}">${esc(g.name)}</button>`).join("") + (ed ? `<button data-addpage>${ico("plus")} Page</button>` : "");
+  $("p-name").disabled = $("pg-name").disabled = !ed;
+  renderNotices();
   $("st-screen").innerHTML = devHTML();
   $("st-json").textContent = JSON.stringify(p, null, 1);
   if (document.activeElement !== $("p-name")) $("p-name").value = p.profile_name;
   if (document.activeElement !== $("pg-name")) $("pg-name").value = page.name;
-  $("pg-del").disabled = p.pages.length < 2;
-  $("p-color").innerHTML = TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${(p.color || []).join() === c.join()}" data-pcolor="${c.join(",")}" aria-label="Line colour ${c.join(",")}"></button>`).join("");
+  $("pg-del").disabled = !ed || p.pages.length < 2;
+  $("p-color").innerHTML = TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${(p.color || []).join() === c.join()}" data-pcolor="${c.join(",")}" aria-label="Line colour ${c.join(",")}" ${ed ? "" : "disabled"}></button>`).join("");
   if (!keepSide) renderSide();
 }
+
+/* ============ notices: first run, calibration, firmware ============ */
+function renderNotices() {
+  const c = state.conn, st = c.status || {}, out = [];
+  if (!c.connected && !c.smoke) {
+    out.push(`<div class="notice first"><div><h2>Connect your Touch Keypad</h2>
+      <ol><li>Plug it into this PC with a USB-C data cable.</li><li>Studio finds it by itself and opens its profiles here.</li>
+      <li>Edits go to the keypad as you make them, with a backup on this PC first.</li></ol>
+      <p class="hint">${c.noSerial ? "Serial is disabled in this session." : "Looking for the keypad… Its keys already work as a Bluetooth keyboard without Studio."}</p></div>
+      <button class="primary" data-find>${ico("search")} Find keypad</button></div>`);
+  } else if (c.connected) {
+    if (st.cal === "0" || st.ui === "cal")
+      out.push(`<div class="notice caution">${ico("crosshair")}<p><b>Touch is not calibrated yet.</b> The keypad shows its calibration screen: press and hold each lit target, then the centre check.</p></div>`);
+    if (state.fwBundled && st.ver && newer(state.fwBundled, st.ver))
+      out.push(`<div class="notice">${ico("download")}<p><b>Firmware ${esc(state.fwBundled)} is ready to install.</b> The keypad has ${esc(st.ver)}. Profiles, pairings and calibration are kept.</p><button data-goview="device">Open Device</button></div>`);
+  }
+  $("st-notice").innerHTML = out.join("");
+}
+$("st-notice").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-find]")) { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); }
+  if (e.target.closest("[data-goview]")) showView("device");
+});
 
 /* ============ inspector + ActionBuilder ============ */
 const side = $("st-side");
@@ -174,6 +203,11 @@ function iconGrid(k) {
 }
 function renderSide() {
   const page = pg();
+  if (!editable()) {
+    side.innerHTML = `<div class="field"><span>Keys</span><h2>Keypad not connected</h2></div>
+      <p class="hint">Profiles live on the keypad, so they open here once it is plugged in. Until then this is a preview: the themes and the screen look exactly like the keypad's.</p>`;
+    return;
+  }
   if (isPlayerPage(page)) {
     side.innerHTML = `<div class="field"><span>Page</span><h2>Media player</h2></div>
       <p class="hint">This page is the keypad's player: album art, track, running times, tap-to-seek and transport keys. Studio feeds it from the Windows media session; its keys send media commands over Bluetooth.</p>
@@ -356,6 +390,7 @@ function restore(from, to) {
 document.addEventListener("keydown", (e) => {
   if (state.view !== "editor" || e.target.closest("input, textarea, select")) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), page = pg();
+  if (!editable() && (mod || e.key === "Delete" || e.key === "Backspace")) return;
   if (mod && k === "z" && !e.shiftKey) { e.preventDefault(); restore(hist.undo, hist.redo); return; }
   if (mod && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); restore(hist.redo, hist.undo); return; }
   if (isPlayerPage(page)) return;
@@ -372,6 +407,12 @@ document.addEventListener("keydown", (e) => {
 
 /* ============ edits -> main (live push 300 ms, autosave 1500 ms, backup first) ============ */
 function changed(kinds, fromInput = false) {
+  if (!editable()) {
+    if (hist.base[state.slot]) state.slots[state.slot] = JSON.parse(hist.base[state.slot]);
+    cli("sys", "! Connect the keypad to edit its profiles.");
+    renderStudio();
+    return;
+  }
   track(fromInput);
   const k = isPlayerPage(pg()) ? null : selKey();
   setSave("busy", "Saving…");
@@ -435,9 +476,9 @@ async function renderDevice() {
       <p>${esc(flash.note)}</p>
       ${flash.available ? `<div class="row"><button class="primary" id="d-flash">${ico("download")} Install firmware ${esc(flash.version || "")}</button></div><div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
     <div class="book wide"><h2>Backups</h2>
-      <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import">${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
+      <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>
-      <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}">Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
+      <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}" ${dis}>Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
   const cmd = (s) => api.command(s).then(renderDevice);
   $("d-detect").onclick = async () => { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
   $("d-connect").onclick = async () => { const p = $("d-port").value; if (!p) return; const r = await api.connect(p); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
@@ -530,12 +571,16 @@ const playerShown = () => state.view === "editor" && isPlayerPage(pg());
 api.onEvent(({ type, data }) => {
   switch (type) {
     case "tx": cli("cli", `macropad:$ ${data}`); break;
-    case "rx": cli(data.startsWith("EVT:") ? "ev" : "sys", data); break;
+    case "rx":
+      cli(data.startsWith("EVT:") ? "ev" : "sys", data);
+      if (/^EVT:(CAL (saved|done|cancel|start)|UI )/.test(data)) { clearTimeout(state.stTimer); state.stTimer = setTimeout(() => api.status(), 300); }
+      break;
     case "log": cli(/^host:/.test(data) ? "host" : "sys", String(data).replace(/\n$/, "")); break;
     case "state": {
       const was = state.conn.connected;
       state.conn = { ...state.conn, ...data };
       renderTop();
+      if (state.view === "editor") { renderNotices(); if (was !== !!data.connected) renderStudio(); }
       if (!was && data.connected) loadSlot(data.activeSlot || state.slot).then(async () => {
         state.slot = data.activeSlot || state.slot;
         const look = await api.lookState();
@@ -573,6 +618,7 @@ api.onEvent(({ type, data }) => {
 (async () => {
   state.settings = await api.getSettings();
   state.theme = state.settings.preview_theme || "daylight";
+  api.flashInfo().then((f) => { state.fwBundled = f.available ? f.version : null; renderNotices(); });
   $("console-box").open = !!state.settings.console_open;
   hist.base[state.slot] = JSON.stringify(prof());
   state.conn = { ...state.conn, ...(await api.state()) };

@@ -81,6 +81,7 @@ function simPort() {
   new Function("window", fs.readFileSync(path.join(__dirname, "..", "docs", "device", "profiles.js"), "utf8"))(w);
   w.DEFAULT_PROFILES.forEach((p, i) => sim.files.set(`/profile${i + 1}.json`, Buffer.from(JSON.stringify(p))));
   sim.theme = process.env.STUDIO_SIM_THEME || "daylight";
+  if (process.env.STUDIO_SIM_CAL === "0") sim.cal = 0;   // an uncalibrated keypad, for the notice
   return makeSimPort(sim);
 }
 
