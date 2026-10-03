@@ -43,6 +43,8 @@ void uiCloseSheet();
 bool uiSheetOpen();
 void uiSetBrightness(int level);     // 0-255, live + NVS
 int  uiBrightness();
+void uiSetIconMotion(bool on);       // every key's icon moves a little (spin, swing, bounce...), NVS kp/ianim
+bool uiIconMotion();
 void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS; wakes the screen
 void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
 int  uiTheme();

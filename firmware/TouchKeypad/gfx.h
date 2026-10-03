@@ -65,6 +65,8 @@ Fill glassFill(C3 tint, int bright = 0);   // a key in its tint; bright 0..255 l
 const IconDef *iconFind(const char *name, bool ui);
 void glyph(const IconDef *ic, bool ui, float cx, float cy, float size, C3 c, int alpha = 255);
 void glyphLit(const char *name, bool ui, float cx, float cy, float size, C3 c, C3 shadow, int alpha = 255);
+// A glyph turned by `angle` radians about its centre (bilinear); angle 0 is glyph() itself.
+void glyphXf(const IconDef *ic, bool ui, float cx, float cy, float size, float angle, C3 c, int alpha = 255);
 void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha = 255);
 
 // ---- text

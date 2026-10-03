@@ -577,6 +577,7 @@ async function renderDevice() {
       <div class="field"><span>LED colour · solid and breathe</span><div class="swatches">${TINTS.map((t) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="LED colour ${t.join(",")}" ${dis}></button>`).join("")}</div></div>
       <label class="field"><span>LED brightness · ${pct(look && look.ledBright)}</span><input type="range" id="d-ledb" min="0" max="255" value="${look ? look.ledBright : 153}" ${dis}></label>
       <label class="check"><input type="checkbox" id="d-click" ${look && look.click ? "checked" : ""} ${dis}> Key click</label>
+      <label class="check"><input type="checkbox" id="d-ianim" ${look && look.iconMotion ? "checked" : ""} ${dis}> Moving icons · gears spin, bells swing, arrows bounce</label>
       <label class="field"><span>On battery, sleep after</span><select id="d-sleep" ${dis}>${[[1, "1 minute"], [2, "2 minutes"], [5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [30, "30 minutes"], [0, "Never"]].map(([m, t]) => `<option value="${m}" ${pw && pw.sleep === m ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <p class="hint">On battery the screen dims after 20 seconds and turns off after a minute; a touch wakes it. Asleep, the keypad wakes on a touch and reconnects. On USB it stays at full power.</p></div>
     <div class="book"><h2>Bluetooth hosts</h2>
@@ -602,6 +603,7 @@ async function renderDevice() {
   $("d-bright").onchange = (e) => cmd(`setbrightness ${e.target.value}`);
   $("d-ledb").onchange = (e) => cmd(`ledbright ${e.target.value}`);
   $("d-click").onchange = (e) => cmd(`click ${e.target.checked ? "on" : "off"}`);
+  $("d-ianim").onchange = (e) => cmd(`iconanim ${e.target.checked ? "on" : "off"}`);
   $("d-sleep").onchange = (e) => cmd(`power sleep ${e.target.value}`);
   el.querySelectorAll("[data-led]").forEach((b) => { b.onclick = () => cmd(`led ${b.dataset.led}`); });
   el.querySelectorAll("[data-theme-set]").forEach((b) => { b.onclick = async () => {

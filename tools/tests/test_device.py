@@ -94,6 +94,8 @@ def dev():
     old = None if not old or old[0].startswith("ERR") else "\n".join(old)
     d.ok("setdim 0")
     d.ok("hid dry on")
+    ianim = d.cmd("iconanim")[0]                  # pixel tests want still icons; put the owner's choice back after
+    d.ok("iconanim off")
     r = d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
     assert any(l.startswith("SAVED") for l in r), r
     r = d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
@@ -113,6 +115,7 @@ def dev():
     d.cmd(f"hid dry {'on' if dry and dry.group(1) == '1' else 'off'}")
     d.cmd("power sim off")
     d.cmd("setdim 120")
+    d.cmd("iconanim on" if ianim.endswith("on") else "iconanim off")
     d.close()
 
 
@@ -684,3 +687,20 @@ def test_gif_key_plays_its_frames(dev):
         dev.cmd("rm /profile15.json")
         for n in names:
             dev.cmd(f"rm /t/{n}.565")
+
+
+def test_living_icons_move_and_hold_the_frame_rate(d):
+    """Every key's icon moves (spin, swing, bounce, pulse, float) while idle; off, the screen is still."""
+    try:
+        assert d.cmd("iconanim on") == ["iconanim on"]
+        time.sleep(0.5)
+        frames, rate, worst = fps(d, lambda: None, wait=1.5)
+        assert frames >= 20 and worst <= 20, (frames, rate, worst)          # idle, the icons keep moving; each redraw fits a frame
+        frames, rate, _ = fps(d, lambda: d.touch(*cell_xy(2), 700))
+        assert rate >= FPS_FLOOR, rate                                      # and a press still runs at full speed
+    finally:
+        assert d.cmd("iconanim off") == ["iconanim off"]
+    time.sleep(0.3)
+    frames, _, _ = fps(d, lambda: None, wait=1.0)
+    assert frames <= 2, frames                                              # off: nothing to redraw
+

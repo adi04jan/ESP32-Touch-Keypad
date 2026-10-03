@@ -354,6 +354,31 @@ IRAM_ATTR void glyph(const IconDef *ic, bool ui, float cx, float cy, float size,
     }
 }
 
+IRAM_ATTR void glyphXf(const IconDef *ic, bool ui, float cx, float cy, float size, float angle, C3 c, int alpha) {
+  if (fabsf(angle) < 0.002f) { glyph(ic, ui, cx, cy, size, c, alpha); return; }
+  if (!ic || alpha <= 0) return;
+  int src = ui ? UI_ICON_PX : ICON_PX;
+  const uint8_t *d = (ui ? UI_ICON_DATA : ICON_DATA) + ic->off;
+  float half = size * 0.72f;   // the turned square's reach (size / sqrt 2, a little more)
+  int x0 = (int)floorf(cx - half), y0 = (int)floorf(cy - half), x1 = (int)ceilf(cx + half), y1 = (int)ceilf(cy + half);
+  if (!clipBox(x0, y0, x1, y1)) return;
+  float k = src / size, cs = cosf(angle) * k, sn = sinf(angle) * k, mid = src * 0.5f - 0.5f;
+  for (int py = y0; py < y1; py++) {
+    float dy = py + 0.5f - cy;
+    for (int px = x0; px < x1; px++) {
+      float dx = px + 0.5f - cx;
+      float u = dx * cs + dy * sn + mid, w = -dx * sn + dy * cs + mid;   // back into the mask
+      if (u < -1 || w < -1 || u > src || w > src) continue;
+      int iu = (int)floorf(u), iw = (int)floorf(w);
+      float fu = u - iu, fw = w - iw;
+      float a = nib(d, src, iu, iw) * (1 - fu) * (1 - fw) + nib(d, src, iu + 1, iw) * fu * (1 - fw) +
+                nib(d, src, iu, iw + 1) * (1 - fu) * fw + nib(d, src, iu + 1, iw + 1) * fu * fw;
+      int v = (int)(a * 17);
+      if (v) blend(px, py, c, v * alpha / 255);
+    }
+  }
+}
+
 void glyphLit(const char *name, bool ui, float cx, float cy, float size, C3 c, C3 shadow, int alpha) {
   const IconDef *ic = iconFind(name, ui);
   glyph(ic, ui, cx, cy + 1, size, shadow, alpha * 110 / 255);

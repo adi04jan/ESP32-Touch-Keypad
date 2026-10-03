@@ -407,6 +407,9 @@ static bool runCommand(char *s) {
       if (*arg) uiSetTheme(t);
       Con.printf("theme %s\n", uiThemeId(t));
     }
+  } else if (cmd == "iconanim") {
+    if (*arg) uiSetIconMotion(!strcmp(arg, "on"));
+    Con.printf("iconanim %s\n", uiIconMotion() ? "on" : "off");
   } else if (cmd == "click") {
     if (*arg) feedbackSetClick(!strcmp(arg, "on"));
     Con.printf("click %s\n", feedbackClickOn() ? "on" : "off");

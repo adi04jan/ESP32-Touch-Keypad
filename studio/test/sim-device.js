@@ -242,6 +242,7 @@ class SimDevice extends EventEmitter {
         return this.println("ble list | ble forget <n>");
       }
       case "reboot": return this.println("rebooting");
+      case "iconanim": if (arg) this.iconanim = arg === "on"; return this.println(`iconanim ${this.iconanim === false ? "off" : "on"}`);
       case "autogen": (this.toasts = this.toasts || []).push(arg); return this.println(`autogen ${arg.split(" ")[0]}`);
       default: return this.println("unknown");
     }
