@@ -180,7 +180,7 @@ Squircle-like rounding throughout: keys 19 px, rings 22 px, controls 12 px, the 
 ## Components
 
 ### Key
-Lit glass, 66 px, glyph 36 px white (40 px masks scaled on device). Tags sit on the top-right corner: PC (cyan outline, host action), HOLD (slate outline), ON (green fill, engaged toggle). Pressed: scales to 0.90–0.94 and brightens with touch pressure, with a white inner edge. Confirm: a green ring that grows and fades; refuse: a red ring. Hold: a cyan arc fills over the 500 ms hold. Animated keys: eq (bars), pulse (ring), rec (blinks red).
+Lit glass, 66 px, glyph 36 px white (40 px masks scaled on device). Tags sit on the top-right corner: PC (cyan outline, host action), HOLD (slate outline), ON (green fill, engaged toggle). Pressed: scales to 0.90–0.94 and brightens with touch pressure, with a white inner edge. Confirm: a green ring that grows and fades; refuse: a red ring. Hold: a cyan arc fills over the 500 ms hold. Animated keys: eq (bars), pulse (ring), rec (blinks red). Every icon has a signature animation that acts out its key (`tools/icons/anim_designs.js`), played when the key fires and, while idle, by one key at a time.
 
 ### Buttons
 44 px, 12 px corners, control gradient with a highlight and hairline. Primary is cyan glass; destructive is a red-outlined quiet button.

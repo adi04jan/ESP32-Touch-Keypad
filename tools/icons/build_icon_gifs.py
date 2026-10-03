@@ -1,65 +1,70 @@
 """An animated GIF for every key icon: studio/assets/icon-gifs/<icon>.gif.
 
-    python tools/icons/build_icon_gifs.py
+    python tools/icons/build_icon_gifs.py      (after node tools/icons/build_anims.js)
 
-Each GIF is the keypad's own key: the icon's 4-bit mask from firmware/TouchKeypad/icons_gen.h,
-moving with the motion firmware/TouchKeypad/ui.cpp gives it (MOTIONS, poseOf: spin, swing,
-bounce, rise, slide, pulse, else a float), one full loop at the keypad's pose rate (20 a second),
-on a Glass-style key. The keypad plays the same motion live from those masks (`iconanim`), so
-the GIF is what the key does. Rendered 4x and scaled down for smooth edges.
+Each GIF is the keypad's own key playing the icon's signature animation: the frames come from
+firmware/TouchKeypad/anims_gen.h, decoded over the icon's mask from icons_gen.h exactly as the
+firmware decodes them, on a Glass-style key. The loop holds the resting icon, then plays the
+animation at the keypad's frame rate, so the GIF is what the key does when it fires.
 """
-import math
 import re
+import zlib
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[2]
 ICONS_H = ROOT / "firmware" / "TouchKeypad" / "icons_gen.h"
-UI_CPP = ROOT / "firmware" / "TouchKeypad" / "ui.cpp"
+ANIMS_H = ROOT / "firmware" / "TouchKeypad" / "anims_gen.h"
 OUT = ROOT / "studio" / "assets" / "icon-gifs"
-SRC, KEY, FRAME_MS, SS = 36, 72, 50, 4          # mask px, GIF px, ms per frame, supersampling
-TAU = 2 * math.pi
-PERIOD = {"MO_SPIN": 4000, "MO_SPINR": 4000, "MO_SWING": 1800, "MO_BOUNCE": 1400, "MO_RISE": 1400,
-          "MO_RIGHT": 1400, "MO_LEFT": 1400, "MO_PULSE": 1600, "MO_FLOAT": 2600}
+SRC, KEY, SS, HOLD_MS = 36, 72, 4, 900          # mask px, GIF px, supersampling, rest before each play
+
+
+def hex_bytes(text, start):
+    block = text[text.index(start):]
+    return bytes(int(x, 16) for x in re.findall(r"0x([0-9a-fA-F]{2})", block[:block.index("};")]))
 
 
 def masks():
     text = ICONS_H.read_text()
-    data_block = text[text.index("ICON_DATA[] PROGMEM = {"):]
-    data = bytes(int(x, 16) for x in re.findall(r"0x([0-9a-fA-F]{2})", data_block[:data_block.index("};")]))
+    data = hex_bytes(text, "ICON_DATA[] PROGMEM = {")
     table = text[text.index("static const IconDef ICONS[] = {"):]
-    table = table[:table.index("};")]
-    for name, off in re.findall(r'\{"([a-z0-9-]+)",\s*(\d+)\}', table):
+    for name, off in re.findall(r'\{"([a-z0-9-]+)",\s*(\d+)\}', table[:table.index("};")]):
         off = int(off)
         px = []
         for b in data[off:off + SRC * SRC // 2]:
-            px += [(b >> 4) * 17, (b & 15) * 17]
-        img = Image.new("L", (SRC, SRC))
-        img.putdata(px)
-        yield name, img
+            px += [b >> 4, b & 15]
+        yield name, px
 
 
-def motions():
-    block = UI_CPP.read_text()
-    block = block[block.index("MOTIONS[] = {"):]
-    block = block[:block.index("};")]
-    return dict(re.findall(r'\{\s*"([a-z0-9-]+)",\s*(MO_[A-Z]+)\s*\}', block))
+def anims():
+    text = ANIMS_H.read_text()
+    frame_ms = int(re.search(r"#define ANIM_FRAME_MS (\d+)", text).group(1))
+    data = hex_bytes(text, "ANIM_DATA[] PROGMEM = {")
+    table = text[text.index("static const AnimDef ANIMS[] = {"):]
+    rows = [(int(o), int(z), int(n)) for o, z, _, n in re.findall(r"\{(\d+), (\d+), (\d+), (\d+)\}", table[:table.index("};")])]
+    return frame_ms, data, rows
 
 
-def pose(m, t):
-    """firmware poseOf(): (dx, dy) in mask px, scale, angle in radians."""
-    wave = lambda p: math.sin(TAU * (t % p) / p)
-    hop = lambda p: abs(math.sin(TAU * (t % p) / (2 * p)))
-    if m == "MO_SPIN": return 0, 0, 1, TAU * (t % 4000) / 4000
-    if m == "MO_SPINR": return 0, 0, 1, -TAU * (t % 4000) / 4000
-    if m == "MO_SWING": return 0, 0, 1, 0.26 * wave(1800)
-    if m == "MO_BOUNCE": return 0, round(3 * hop(1400)), 1, 0
-    if m == "MO_RISE": return 0, -round(3 * hop(1400)), 1, 0
-    if m == "MO_RIGHT": return round(3 * hop(1400)), 0, 1, 0
-    if m == "MO_LEFT": return -round(3 * hop(1400)), 0, 1, 0
-    if m == "MO_PULSE": return 0, 0, 1 + 0.08 * wave(1600), 0
-    return 0, round(1.5 * wave(2600)), 1, 0
+def frames_of(base, data, off, z, n):
+    """firmware glyphFrame(): the icon's runs inflated, each frame the resting mask with its runs written over it."""
+    data = zlib.decompress(data[off:off + z], -15) if n else b""
+    p, out = 0, []
+    for _ in range(n):
+        px, pos = list(base), 0
+        while True:
+            skip, cnt = data[p], data[p + 1]
+            p += 2
+            if not skip and not cnt:
+                break
+            pos += skip
+            for j in range(cnt):
+                b = data[p + (j >> 1)]
+                px[pos + j] = b & 15 if j & 1 else b >> 4
+            p += (cnt + 1) // 2
+            pos += cnt
+        out.append(px)
+    return out
 
 
 def key_base():
@@ -77,26 +82,27 @@ def key_base():
     return base
 
 
-def frame(base, mask, p):
-    dx, dy, scale, angle = p
-    size = round(SRC * SS * scale)
-    g = mask.resize((size, size), Image.BICUBIC).rotate(-math.degrees(angle), Image.BICUBIC, expand=True)
+def frame(base, px):
+    """The icon's mask drawn on the key as the firmware draws it: a drop shadow 1 px down, then white."""
+    g = Image.new("L", (SRC, SRC))
+    g.putdata([v * 17 for v in px])
+    g = g.resize((SRC * SS, SRC * SS), Image.NEAREST)
     img = base.copy()
-    cx, cy = KEY * SS // 2 + dx * SS, KEY * SS // 2 + dy * SS
-    img.paste(Image.new("RGB", g.size, (10, 20, 45)), (cx - g.width // 2, cy - g.height // 2 + SS), g.point(lambda v: v * 110 // 255))
-    img.paste(Image.new("RGB", g.size, (255, 255, 255)), (cx - g.width // 2, cy - g.height // 2), g)
+    o = (KEY - SRC) * SS // 2
+    img.paste(Image.new("RGB", g.size, (10, 20, 45)), (o, o + SS), g.point(lambda v: v * 110 // 255))
+    img.paste(Image.new("RGB", g.size, (255, 255, 255)), (o, o), g)
     return img.resize((KEY, KEY), Image.LANCZOS)
 
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    table, base = motions(), key_base()
+    frame_ms, data, rows = anims()
+    base = key_base()
     count, total = 0, 0
-    for name, mask in masks():
-        m = table.get(name, "MO_FLOAT")
-        frames = [frame(base, mask, pose(m, t)) for t in range(0, PERIOD[m], FRAME_MS)]
+    for (name, px), (off, z, n) in zip(masks(), rows):
+        seq = [frame(base, px)] + [frame(base, f) for f in frames_of(px, data, off, z, n)]
         path = OUT / f"{name}.gif"
-        frames[0].save(path, save_all=True, append_images=frames[1:], duration=FRAME_MS, loop=0, optimize=True)
+        seq[0].save(path, save_all=True, append_images=seq[1:], duration=[HOLD_MS] + [frame_ms] * n, loop=0, optimize=True)
         count += 1
         total += path.stat().st_size
     print(f"{count} GIFs -> {OUT} ({total // 1024} KB)")

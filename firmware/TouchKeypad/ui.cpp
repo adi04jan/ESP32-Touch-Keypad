@@ -69,7 +69,7 @@ enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL };
 static Mode mode = M_HOME;
 static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal" };
 
-struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t pose, poseAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; pose: the icon pose on screen
+struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t sig0; int16_t sig; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen
 static CellAnim ca[NUM_CELLS];
 static int pressed = -1, released = -1;
 static uint32_t press0 = 0, release0 = 0;
@@ -408,67 +408,44 @@ static bool cellAnimating(int c, uint32_t now) {
   return false;
 }
 
-// ---------------------------------------------------------------- living icons
-// Every key's icon moves a little, like a GIF but with no file: a motion per kind of icon
-// (gears spin, bells swing, downloads bounce, hearts pulse), else a slow float. Each key has
-// its own phase, so a page never moves in step. Translations stay on whole pixels (the fast
-// native glyph path); only spin, swing and pulse resample.
-enum Motion : uint8_t { MO_FLOAT, MO_SPIN, MO_SPINR, MO_SWING, MO_BOUNCE, MO_RISE, MO_RIGHT, MO_LEFT, MO_PULSE };
-static const struct { const char *icon; Motion m; } MOTIONS[] = {
-  { "disc-3", MO_SPIN }, { "refresh-cw", MO_SPIN }, { "repeat", MO_SPIN }, { "repeat-1", MO_SPIN }, { "settings", MO_SPIN },
-  { "snowflake", MO_SPIN }, { "sun", MO_SPIN }, { "rotate-ccw", MO_SPINR },
-  { "alarm-clock", MO_SWING }, { "bell", MO_SWING }, { "bell-off", MO_SWING }, { "flag", MO_SWING }, { "hammer", MO_SWING },
-  { "key-round", MO_SWING }, { "leaf", MO_SWING }, { "mic", MO_SWING }, { "mic-vocal", MO_SWING }, { "paintbrush", MO_SWING },
-  { "pen-line", MO_SWING }, { "phone", MO_SWING }, { "umbrella", MO_SWING }, { "wrench", MO_SWING }, { "highlighter", MO_SWING },
-  { "trophy", MO_SWING }, { "gift", MO_SWING }, { "pin", MO_SWING }, { "watch", MO_SWING }, { "beer", MO_SWING }, { "coffee", MO_SWING },
-  { "arrow-down", MO_BOUNCE }, { "download", MO_BOUNCE }, { "save", MO_BOUNCE }, { "hard-drive", MO_BOUNCE }, { "map-pin", MO_BOUNCE },
-  { "arrow-up", MO_RISE }, { "upload", MO_RISE }, { "cloud-upload", MO_RISE }, { "rocket", MO_RISE }, { "plane", MO_RISE },
-  { "arrow-right", MO_RIGHT }, { "chevron-right", MO_RIGHT }, { "chevrons-right", MO_RIGHT }, { "fast-forward", MO_RIGHT },
-  { "skip-forward", MO_RIGHT }, { "send", MO_RIGHT }, { "external-link", MO_RIGHT }, { "redo-2", MO_RIGHT }, { "car", MO_RIGHT },
-  { "arrow-left", MO_LEFT }, { "chevron-left", MO_LEFT }, { "chevrons-left", MO_LEFT }, { "rewind", MO_LEFT }, { "skip-back", MO_LEFT },
-  { "undo-2", MO_LEFT },
-  { "audio-lines", MO_PULSE }, { "audio-waveform", MO_PULSE }, { "battery-full", MO_PULSE }, { "bluetooth", MO_PULSE },
-  { "circle-dot", MO_PULSE }, { "eye", MO_PULSE }, { "flame", MO_PULSE }, { "heart", MO_PULSE }, { "lightbulb", MO_PULSE },
-  { "mic-off", MO_PULSE }, { "music", MO_PULSE }, { "music-2", MO_PULSE }, { "pause", MO_PULSE }, { "play", MO_PULSE },
-  { "podcast", MO_PULSE }, { "radio", MO_PULSE }, { "radio-tower", MO_PULSE }, { "signal", MO_PULSE }, { "sparkles", MO_PULSE },
-  { "star", MO_PULSE }, { "volume", MO_PULSE }, { "volume-1", MO_PULSE }, { "volume-2", MO_PULSE }, { "volume-x", MO_PULSE },
-  { "wifi", MO_PULSE }, { "zap", MO_PULSE }, { "wand-sparkles", MO_PULSE },
-};
+// ---------------------------------------------------------------- icon animations
+// Every key icon has a signature animation (tools/icons/anim_designs.js): copy pulls a second
+// sheet out of the first, a bell rings, wifi lights its arcs from the dot. A key plays it when it
+// fires, so the icon names what just happened; while the screen is idle one key at a time takes a
+// turn, so the page feels alive without fifteen things moving at once. "Moving icons" (`iconanim`)
+// off keeps every icon still.
 static bool iconMotion = true;
-#define POSE_MS 50   // at most 20 pose changes a second per key
+#define TURN_MS 1600   // an idle key starts its animation this often
+static const uint8_t TURN_ORDER[NUM_CELLS] = { 6, 0, 13, 3, 10, 8, 1, 14, 5, 11, 2, 9, 4, 12, 7 };   // scattered over the grid
+static uint32_t nextTurn;
+static uint8_t turnAt;
 
-static Motion motionOf(const char *icon) {
-  for (auto &e : MOTIONS) if (!strcmp(e.icon, icon)) return e.m;
-  return MO_FLOAT;
+// Key c's icon when it has an animation to play (a GIF key shows its frames instead).
+static const IconDef *animIcon(int c) {
+  JsonVariant k = keyAt(c);
+  if (k.isNull() || k["frames"].size() >= 2) return nullptr;
+  const IconDef *ic = iconFind(k["icon"] | "", false);
+  return iconAnimFrames(ic) ? ic : nullptr;
 }
-
-struct Pose { float dx, dy, scale, angle; };
-static Pose poseOf(Motion m, uint32_t t) {
-  const float TAU = 6.2831853f;
-  auto wave = [&](uint32_t period) { return sinf(TAU * (t % period) / period); };
-  auto hop = [&](uint32_t period) { return fabsf(sinf(TAU * (t % period) / (2.0f * period))); };   // 0..1..0 once per period
-  Pose p = { 0, 0, 1, 0 };
-  switch (m) {
-    case MO_SPIN: p.angle = TAU * (t % 4000) / 4000.0f; break;
-    case MO_SPINR: p.angle = -TAU * (t % 4000) / 4000.0f; break;
-    case MO_SWING: p.angle = 0.26f * wave(1800); break;
-    case MO_BOUNCE: p.dy = roundf(3 * hop(1400)); break;
-    case MO_RISE: p.dy = -roundf(3 * hop(1400)); break;
-    case MO_RIGHT: p.dx = roundf(3 * hop(1400)); break;
-    case MO_LEFT: p.dx = -roundf(3 * hop(1400)); break;
-    case MO_PULSE: p.scale = 1 + 0.08f * wave(1600); break;
-    default: p.dy = roundf(1.5f * wave(2600)); break;   // a slow float
+// The frame of key c's animation on screen now; -1 at rest.
+static int iconFrame(int c, uint32_t now) {
+  if (!ca[c].sig0) return -1;
+  int f = (int)((now - ca[c].sig0) / ICON_ANIM_MS);
+  return f < iconAnimFrames(animIcon(c)) ? f : -1;
+}
+static void playIcon(int c, uint32_t now) {
+  if (!iconMotion || !animIcon(c)) return;
+  ca[c].sig0 = now | 1;
+  ca[c].sig = -1;
+}
+// While idle, the next key in TURN_ORDER with an animated icon takes its turn.
+static void idleTurn(uint32_t now) {
+  if (!iconMotion || dimState || pressed >= 0 || (int32_t)(now - nextTurn) < 0) return;
+  nextTurn = now + TURN_MS;
+  for (int i = 0; i < NUM_CELLS; i++) {
+    int c = TURN_ORDER[turnAt++ % NUM_CELLS];
+    if (!ca[c].pop0 && !ca[c].sig0 && animIcon(c)) { playIcon(c, now); return; }
   }
-  return p;
-}
-static uint32_t poseKey(const Pose &p) {
-  return (uint32_t)((int)p.dx + 8) | (uint32_t)((int)p.dy + 8) << 4 | (uint32_t)(lroundf(p.angle * 28.65f) & 0xFF) << 8 | (uint32_t)lroundf(p.scale * 50) << 16;
-}
-// The pose of key c's icon now; still (identity) while off, dim, pressed or popping.
-static Pose livePose(int c, JsonVariant k, uint32_t now, bool busy) {
-  const char *icon = k["icon"] | "";
-  if (!iconMotion || dimState || busy || !*icon) return Pose{ 0, 0, 1, 0 };
-  return poseOf(motionOf(icon), now + c * 397);
 }
 
 void uiSetIconMotion(bool on) {
@@ -553,14 +530,13 @@ static void drawCell(int c, uint32_t now) {
     // last one this frame (still cached) and gets its turn on the next.
     if (fi >= 0 && fi != ca[c].frame && ca[c].frame >= 0 && tileLoads > 0 && !tileCached(k["frames"][fi] | "")) fi = ca[c].frame;
     if (fi >= 0 && drawTile(k["frames"][fi] | "", x, y + sink, sz, A)) ca[c].frame = fi;   // a frame missing on the keypad falls back to the icon
-    else if (*icon && iconFind(icon, false)) {   // native size unless the icon is turning or pulsing
-      Pose po = livePose(c, k, now, down || s < 0.999f || s > 1.001f);
-      ca[c].pose = poseKey(po);
-      ca[c].poseAt = now;
+    else if (*icon && iconFind(icon, false)) {   // at native size, in its animation frame while it plays
       const IconDef *ic = iconFind(icon, false);
-      float gx = roundf(mx) + po.dx, gy = roundf(my) + po.dy, gs = 36 * po.scale;
-      if (drop) glyphXf(ic, false, gx, gy + 1, gs, po.angle, sh, A * 110 / 255);
-      glyphXf(ic, false, gx, gy, gs, po.angle, gc, A);
+      int f = iconFrame(c, now);
+      ca[c].sig = f;
+      float gx = roundf(mx), gy = roundf(my);
+      if (drop) glyphFrame(ic, f, gx, gy + 1, sh, A * 110 / 255);
+      glyphFrame(ic, f, gx, gy, gc, A);
     }
     else if (strlen(tile) == 8 && drawTile(tile, x, y + sink, sz, A)) {}
     else {
@@ -1163,8 +1139,14 @@ static void renderDamage(uint32_t now) {
 
 // Marks what moves this frame; true when something animates every frame.
 static bool animate(uint32_t now) {
-  bool live = false;
+  bool live = false, playing = false;
+  for (auto &a : ca) {
+    if (mode != M_HOME || playerPage()) a.sig0 = 0;   // icons play on the key grid only
+    playing |= a.sig0 != 0;
+  }
+  if (!playing) iconAnimRelease();
   if (mode == M_HOME && !playerPage()) {
+    idleTurn(now);
     for (int c = 0; c < NUM_CELLS; c++) {
       bool m = false;
       if (ca[c].pop0) {
@@ -1179,8 +1161,12 @@ static bool animate(uint32_t now) {
       JsonVariant k = keyAt(c);
       int fi = k.isNull() || dimState == 2 ? -1 : frameIndex(k, now);   // a dark screen doesn't play GIFs
       if (fi >= 0 && fi != ca[c].frame) m = true;   // redraw on a new frame only: each one is a tile read
-      if (fi < 0 && !k.isNull() && iconMotion && !dimState && now - ca[c].poseAt >= POSE_MS && !(k["tile"] | (const char *)nullptr)
-          && poseKey(livePose(c, k, now, pressed == c)) != ca[c].pose) m = true;   // a living icon moved
+      if (ca[c].sig0) {   // an icon animation: redraw on each new frame, and once more at rest
+        int f = iconFrame(c, now);
+        if (f != ca[c].sig) m = true;
+        if (f < 0) ca[c].sig0 = 0;
+        live = true;
+      }
       if (!k.isNull() && !strcmp(k["anim"] | "", "rec") && (k["toggle"] | false) && toggled(c)) {
         static uint32_t lastPhase = 0;
         if (now / 600 != lastPhase) { m = true; lastPhase = now / 600; }
@@ -1448,14 +1434,15 @@ static void startWave() {
     for (int c = 0; c < NUM_CELLS; c++)
       if (c % GRID_COLS + c / GRID_COLS == d) ca[c].pop0 = (now + order++ * POP_STEP) | 1;
   pressed = released = -1;
-  for (int c = 0; c < NUM_CELLS; c++) ca[c].ring = 0;
+  for (int c = 0; c < NUM_CELLS; c++) { ca[c].ring = 0; ca[c].sig0 = 0; }
+  nextTurn = now + order * POP_STEP + POP_MS + TURN_MS;   // idle turns wait for the wave
   mark(0, 0, SCR_W, STATUS_H);
   mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
 }
 
 // The page kind changes (keys <-> player): wipe the new page down over the old.
 static void startWipe() {
-  for (int c = 0; c < NUM_CELLS; c++) { ca[c].pop0 = 0; ca[c].ring = 0; }
+  for (int c = 0; c < NUM_CELLS; c++) { ca[c].pop0 = 0; ca[c].ring = 0; ca[c].sig0 = 0; }
   pressed = released = -1;
   wiping = true;
   wipe0 = millis();
@@ -1512,6 +1499,7 @@ void uiFlash(int c, bool ok) {
   if (c < 0 || c >= NUM_CELLS) return;
   ca[c].ring = ok ? 1 : 2;
   ca[c].ring0 = millis();
+  if (ok) playIcon(c, ca[c].ring0);   // the icon acts out what the key just did
   markCellRect(c);
 }
 

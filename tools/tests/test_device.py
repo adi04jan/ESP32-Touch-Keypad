@@ -689,18 +689,33 @@ def test_gif_key_plays_its_frames(dev):
             dev.cmd(f"rm /t/{n}.565")
 
 
-def test_living_icons_move_and_hold_the_frame_rate(d):
-    """Every key's icon moves (spin, swing, bounce, pulse, float) while idle; off, the screen is still."""
+def after_ring_frames(d, cell):
+    """Frames redrawn 0.8-1.4 s after a key fires: its ring is gone (700 ms), so only its icon's animation is left."""
+    d.touch(*cell_xy(cell), 60)
+    time.sleep(0.8)
+    d.cmd("perf reset")
+    time.sleep(0.6)
+    return int(re.search(r"frames:(\d+)", d.cmd("perf")[0]).group(1))
+
+
+def test_icon_animations_play_on_fire_and_take_turns(d):
+    """A fired key's icon acts out its key (copy pulls a second sheet out of the first) and idle keys
+    take turns; each redraw fits a frame, the inflated frames are freed after; off, icons stay still."""
+    heap = lambda: int(re.search(r"free:(\d+)", d.cmd("heap")[0]).group(1))
+    time.sleep(0.8)
+    rest = heap()
+    assert after_ring_frames(d, 1) == 0                                     # off: the ring ends and the key is still
     try:
         assert d.cmd("iconanim on") == ["iconanim on"]
-        time.sleep(0.5)
-        frames, rate, worst = fps(d, lambda: None, wait=1.5)
-        assert frames >= 20 and worst <= 20, (frames, rate, worst)          # idle, the icons keep moving; each redraw fits a frame
+        assert after_ring_frames(d, 1) >= 4                                 # on: copy's sheets are still moving
+        frames, rate, worst = fps(d, lambda: None, wait=3.5)
+        assert frames >= 20 and worst <= 20, (frames, rate, worst)          # idle keys take turns; each redraw fits a frame
         frames, rate, _ = fps(d, lambda: d.touch(*cell_xy(2), 700))
         assert rate >= FPS_FLOOR, rate                                      # and a press still runs at full speed
     finally:
         assert d.cmd("iconanim off") == ["iconanim off"]
-    time.sleep(0.3)
+    time.sleep(1.8)
     frames, _, _ = fps(d, lambda: None, wait=1.0)
     assert frames <= 2, frames                                              # off: nothing to redraw
+    assert heap() >= rest - 2048, (heap(), rest)                            # the inflated animations were freed
 

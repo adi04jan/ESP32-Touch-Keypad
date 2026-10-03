@@ -4,6 +4,9 @@
 #include "board.h"
 #include "fonts_gen.h"
 #include "icons_gen.h"
+#include "anims_gen.h"
+#include "miniz.h"   // the ROM's inflate (tinfl)
+static_assert(ANIM_COUNT == ICON_COUNT, "anims_gen.h is stale: run tools/icons/build_anims.js");
 
 static uint16_t *K;               // chunk pixels
 static int KX, KY, KW, KH;        // chunk rectangle
@@ -312,10 +315,8 @@ static inline int nib(const uint8_t *d, int src, int sx, int sy) {
   return (i & 1) ? (b & 15) : (b >> 4);
 }
 
-IRAM_ATTR void glyph(const IconDef *ic, bool ui, float cx, float cy, float size, C3 c, int alpha) {
-  if (!ic || alpha <= 0) return;
-  int src = ui ? UI_ICON_PX : ICON_PX;
-  const uint8_t *d = (ui ? UI_ICON_DATA : ICON_DATA) + ic->off;
+// A 4-bit mask (src x src) tinted into the frame, centred on (cx, cy), scaled to size.
+static IRAM_ATTR void glyphMask(const uint8_t *d, int src, float cx, float cy, float size, C3 c, int alpha) {
   float fx = cx - size * 0.5f, fy = cy - size * 0.5f;
   int x0 = (int)floorf(fx), y0 = (int)floorf(fy), x1 = (int)ceilf(fx + size), y1 = (int)ceilf(fy + size);
   if (!clipBox(x0, y0, x1, y1)) return;
@@ -354,29 +355,72 @@ IRAM_ATTR void glyph(const IconDef *ic, bool ui, float cx, float cy, float size,
     }
 }
 
-IRAM_ATTR void glyphXf(const IconDef *ic, bool ui, float cx, float cy, float size, float angle, C3 c, int alpha) {
-  if (fabsf(angle) < 0.002f) { glyph(ic, ui, cx, cy, size, c, alpha); return; }
+IRAM_ATTR void glyph(const IconDef *ic, bool ui, float cx, float cy, float size, C3 c, int alpha) {
   if (!ic || alpha <= 0) return;
-  int src = ui ? UI_ICON_PX : ICON_PX;
-  const uint8_t *d = (ui ? UI_ICON_DATA : ICON_DATA) + ic->off;
-  float half = size * 0.72f;   // the turned square's reach (size / sqrt 2, a little more)
-  int x0 = (int)floorf(cx - half), y0 = (int)floorf(cy - half), x1 = (int)ceilf(cx + half), y1 = (int)ceilf(cy + half);
-  if (!clipBox(x0, y0, x1, y1)) return;
-  float k = src / size, cs = cosf(angle) * k, sn = sinf(angle) * k, mid = src * 0.5f - 0.5f;
-  for (int py = y0; py < y1; py++) {
-    float dy = py + 0.5f - cy;
-    for (int px = x0; px < x1; px++) {
-      float dx = px + 0.5f - cx;
-      float u = dx * cs + dy * sn + mid, w = -dx * sn + dy * cs + mid;   // back into the mask
-      if (u < -1 || w < -1 || u > src || w > src) continue;
-      int iu = (int)floorf(u), iw = (int)floorf(w);
-      float fu = u - iu, fw = w - iw;
-      float a = nib(d, src, iu, iw) * (1 - fu) * (1 - fw) + nib(d, src, iu + 1, iw) * fu * (1 - fw) +
-                nib(d, src, iu, iw + 1) * (1 - fu) * fw + nib(d, src, iu + 1, iw + 1) * fu * fw;
-      int v = (int)(a * 17);
-      if (v) blend(px, py, c, v * alpha / 255);
-    }
+  glyphMask((ui ? UI_ICON_DATA : ICON_DATA) + ic->off, ui ? UI_ICON_PX : ICON_PX, cx, cy, size, c, alpha);
+}
+
+const int ICON_ANIM_MS = ANIM_FRAME_MS;
+int iconAnimFrames(const IconDef *ic) {
+  return ic && ic >= ICONS && ic < ICONS + ICON_COUNT ? ANIMS[ic - ICONS].frames : 0;
+}
+
+// An icon's animation inflated (ROM tinfl), kept while it plays: the two latest icons, as a fired
+// key and an idle turn can overlap. nullptr when the heap can't spare it (the icon stays still).
+static struct { const IconDef *ic; uint8_t *runs; } inflated[2];
+static uint8_t inflatedNext;
+static const uint8_t *animRuns(const IconDef *ic) {
+  for (auto &s : inflated) if (s.ic == ic) return s.runs;
+  const AnimDef &a = ANIMS[ic - ICONS];
+  auto &s = inflated[inflatedNext ^= 1];   // replace the older of the two
+  free(s.runs);
+  s.ic = nullptr;
+  s.runs = (uint8_t *)malloc(a.raw);
+  tinfl_decompressor *d = (tinfl_decompressor *)malloc(sizeof(tinfl_decompressor));   // ~11 KB, only while inflating
+  size_t in = a.z, out = a.raw;
+  bool ok = s.runs && d;
+  if (ok) {
+    tinfl_init(d);
+    ok = tinfl_decompress(d, ANIM_DATA + a.off, &in, s.runs, s.runs, &out, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) == TINFL_STATUS_DONE && out == a.raw;
   }
+  free(d);
+  if (!ok) { free(s.runs); s.runs = nullptr; return nullptr; }
+  s.ic = ic;
+  return s.runs;
+}
+void iconAnimRelease() {
+  for (auto &s : inflated) { free(s.runs); s.runs = nullptr; s.ic = nullptr; }
+}
+
+// Frame k of a key icon's animation: its resting mask with the frame's changed runs written over
+// it. The last frame decoded is kept, so the drop shadow and the ink share one decode.
+void glyphFrame(const IconDef *ic, int frame, float cx, float cy, C3 c, int alpha) {
+  static uint8_t buf[ICON_PX * ICON_PX / 2];
+  static const IconDef *bufIc = nullptr;
+  static int bufFrame = -1;
+  const uint8_t *p = frame >= 0 && frame < iconAnimFrames(ic) ? animRuns(ic) : nullptr;
+  if (!p) { glyph(ic, false, cx, cy, ICON_PX, c, alpha); return; }
+  if (ic != bufIc || frame != bufFrame) {
+    memcpy(buf, ICON_DATA + ic->off, sizeof buf);
+    for (int f = 0; f <= frame; f++) {
+      int pos = 0;
+      while (true) {
+        int skip = *p++, cnt = *p++;
+        if (!skip && !cnt) break;
+        pos += skip;
+        if (f == frame)
+          for (int j = 0; j < cnt && pos + j < ICON_PX * ICON_PX; j++) {
+            int v = j & 1 ? p[j >> 1] & 15 : p[j >> 1] >> 4, i = pos + j;
+            buf[i >> 1] = i & 1 ? (buf[i >> 1] & 0xF0) | v : (buf[i >> 1] & 0x0F) | v << 4;
+          }
+        p += (cnt + 1) / 2;
+        pos += cnt;
+      }
+    }
+    bufIc = ic;
+    bufFrame = frame;
+  }
+  if (alpha > 0) glyphMask(buf, ICON_PX, cx, cy, ICON_PX, c, alpha);
 }
 
 void glyphLit(const char *name, bool ui, float cx, float cy, float size, C3 c, C3 shadow, int alpha) {
