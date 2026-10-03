@@ -35,11 +35,28 @@ def chord(s):
     return acts
 
 
-def page(name, keys):
+def palette(command):
+    """VS Code's Command Palette: open it, type the command's name, run the top match."""
+    return [{"type": "keycombo", "keys": ["LEFT_CTRL", "LEFT_SHIFT", "P"]}, {"type": "delay", "ms": 350},
+            {"type": "text", "value": command}, {"type": "delay", "ms": 250}, {"type": "key", "value": "ENTER"}]
+
+
+def folder(n):   # a key that opens page n (1-based): the keypad draws it as a stack
+    return [{"type": "page", "value": n}]
+
+
+BACK = [{"type": "back"}]
+
+
+def page(name, keys, back=False):
+    """keys: (label, icon, chord string or action list); back=True puts Back in the last cell."""
     cells = [None] * 15
     for i, (label, icon, keys_) in enumerate(keys):
         assert len(label) <= 14, label
-        cells[i] = {"id": i + 1, "name": label, "icon": icon, "led_color": LED[i % len(LED)], "actions": chord(keys_)}
+        cells[i] = {"id": i + 1, "name": label, "icon": icon, "led_color": LED[i % len(LED)],
+                    "actions": keys_ if isinstance(keys_, list) else chord(keys_)}
+    if back:
+        cells[14] = {"id": 15, "name": "Back", "icon": "arrow-left", "led_color": [138, 152, 171], "actions": BACK}
     return {"name": name, "keys": cells}
 
 
@@ -50,15 +67,27 @@ def profile(name, color, *pages):
 APPS = {   # context key (Studio auto-switch): (slot, profile)
     "vscode": (5, profile("VS Code", [63, 150, 255],
         page("Edit", [("Commands", "search", "CTRL+SHIFT+P"), ("Go to file", "file", "CTRL+P"), ("Find", "search", "CTRL+F"),
-                      ("Find in files", "files", "CTRL+SHIFT+F"), ("Replace", "repeat", "CTRL+H"), ("Comment", "code", "CTRL+/"),
-                      ("Format", "wand-sparkles", "SHIFT+ALT+F"), ("Rename", "pen-line", "F2"), ("Go to def", "arrow-right", "F12"),
-                      ("Go back", "arrow-left", "ALT+LEFT"), ("Select all", "layers", "CTRL+SHIFT+L"), ("Next match", "plus", "CTRL+D"),
-                      ("Line up", "arrow-up", "ALT+UP"), ("Line down", "arrow-down", "ALT+DOWN"), ("Dup line", "copy", "SHIFT+ALT+DOWN")]),
-        page("View", [("Terminal", "square-terminal", "CTRL+`"), ("Sidebar", "layout-grid", "CTRL+B"), ("Explorer", "folder", "CTRL+SHIFT+E"),
-                      ("Git", "git-branch", "CTRL+SHIFT+G"), ("Extensions", "sliders-horizontal", "CTRL+SHIFT+X"), ("Split", "app-window", "CTRL+\\"),
-                      ("Close tab", "x", "CTRL+W"), ("Reopen tab", "undo-2", "CTRL+SHIFT+T"), ("Zen mode", "maximize", "CTRL+K Z"),
-                      ("Settings", "settings", "CTRL+,"), ("Save all", "save", "CTRL+K S"), ("Problems", "bug", "CTRL+SHIFT+M"),
-                      ("Debug", "play", "F5"), ("Stop debug", "square", "SHIFT+F5"), ("Breakpoint", "circle-dot", "F9")]))),
+                      ("Find in files", "files", "CTRL+SHIFT+F"), ("Git", "git-branch", folder(3)), ("Replace", "repeat", "CTRL+H"),
+                      ("Comment", "code", "CTRL+/"), ("Format", "wand-sparkles", "SHIFT+ALT+F"), ("Rename", "pen-line", "F2"),
+                      ("Go to def", "arrow-right", "F12"), ("Go back", "arrow-left", "ALT+LEFT"), ("Next match", "plus", "CTRL+D"),
+                      ("Line up", "arrow-up", "ALT+UP"), ("Line down", "arrow-down", "ALT+DOWN"), ("Terminal", "square-terminal", "CTRL+`")]),
+        page("View", [("Sidebar", "layout-grid", "CTRL+B"), ("Explorer", "folder", "CTRL+SHIFT+E"), ("Extensions", "sliders-horizontal", "CTRL+SHIFT+X"),
+                      ("Split", "app-window", "CTRL+\\"), ("Debug", "bug", folder(4)), ("Close tab", "x", "CTRL+W"),
+                      ("Reopen tab", "undo-2", "CTRL+SHIFT+T"), ("Zen mode", "maximize", "CTRL+K Z"), ("Settings", "settings", "CTRL+,"),
+                      ("Save all", "save", "CTRL+K S"), ("All matches", "layers", "CTRL+SHIFT+L"), ("Dup line", "copy", "SHIFT+ALT+DOWN"),
+                      ("Problems", "list-checks", "CTRL+SHIFT+M"), ("Zoom in", "plus", "CTRL+="), ("Zoom out", "minus", "CTRL+-")]),
+        # The Git folder: VS Code's own Git commands, by name through the Command Palette.
+        page("Git", [("Changes", "git-pull-request", "CTRL+SHIFT+G"), ("Pull", "download", palette("Git: Pull")),
+                     ("Push", "upload", palette("Git: Push")), ("Sync", "refresh-cw", palette("Git: Sync")),
+                     ("Fetch", "cloud", palette("Git: Fetch")), ("Stage all", "list-checks", palette("Git: Stage All Changes")),
+                     ("Commit", "git-commit-horizontal", palette("Git: Commit")), ("Stash", "layers", palette("Git: Stash")),
+                     ("Pop stash", "undo-2", palette("Git: Pop Latest Stash")), ("Checkout", "git-branch", palette("Git: Checkout to...")),
+                     ("New branch", "plus", palette("Git: Create Branch...")), ("Merge", "git-merge", palette("Git: Merge Branch...")),
+                     ("Open changes", "files", palette("Git: Open Changes")), ("Git output", "terminal", palette("Git: Show Git Output"))], back=True),
+        page("Debug", [("Start", "play", "F5"), ("Run", "rocket", "CTRL+F5"), ("Stop", "square", "SHIFT+F5"),
+                       ("Restart", "rotate-ccw", "CTRL+SHIFT+F5"), ("Breakpoint", "circle-dot", "F9"), ("Step over", "arrow-right", "F10"),
+                       ("Step into", "arrow-down", "F11"), ("Step out", "arrow-up", "SHIFT+F11"), ("Debug view", "bug", "CTRL+SHIFT+D"),
+                       ("Debug console", "terminal", "CTRL+SHIFT+Y")], back=True))),
     "chrome": (6, profile("Chrome", [242, 183, 70],
         page("Tabs", [("New tab", "plus", "CTRL+T"), ("Close tab", "x", "CTRL+W"), ("Reopen tab", "undo-2", "CTRL+SHIFT+T"),
                       ("Next tab", "chevron-right", "CTRL+TAB"), ("Prev tab", "chevron-left", "CTRL+SHIFT+TAB"), ("Address bar", "globe", "CTRL+L"),
@@ -153,7 +182,7 @@ def install():
     d = kp.Device()
     d.ready(10)
     for key, (slot, p) in APPS.items():
-        r = d.upload_text(f"profile{slot}.json", json.dumps(p))
+        r = d.upload_text(f"profile{slot}.json", json.dumps(p, indent=1))   # short lines, like Studio: a CLI line holds 8 KB
         assert any(l.startswith("SAVED") for l in r), (key, r)
         print(f"profile {slot}: {p['profile_name']}")
     d.close()

@@ -2,12 +2,13 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.3.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.3.1.
 
 ## Transport
 
 - USB serial through the CH340 (VID `1A86`, PID `7523`), **921600 baud**, 8N1.
 - **Or Bluetooth:** the same console on a Nordic UART service: service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`, write host → device on `…0002` (with or without response), notifications device → host on `…0003`. Writes need an encrypted link, so only a paired host gets in. Output goes out in MTU-sized notifications (the keypad asks for MTU 247), and a prompt with no newline is flushed after 30 ms. Studio reaches it through `studio/native/KpLink` (Windows' GATT API on the paired keypad, no scan). `shot` answers on USB only. A Bluetooth upload doesn't pause the screen the way a USB one does.
+- **Replies go back where the command came from;** events (`EVT:` lines) and anything printed outside a command go to both links. So two hosts never read each other's replies, and a USB reply never waits on a slow Bluetooth link. While one link is uploading, a line from the other gets `ERR busy: an upload from the other link is in progress`.
 - **Release DTR and RTS after opening the port** (`kp.py` and Studio both do). On the board's auto-reset circuit RTS alone holds EN low (reset; `kp.py reset` uses that on purpose) and DTR alone holds IO0 (BOOT) low, which the keypad reads as a BOOT hold and answers by opening touch calibration after 2 s.
 - Host → device: one command per line, ending `\n` (`\r` is ignored). Longest line: 8191 bytes.
 - The device prints the prompt `macropad:$ ` (no newline) when it is ready for the next command.
@@ -145,6 +146,14 @@ USB is detected from the CH340's TX line, which idles high while USB powers the 
 - **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz and the LED goes dark. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it.
 - Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.
 - The Bluetooth Battery Service carries the charge (100 when no cell is read).
+
+## Folders
+
+A key whose only action is `page` is a folder: the keypad draws it as a stack (a second card behind it, up and to the right) and Studio's preview does the same. The page it opens holds a family of commands and ends with a Back key (`back`) in cell 15. Nothing in the file marks a folder; the single page action is the convention.
+
+## Uploads are lines
+
+A CLI line holds 8191 bytes, so send profile JSON on several lines (Studio indents it). A longer line inside an upload discards the upload with `ERR a line longer than 8191 bytes; send the JSON on several lines`.
 
 ## Quick switch and Autogenerate
 

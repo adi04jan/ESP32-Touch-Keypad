@@ -63,6 +63,18 @@ test("usage: minutes per app and the last real app in front (Studio itself never
   assert.equal(appKey("obs64"), "obs64");          // any other app: its process name
 });
 
+test("a folder in Claude's answer opens its page and its page has Back", () => {
+  const icons = iconNames();
+  const p = toProfile({ profile_name: "Git app", pages: [
+    { name: "Main", keys: [{ name: "Git", icon: "git-branch", actions: [{ type: "page", page: 2 }] }, { name: "Save", icon: "save", actions: [{ type: "keycombo", keys: ["LEFT_CTRL", "S"] }] }] },
+    { name: "Git", keys: [{ name: "Pull", icon: "download", actions: [{ type: "text", value: "git pull" }] }, { name: "Back", icon: "arrow-left", actions: [{ type: "back" }] }] }] }, "Git app", icons);
+  assert.deepEqual(p.pages[0].keys[0].actions, [{ type: "page", value: 2 }]);
+  assert.deepEqual(p.pages[1].keys[1].actions, [{ type: "back" }]);
+  assert.ok(schema.validateProfile(p).ok);
+  const far = toProfile({ profile_name: "X", pages: [{ name: "Main", keys: [{ name: "F", icon: "folder", actions: [{ type: "page", page: 9 }] }] }] }, "X", icons);
+  assert.equal(far.pages[0].keys[0].actions[0].value, 1);   // a folder never points past the last page
+});
+
 test("Claude's answer becomes a valid v2 profile: 15 cells, ids, known icons only", () => {
   const icons = iconNames();
   assert.ok(icons.length > 200 && icons.includes("keyboard"));

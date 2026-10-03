@@ -44,6 +44,9 @@ Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit
 - [x] Sixteen profile slots (firmware, schema, Studio); the status band's profile name opens a 4 x 4 Profiles grid.
 - [x] Generate: `EVT:AUTOGEN`, the `autogen` progress toast, Studio's Claude Code call (default model, structured output), one retry on a weak answer, the app mapped and cached; a second tap switches without asking Claude.
 - [x] Tests: 4 board tests (button, grid switch, progress, no Studio), autogen units with a fake Claude Code, a live installed-app E2E (Paint, real Claude, then the cached switch).
+- [x] Folder keys (only action `page`) drawn as a stack on the keypad and in Studio; VS Code page 1 gets a Git folder (VS Code's own Git commands through the Command Palette) and page 2 a Debug folder; generated profiles may use folders.
+- [x] 3.3.1: console replies go only to the link that asked (events to both), so a Bluetooth listener left subscribed can't slow USB reads (the cause of slow profile reads in the E2E); KpLink unsubscribes on exit; an upload ignores the other link's lines.
+- [x] Ask Claude in Studio's editor: a chat that organizes, creates and edits the open profile (studio/services/chat.js). Claude's profile is validated as sent, before any repair, so a broken answer can never empty a profile; a change is one undo step and autosaves.
 
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.

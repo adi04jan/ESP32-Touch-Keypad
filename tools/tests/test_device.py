@@ -9,6 +9,7 @@ run on a keypad that is in use.
 """
 import json
 import re
+import socket
 import sys
 import time
 import zlib
@@ -451,6 +452,7 @@ def test_click_and_hostname_commands(dev):
     assert dev.cmd("click off") == ["click off"]
     assert dev.cmd("click on") == ["click on"]
     assert dev.cmd("hostname TEST-PC")[0] in ("hostname set", "ERR no host connected")
+    dev.cmd(f"hostname {socket.gethostname()}")                    # the PC's real name back
 
 
 # ---------------------------------------------------------------- robustness
@@ -642,3 +644,12 @@ def test_generate_without_studio_says_so(d):
     time.sleep(4.0)                                      # 4 s without one: "Open Macropad Studio", then it fades
     assert d.shot().getpixel(TOAST_PX) == base
     assert d.cmd("autogen nope") == ["autogen busy|done|fail <text>"]
+
+
+def test_folder_key_is_drawn_as_a_stack(d):
+    img = d.shot()
+    fx, fy = key_box(3)                                  # "Folder": its only action opens page 2
+    nx, ny = key_box(1)                                  # "Copy": a plain key
+    card = img.getpixel((fx + 69, fy + 30))              # just right of the key: the next card of the stack
+    ground = img.getpixel((nx + 69, ny + 30))            # the same spot beside a plain key: the ground
+    assert sum(abs(a - b) for a, b in zip(card, ground)) > 30, (card, ground)

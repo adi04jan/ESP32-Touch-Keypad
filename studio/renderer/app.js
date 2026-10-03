@@ -120,8 +120,9 @@ function keyHTML(k, i) {
   const tag = host ? `<span class="tag pc">PC</span>` : k.hold_actions?.length ? `<span class="tag hold">HOLD</span>` : k.toggle ? `<span class="tag on">ON</span>` : "";
   const anim = k.anim ? `<span class="tag anim">${k.anim.toUpperCase()}</span>` : "";
   const face = k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`;
-  return `<div class="cell${sel}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}">
-    <span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
+  const folder = (k.actions || []).length === 1 && k.actions[0].type === "page";   // drawn as a stack, like the keypad
+  return `<div class="cell${sel}${folder ? " folder" : ""}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}${folder ? ` (folder: page ${k.actions[0].value})` : ""}">
+    ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
 }
 function playerHTML(sel) {
   const np = state.np, pct = np.len ? Math.min(100, (np.pos / np.len) * 100) : 0;
@@ -162,6 +163,7 @@ function renderTop() {
 function renderStudio(keepSide = false) {
   const p = prof(), page = pg();
   renderTop();
+  renderChat();
   const ed = editable();
   $("st-pages").innerHTML = p.pages.map((g, i) => `<button aria-pressed="${i === state.page}" data-stpg="${i}">${esc(g.name)}</button>`).join("") + (ed ? `<button data-addpage>${ico("plus")} Page</button>` : "");
   $("p-name").disabled = $("pg-name").disabled = !ed;
@@ -611,6 +613,52 @@ async function renderSettings() {
   $("ag-run").onclick = () => gen(false);
   $("ag-force").onclick = () => gen(true);
 }
+
+/* ---- Ask Claude (services/chat.js): one conversation per profile slot ---- */
+const CHAT_IDEAS = ["Put the Git commands in a folder on page 1", "Order page 1 by what I use most", "Add a page of window-snapping shortcuts", "Turn this into a Figma profile"];
+state.chat = {};
+function renderChat() {
+  const log = (state.chat || {})[state.slot] || [], busy = state.chatBusy === state.slot;
+  $("chat-log").innerHTML = log.map((m) => `<div class="msg ${m.role}">${m.applied ? `<span class="applied">${ico("check")} Applied to profile ${m.applied}</span>` : ""}<p>${esc(m.text)}</p></div>`).join("")
+    + (busy ? `<div class="msg ai thinking"><p>Claude is working<span class="dots"></span> <span id="chat-secs"></span></p></div>` : "");
+  $("chat-ideas").hidden = log.length > 0 || busy;
+  $("chat-ideas").innerHTML = CHAT_IDEAS.map((t) => `<button type="button" class="ghost" data-idea="${esc(t)}">${esc(t)}</button>`).join("");
+  $("chat-send").disabled = state.chatBusy != null;
+  $("chat-log").scrollTop = $("chat-log").scrollHeight;
+}
+async function chatSend(text) {
+  text = text.trim();
+  if (!text || state.chatBusy != null) return;
+  const slot = state.slot, log = (state.chat[slot] = state.chat[slot] || []);
+  const history = log.filter((m) => m.role !== "err").map((m) => ({ role: m.role, text: m.text }));
+  log.push({ role: "user", text });
+  state.chatBusy = slot;
+  $("chat-in").value = "";
+  renderChat();
+  const t0 = Date.now(), tick = setInterval(() => { const el = $("chat-secs"); if (el) el.textContent = `${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+  const slots = Object.keys(state.slots).filter((n) => !state.empty[n]).map((n) => [+n, state.slots[n].profile_name]);
+  const r = await api.chat({ history, message: text, profile: state.slots[slot], slot, slots });
+  clearInterval(tick);
+  state.chatBusy = null;
+  if (r.error) log.push({ role: "err", text: `Could not: ${r.error}` });
+  if (r.reply || r.profile) log.push({ role: "ai", text: r.reply || "Done." });
+  if (r.profile) {
+    if (!editable()) log.push({ role: "err", text: "Connect the keypad to apply this change." });
+    else if (state.slot !== slot) log.push({ role: "err", text: `Not applied: you moved to profile ${state.slot}. Go back to profile ${slot} and ask again.` });
+    else {   // one change: undoable, previewed, autosaved to the keypad
+      state.slots[slot] = r.profile;
+      state.page = Math.min(state.page, r.profile.pages.length - 1);
+      state.sel = 0;
+      state.empty[slot] = false;
+      changed(["structure"]);
+      log.at(-1).applied = slot;
+    }
+  }
+  renderChat();
+}
+$("chat-form").addEventListener("submit", (e) => { e.preventDefault(); chatSend($("chat-in").value); });
+$("chat-in").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend($("chat-in").value); } });
+$("chat-ideas").addEventListener("click", (e) => { const b = e.target.closest("[data-idea]"); if (b) chatSend(b.dataset.idea); });
 
 /* ============ events from main ============ */
 const playerShown = () => state.view === "editor" && isPlayerPage(pg());

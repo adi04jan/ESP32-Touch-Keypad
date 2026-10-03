@@ -26,6 +26,7 @@ const { SerialLink } = require("./services/serial");
 const { withBluetooth, BLE_PATH } = require("./services/bleport");
 const { Device } = require("./services/device");
 const { Autogen, appKey } = require("./services/autogen");
+const chat = require("./services/chat");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
@@ -262,6 +263,7 @@ ipcMain.handle("contexts:list", () => {
   return [...known, ...Object.keys(store.load().context_profiles || {}).filter((k) => !known.includes(k))];   // + generated apps
 });
 ipcMain.handle("autogen:run", (_e, force) => autogen.run(!!force));
+ipcMain.handle("chat:send", (_e, req) => chat.chatTurn(req));
 ipcMain.handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
 
 ipcMain.handle("dialog:import", async () => {

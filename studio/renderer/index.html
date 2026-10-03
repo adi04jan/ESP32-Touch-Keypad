@@ -32,6 +32,12 @@
             <span class="hint">Click a key to edit · drag to swap · arrows move · Ctrl+C / Ctrl+V copy a key · Delete clears · Ctrl+Z undo</span>
           </div>
           <div class="mini"><div class="screen" id="st-screen"></div></div>
+          <section class="chat" aria-labelledby="chat-h">
+            <div class="chat-head"><h2 id="chat-h"><svg class="lc" aria-hidden="true"><use href="#i-sparkles"/></svg>Ask Claude</h2><span class="hint">Organizes, creates and edits the profile open here; the keypad follows. Ctrl+Z undoes a change.</span></div>
+            <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
+            <div class="chat-ideas" id="chat-ideas"></div>
+            <form class="chat-form" id="chat-form"><textarea id="chat-in" rows="2" maxlength="2000" placeholder="Ask for a change: “Put all Git commands in a folder on page 1”" aria-label="Message to Claude"></textarea><button class="primary" id="chat-send">Send</button></form>
+          </section>
           <div class="pagebar">
             <label class="field"><span>Profile name</span><input id="p-name" maxlength="24"></label>
             <label class="field"><span>Page name</span><input id="pg-name" maxlength="14"></label>

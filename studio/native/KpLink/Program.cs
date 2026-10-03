@@ -103,6 +103,9 @@ static class Program
             return 0;
         });
         int code = await await Task.WhenAny(pump, lost.Task);
+        // Unsubscribe on the way out: Windows keeps the link up for HID, and a keypad that still
+        // thinks someone listens keeps sending its event stream into the air.
+        if (code == 0) try { await tx.WriteClientCharacteristicConfigurationDescriptorAsync(GattClientCharacteristicConfigurationDescriptorValue.None); } catch { }
         Ctl.WriteLine(code == 0 ? "CLOSED stdin" : "CLOSED link lost");
         return code;
     }

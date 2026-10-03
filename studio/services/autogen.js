@@ -57,9 +57,9 @@ function iconNames() {
 function answerSchema(icons) {
   const str = (max) => ({ type: "string", maxLength: max });
   const action = { type: "object", additionalProperties: false, required: ["type"], properties: {
-    type: { enum: ["keycombo", "key", "text", "delay", "media"] },
+    type: { enum: ["keycombo", "key", "text", "delay", "media", "page", "back"] },
     keys: { type: "array", items: { enum: schema.KEY_AND_MODIFIER } },
-    value: { type: "string" }, ms: { type: "integer" } } };
+    value: { type: "string" }, ms: { type: "integer" }, page: { type: "integer" } } };
   const key = { type: "object", additionalProperties: false, required: ["name", "icon", "actions"], properties: {
     name: str(schema.MAX_LABEL), icon: { enum: icons }, actions: { type: "array", minItems: 1, maxItems: 8, items: action } } };
   const page = { type: "object", additionalProperties: false, required: ["name", "keys"], properties: {
@@ -82,6 +82,9 @@ function prompt(app, minutes, fix = "") {
     "- Actions: keycombo {keys:[modifiers..., one key]} for chords; key {value}; text {value} types literally;",
     "  delay {ms}; media {value: PLAY_PAUSE|NEXT|PREVIOUS|MUTE|VOLUME_UP|VOLUME_DOWN}.",
     "- Key names in keys/value use the allowed names (LEFT_CTRL, LEFT_SHIFT, LEFT_ALT, LEFT_GUI, A-Z, 0-9, F1-F24, ENTER, ESC, TAB, ...).",
+    "- Folders: group a family of commands (all Git commands, all debug commands...) behind one key on page 1",
+    "  whose only action is page {page: N} (a later page, 1-based). That page holds the family and ends with a",
+    "  Back key whose only action is back. The keypad draws folder keys as a stack of cards.",
     "- No destructive key (delete, discard, close without saving) on page 1.",
     "- profile_name: the app's name.",
     fix ? `\nYour previous answer was rejected: ${fix}. Fix exactly that.` : "",
@@ -93,8 +96,11 @@ function prompt(app, minutes, fix = "") {
 function toProfile(out, label, icons) {
   const known = new Set(icons);
   const tone = PALETTE[[...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
+  const pages = Math.min(3, (out.pages || []).length) || 1;
   const action = (a) => a.type === "keycombo" ? { type: "keycombo", keys: a.keys || [] }
     : a.type === "delay" ? { type: "delay", ms: Math.max(0, Math.min(5000, a.ms | 0)) }
+    : a.type === "page" ? { type: "page", value: Math.max(1, Math.min(pages, a.page | 0 || parseInt(a.value, 10) || 1)) }
+    : a.type === "back" ? { type: "back" }
     : { type: a.type, value: String(a.value ?? "") };
   return schema.repairProfile({
     schema_version: 2, profile_name: String(out.profile_name || label).slice(0, 24), color: tone, default_delay: 20,

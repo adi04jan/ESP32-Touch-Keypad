@@ -257,6 +257,27 @@ test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bl
   await until("playing", async () => mediaLines.slice(n1).includes("STATE Playing"), 6000);
 });
 
+// Ask Claude, end to end: a chat request through the real UI edits the scratch profile, the keypad
+// gets it, nothing else changes, and Ctrl+Z takes it back off the keypad.
+test("Ask Claude: a chat request edits the open profile, the keypad gets it, Ctrl+Z takes it back", async () => {
+  await view("editor");
+  await click(`[data-stslot="${SLOT}"]`);
+  await until(`keypad on profile ${SLOT}`, async () => (await statusOf()).Profile === String(SLOT), 8000);
+  const before = await readCat(SLOT);
+  await setInput("#chat-in", "Add a key named Chat ok in the first empty cell of page 1. It types the text chat-ok. Change nothing else.");
+  await click("#chat-send");
+  await until("Claude's change applied", async () => run(() => { const err = document.querySelector("#chat-log .msg.err"); if (err) throw new Error(err.textContent); return !!document.querySelector("#chat-log .applied"); }), 240000, 1000);
+  const after = await until("the key on the keypad", async () => { const p = await readCat(SLOT); return p && p.pages[0].keys.some((k) => k && k.name === "Chat ok") && p; }, 15000, 500);
+  const made = after.pages[0].keys.find((k) => k && k.name === "Chat ok");
+  if (!made.actions.some((a) => a.type === "text" && String(a.value).includes("chat-ok"))) throw new Error(`actions ${JSON.stringify(made.actions)}`);
+  const others = (p) => JSON.stringify(p.pages.map((g) => g.keys.filter((k) => k && k.name !== "Chat ok")));
+  if (others(after) !== others(before)) throw new Error("Claude changed keys it was not asked about");
+  log(`chat: "${(await text("#chat-log .msg.ai:last-of-type p")).slice(0, 120)}"`);
+  await shot("09-chat");
+  await key("z", { ctrlKey: true });
+  await until("undone on the keypad", async () => { const p = await readCat(SLOT); return p && !p.pages[0].keys.some((k) => k && k.name === "Chat ok"); }, 15000, 500);
+});
+
 // The keypad's Generate button, end to end: keypad -> Studio -> Claude Code -> keypad. Paint is the
 // app in front (not one of the owner's profiled apps, and closed again after); its profile lands in
 // the first free slot and is deleted at the end. A second tap must reuse it without asking Claude.

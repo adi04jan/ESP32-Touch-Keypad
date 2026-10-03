@@ -28,7 +28,7 @@ static struct {
   uint8_t *buf;
   size_t size, cap, want;
   uint32_t crc, wantCrc, last;
-  bool failed, tooBig, art;
+  bool failed, tooBig, art, lineLong;
   uint8_t src;
 } up;
 
@@ -57,7 +57,7 @@ static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   up.want = want;
   up.crc = 0;
   up.wantCrc = crc;
-  up.failed = up.tooBig = false;
+  up.failed = up.tooBig = up.lineLong = false;
   up.last = millis();
   Con.printf("RECV %s\n", up.path);
   return true;
@@ -135,7 +135,9 @@ static void uploadFinish() {
     return;
   }
   if (up.failed) {
-    Con.println(up.tooBig ? "Upload too large; discarded." : "ERR out of RAM");
+    if (up.tooBig) Con.println("Upload too large; discarded.");
+    else if (up.lineLong) Con.printf("ERR a line longer than %d bytes; send the JSON on several lines\n", CLI_LINE_MAX - 1);
+    else Con.println("ERR out of RAM");
     uploadEnd();
     prompt();
     return;
@@ -484,13 +486,17 @@ static void feed(LineIn &in, char ch, uint8_t src) {
   size_t n = in.len;
   in.len = 0;
   curSrc = src;
-  if (in.tooLong) {
+  conRoute(src == 0 ? CON_USB : CON_BLE);   // the reply goes back where the line came from
+  if (up.on && src != up.src) {              // the other link mid-upload: never mix its lines in
     in.tooLong = false;
-    if (up.on) up.failed = true;   // a line longer than CLI_LINE_MAX: the upload is corrupt
+    Con.println("ERR busy: an upload from the other link is in progress");
+    prompt();
+  } else if (in.tooLong) {
+    in.tooLong = false;
+    if (up.on) up.failed = up.lineLong = true;   // a line longer than CLI_LINE_MAX: the upload is corrupt
     else { Con.printf("ERR line longer than %d bytes\n", CLI_LINE_MAX - 1); prompt(); }
-    return;
-  }
-  handleLine(in.buf, n);
+  } else handleLine(in.buf, n);
+  conRoute(CON_BOTH);
 }
 
 void handleSerialInput() {

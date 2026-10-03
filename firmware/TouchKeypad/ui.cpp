@@ -399,6 +399,12 @@ static bool cellAnimating(int c, uint32_t now) {
   return false;
 }
 
+// A folder: a key whose only action opens another page. It is drawn as a stack.
+static bool isFolder(JsonVariant k) {
+  JsonArray a = k["actions"].as<JsonArray>();
+  return a.size() == 1 && !strcmp(a[0]["type"] | "", "page");
+}
+
 static void drawCell(int c, uint32_t now) {
   int cx = cellX(c), cy = cellY(c);
   if (!gfxHits(cx, cy, CELL_W, CELL_H)) return;
@@ -430,6 +436,11 @@ static void drawCell(int c, uint32_t now) {
   bool on = (k["toggle"] | false) && toggled(c);
   float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2;
   float sink = keySink(th, sz, pr), mx = kx + KEY / 2 + (th.ks == KS_PAPER || th.ks == KS_PIXEL ? sink : 0), my = ky + KEY / 2 + sink;
+  if (isFolder(k)) {   // the next card of the stack, up and to the right; solid, so it stays on the fast path
+    C3 back = mix(tint, gfxGroundAt((int)y), 90);
+    rrFill(x + 6 * s, y - 5 * s, sz, sz, th.crisp ? 3 : KEY_R * s, solidFill(back), A);
+    rrRing(x + 6 * s + 0.5f, y - 5 * s + 0.5f, sz - 1, sz - 1, th.crisp ? 3 : KEY_R * s - 0.5f, th.crisp ? 2 : 1, mix(back, th.light ? BLACK : WHITE, 60), A);
+  }
   keyBody(th, x, y, sz, sz, KEY_R * s, tint, pr, on, A);
   if (on && (th.ks == KS_GLASS || th.ks == KS_PAPER || th.ks == KS_FLAT))
     rrRing(x + 1.5f + (th.ks == KS_PAPER ? sink : 0), y + 1.5f + sink, sz - 3, sz - 3, KEY_R * s - 1.5f, 2, GREEN, A);
