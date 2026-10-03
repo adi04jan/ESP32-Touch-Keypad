@@ -257,6 +257,50 @@ test("Music: Play/Pause on the keypad pauses and resumes the PC's player over Bl
   await until("playing", async () => mediaLines.slice(n1).includes("STATE Playing"), 6000);
 });
 
+// An animated image (built here: a 3-frame APNG, which Chromium decodes like a GIF) through the real
+// "Choose a GIF or image" button: the key gets 3 frames and the keypad holds every frame as a tile.
+function apng(colors, ms) {
+  const zlib = require("zlib");
+  const chunk = (type, data) => {
+    const t = Buffer.from(type), len = Buffer.alloc(4), crc = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([t, data])) >>> 0);
+    return Buffer.concat([len, t, data, crc]);
+  };
+  const u32 = (...v) => { const b = Buffer.alloc(4 * v.length); v.forEach((x, i) => b.writeUInt32BE(x, i * 4)); return b; };
+  const frame = ([r, g, b]) => { const row = Buffer.from([0, ...Array.from({ length: 72 }, () => [r, g, b]).flat()]); return zlib.deflateSync(Buffer.concat(Array(72).fill(row))); };
+  const fctl = (seq) => { const b = Buffer.alloc(26); b.writeUInt32BE(seq, 0); b.writeUInt32BE(72, 4); b.writeUInt32BE(72, 8); b.writeUInt16BE(ms, 20); b.writeUInt16BE(1000, 22); return b; };
+  const parts = [Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", Buffer.concat([u32(72, 72), Buffer.from([8, 2, 0, 0, 0])])), chunk("acTL", u32(colors.length, 0))];
+  let seq = 0;
+  colors.forEach((c, i) => {
+    parts.push(chunk("fcTL", fctl(seq++)));
+    parts.push(i === 0 ? chunk("IDAT", frame(c)) : chunk("fdAT", Buffer.concat([u32(seq++), frame(c)])));
+  });
+  parts.push(chunk("IEND", Buffer.alloc(0)));
+  return Buffer.concat(parts);
+}
+test(`GIF key: an animated image becomes a key whose frames play on the keypad (slot ${SLOT})`, async () => {
+  await view("editor");
+  await click(`[data-stslot="${SLOT}"]`);
+  await until(`keypad on profile ${SLOT}`, async () => (await statusOf()).Profile === String(SLOT), 8000);
+  await click('[data-stpg="0"]');                       // page 1: an earlier test leaves the editor on the player page
+  await sleep(300);
+  await click('[data-k="0"]');
+  await until("key inspector", async () => run(() => !!document.querySelector("#k-gif-in")));
+  const file = path.join(OUT, "e2e-anim.png");
+  fs.writeFileSync(file, apng([[255, 0, 0], [0, 255, 0], [0, 0, 255]], 120));
+  const { root } = await cdp.send("DOM.getDocument", {});
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "#k-gif-in" });
+  await cdp.send("DOM.setFileInputFiles", { files: [file], nodeId });
+  const k = await until("frames on the keypad's key", async () => { const k = await keyOf(0, 0); return k && Array.isArray(k.frames) && k.frames.length === 3 && k; }, 30000, 500);
+  if (k.frame_ms < 100 || k.frame_ms > 140) throw new Error(`frame_ms ${k.frame_ms}`);
+  const onKeypad = await cmd("ls /t");
+  for (const f of k.frames) if (!onKeypad.includes(f)) throw new Error(`frame ${f} is not on the keypad`);
+  await until("animated in the preview", async () => run(() => !!document.querySelector('#st-screen img.tile[data-frames]')), 5000, 300);
+  log(`gif: 3 frames (${k.frames.join(", ")}) at ${k.frame_ms} ms`);
+  await shot("10-gif");
+});
+
 // Ask Claude, end to end: a chat request through the real UI edits the scratch profile, the keypad
 // gets it, nothing else changes, and Ctrl+Z takes it back off the keypad.
 test("Ask Claude: a chat request edits the open profile, the keypad gets it, Ctrl+Z takes it back", async () => {
@@ -374,7 +418,7 @@ test("Device view: back up all profiles writes them to this PC", async () => {
       try { await fn(); results.push([true, name]); log(`PASS ${name} (${Date.now() - t0} ms)`); }
       catch (e) {
         if (e.skip) { results.push([null, name, e.message]); log(`SKIP ${name}: ${e.message}`); continue; }
-        results.push([false, name, e.message]); log(`FAIL ${name}: ${e.message}`); try { await shot(`fail-${results.length}`); } catch (_) {}
+        results.push([false, name, e.message]); log(`FAIL ${name}: ${e.message}`); try { await shot(`fail-${results.length}`); log(`console: ${(await text("#st-log")).slice(-700).replace(/\n/g, " | ")}`); } catch (_) {}
       }
     }
   } catch (e) { log(`ABORT: ${e.message}`); results.push([false, "harness", e.message]); }

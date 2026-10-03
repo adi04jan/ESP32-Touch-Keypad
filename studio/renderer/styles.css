@@ -194,6 +194,8 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .key::before { content: ""; position: absolute; inset: 1px 1px 52% 1px; border-radius: 18px 18px 9px 9px; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0)); pointer-events: none; }
 .dev .key > svg { position: relative; width: 36px; height: 36px; filter: drop-shadow(0 1px 2px color-mix(in oklab, var(--t) 60%, #000)); }
 .dev .key .ini { position: relative; font: 700 19px var(--body); }
+.dev .key img.tile { position: absolute; inset: 0; width: 66px; height: 66px; border-radius: 19px; object-fit: cover; }
+.dev[data-theme="retro"] .key img.tile { border-radius: 3px; image-rendering: pixelated; }
 
 /* ---- Ask Claude: the chat under the preview ---- */
 .chat { display: grid; gap: 10px; padding: 14px 16px; border-radius: 16px; background: linear-gradient(180deg, var(--ply), var(--ply-2)); box-shadow: var(--lift), 0 14px 24px -18px #000; min-width: 0; }

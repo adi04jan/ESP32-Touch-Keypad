@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.3.1.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.4.0.
 
 ## Transport
 
@@ -146,6 +146,10 @@ USB is detected from the CH340's TX line, which idles high while USB powers the 
 - **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz and the LED goes dark. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it.
 - Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.
 - The Bluetooth Battery Service carries the charge (100 when no cell is read).
+
+## Image and GIF keys
+
+A key may carry `tile` (one 72 x 72 image) or `frames` (2 to 16 tile names) with `frame_ms` (40 to 2000): a GIF. Each frame is an ordinary tile, `/t/<crc32>.565` (72 x 72 RGB565 big-endian, 10,368 bytes), uploaded like any tile, so a repeated frame is stored once. The keypad shows `frames[(millis / frame_ms) % count]`, redraws the key only when its frame changes, and pauses while the screen is off. A missing frame falls back to the icon. Removing a profile or saving one deletes tiles that no key's `tile` or `frames` names. Reading a tile from flash takes about 31 ms; four stay cached, and at most one is read per screen frame, so a page of GIF keys slows its GIFs, never the screen (three 6-frame GIFs hold 61 fps).
 
 ## Folders
 

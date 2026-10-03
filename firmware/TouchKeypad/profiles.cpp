@@ -232,6 +232,7 @@ void gcTiles() {
   std::vector<String> keep;
   JsonDocument filter;
   filter["pages"][0]["keys"][0]["tile"] = true;
+  filter["pages"][0]["keys"][0]["frames"] = true;   // a GIF key's frames are tiles too
   for (int n = 1; n <= NUM_PROFILES; n++) {
     File f = LittleFS.open(profilePath(n), "r");
     if (!f) continue;
@@ -242,7 +243,10 @@ void gcTiles() {
     if (e) return;   // can't tell what is referenced: delete nothing
     for (JsonObject pg : doc["pages"].as<JsonArray>())
       for (JsonVariant k : pg["keys"].as<JsonArray>())
+      {
         if (const char *t = k["tile"]) keep.push_back(String(t) + ".565");
+        for (const char *t : k["frames"].as<JsonArray>()) if (t) keep.push_back(String(t) + ".565");
+      }
   }
   std::vector<String> del;
   File dir = LittleFS.open("/t");

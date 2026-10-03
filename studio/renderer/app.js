@@ -113,13 +113,73 @@ $("cli-form").addEventListener("submit", async (e) => {
 });
 
 /* ============ the keypad screen (device pixels) ============ */
+/* ---- Image and GIF keys: decoded here (Chromium's ImageDecoder), each frame a 72 px tile ---- */
+const TILE_PX = 72;
+state.frameUrls = {};   // tile name -> data URL for the preview
+function tileFace(k) {
+  if (k.frames && k.frames.every((n) => state.frameUrls[n])) return `<img class="tile" data-frames="${k.frames.join(",")}" data-ms="${k.frame_ms || 100}" src="${state.frameUrls[k.frames[0]]}" alt="">`;
+  if (k.tile && state.frameUrls[k.tile]) return `<img class="tile" src="${state.frameUrls[k.tile]}" alt="">`;
+  return "";
+}
+async function gifToFrames(file) {
+  const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type || "image/gif" });
+  await dec.tracks.ready;   // the track list first, then all the data, before the frame count is final
+  await dec.completed;
+  const n = dec.tracks.selectedTrack.frameCount, step = Math.max(1, Math.ceil(n / 16));   // at most 16 frames, spread over the loop
+  const frames = [];
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    const { image } = await dec.decode({ frameIndex: i });
+    total += (image.duration || 100000) / 1000;
+    if (i % step === 0) {
+      const c = document.createElement("canvas"), x = c.getContext("2d");
+      c.width = c.height = TILE_PX;
+      const w = image.displayWidth, h = image.displayHeight, s = Math.min(w, h);   // the centre square, like a key
+      x.drawImage(image, (w - s) / 2, (h - s) / 2, s, s, 0, 0, TILE_PX, TILE_PX);
+      frames.push({ rgba: x.getImageData(0, 0, TILE_PX, TILE_PX).data, url: c.toDataURL() });
+    }
+    image.close();
+  }
+  dec.close();
+  return { frames, frame_ms: Math.max(40, Math.min(2000, Math.round(total / frames.length))) };
+}
+// Tiles already on the keypad (or cached by Studio) show in the preview too: RGB565 -> data URL.
+const tileWanted = new Set();
+async function loadTileUrls(p) {
+  const names = [];
+  for (const pg of p.pages) for (const k of pg.keys) for (const n of k ? [k.tile, ...(k.frames || [])] : []) if (n && !state.frameUrls[n] && !tileWanted.has(n)) names.push(n);
+  if (!names.length) return;
+  names.forEach((n) => tileWanted.add(n));
+  for (const n of names) {
+    const raw = await api.getTile(n);
+    if (!raw) continue;
+    const b = new Uint8Array(raw), c = document.createElement("canvas"), x = c.getContext("2d");
+    c.width = c.height = TILE_PX;
+    const img = x.createImageData(TILE_PX, TILE_PX);
+    for (let i = 0; i < TILE_PX * TILE_PX; i++) {
+      const v = (b[i * 2] << 8) | b[i * 2 + 1];
+      img.data.set([(v >> 11) * 255 / 31, ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31, 255], i * 4);
+    }
+    x.putImageData(img, 0, 0);
+    state.frameUrls[n] = c.toDataURL();
+  }
+  renderStudio(true);
+}
+setInterval(() => {   // GIF keys in the preview: every one on the same clock, as on the keypad
+  const now = Date.now();
+  document.querySelectorAll("img.tile[data-frames]").forEach((img) => {
+    const f = img.dataset.frames.split(","), url = state.frameUrls[f[Math.floor(now / +img.dataset.ms) % f.length]];
+    if (url && img.getAttribute("src") !== url) img.src = url;
+  });
+}, 40);
+
 function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
   if (!k) return `<div class="cell${sel}" data-k="${i}" role="button" tabindex="0" aria-label="Empty key ${i + 1}"><div class="well"></div></div>`;
   const host = (k.actions || []).some((a) => a.type === "host");
   const tag = host ? `<span class="tag pc">PC</span>` : k.hold_actions?.length ? `<span class="tag hold">HOLD</span>` : k.toggle ? `<span class="tag on">ON</span>` : "";
   const anim = k.anim ? `<span class="tag anim">${k.anim.toUpperCase()}</span>` : "";
-  const face = k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`;
+  const face = tileFace(k) || (k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`);
   const folder = (k.actions || []).length === 1 && k.actions[0].type === "page";   // drawn as a stack, like the keypad
   return `<div class="cell${sel}${folder ? " folder" : ""}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}${folder ? ` (folder: page ${k.actions[0].value})` : ""}">
     ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
@@ -164,6 +224,7 @@ function renderStudio(keepSide = false) {
   const p = prof(), page = pg();
   renderTop();
   renderChat();
+  loadTileUrls(p);
   const ed = editable();
   $("st-pages").innerHTML = p.pages.map((g, i) => `<button aria-pressed="${i === state.page}" data-stpg="${i}">${esc(g.name)}</button>`).join("") + (ed ? `<button data-addpage>${ico("plus")} Page</button>` : "");
   $("p-name").disabled = $("pg-name").disabled = !ed;
@@ -243,9 +304,12 @@ function renderSide() {
   if (!modes.some(([m]) => m === state.mode)) state.mode = "actions";
   side.innerHTML = `
     <div class="two"><label class="field"><span>Label</span><input id="k-name" value="${esc(k.name)}" maxlength="14"></label>
-      <div class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${k.icon ? kicon(k.icon, 36) : ""}</span></div></div>
+      <div class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${tileFace(k) || (k.icon ? kicon(k.icon, 36) : "")}</span></div></div>
     <div class="field"><span>Colour</span><div class="swatches">${TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${c.join() === k.led_color.join()}" data-sw="${c.join(",")}" aria-label="Colour ${c.join(",")}"></button>`).join("")}</div></div>
     <div class="field iconbox"><span>Icon · ${ICON_NAMES.length} built in</span><input id="ic-filter" placeholder="Search icons: play, mic, git, spotify…" value="${esc(state.iconFilter)}" aria-label="Search icons"><div class="icons" id="icons">${iconGrid(k)}</div></div>
+    <div class="field"><span>Image or GIF · plays on the key instead of the icon</span>
+      <div class="row"><button id="k-gif">${ico("image")} ${k.frames || k.tile ? "Replace…" : "Choose a GIF or image…"}</button>${k.frames || k.tile ? `<button class="ghost" id="k-gif-x">Remove</button>` : ""}<input type="file" id="k-gif-in" accept="image/gif,image/webp,image/png,image/jpeg" hidden></div>
+      <span class="hint" id="k-gif-msg">${k.frames ? `${k.frames.length} frames · ${k.frame_ms} ms each · ${Math.round(k.frames.length * 10.4)} KB on the keypad` : k.tile ? "A still image · 10 KB on the keypad" : "Up to 16 frames at 72 × 72. Each frame takes 10 KB of the keypad's 2 MB."}</span></div>
     <div class="two"><label class="field"><span>Animation</span><select id="k-anim">${ANIMS.map(([v, l]) => `<option value="${v}" ${(k.anim || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="check" style="padding-bottom:8px"><input type="checkbox" id="k-toggle" ${k.toggle ? "checked" : ""}> Toggle</label></div>
     <p class="hint">${k.toggle ? "A toggle remembers on and off and shows ON. Without “Turning off” actions it runs the same actions both ways." : "Animations play on the keypad: the equalizer while media plays, pulse or blink on toggles."}</p>
@@ -256,6 +320,24 @@ function renderSide() {
   renderActs(curList());
   $("k-name").oninput = (e) => { k.name = e.target.value; changed(["title"], true); };
   $("ic-filter").oninput = (e) => { state.iconFilter = e.target.value; $("icons").innerHTML = iconGrid(k); };
+  $("k-gif").onclick = () => $("k-gif-in").click();
+  $("k-gif-in").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const msg = $("k-gif-msg");
+    msg.textContent = "Reading the frames…";
+    try {
+      const { frames, frame_ms } = await gifToFrames(file);
+      msg.textContent = `Sending ${frames.length} frame${frames.length > 1 ? "s" : ""} to the keypad…`;
+      const r = await api.putTiles(frames.map((f) => f.rgba));
+      if (!r.ok) { msg.textContent = r.error; return; }
+      r.names.forEach((n, i) => { state.frameUrls[n] = frames[i].url; });
+      if (r.names.length > 1) { k.frames = r.names; k.frame_ms = frame_ms; delete k.tile; }
+      else { k.tile = r.names[0]; delete k.frames; delete k.frame_ms; }
+      changed(["structure"]);
+    } catch (err) { msg.textContent = `Could not read that image: ${err.message}`; }
+  };
+  if ($("k-gif-x")) $("k-gif-x").onclick = () => { delete k.frames; delete k.frame_ms; delete k.tile; changed(["structure"]); };
   $("k-anim").onchange = (e) => { if (e.target.value) k.anim = e.target.value; else delete k.anim; changed(["structure"]); };
   $("k-toggle").onchange = (e) => { if (e.target.checked) k.toggle = true; else { delete k.toggle; delete k.off_actions; } changed(["structure"]); };
   $("k-add").onchange = onAdd;
@@ -728,7 +810,8 @@ api.onEvent(({ type, data }) => {
   renderStudio();
   if (state.conn.view) showView(state.conn.view);
   if (state.conn.connected) {
-    await loadSlot(state.conn.activeSlot || 1);
+    state.slot = state.conn.activeSlot || 1;   // open what the keypad shows (and let peekSlots read slot 1)
+    await loadSlot(state.slot);
     const look = await api.lookState();
     if (look && look.theme) { state.theme = look.theme; renderStudio(); }
     peekSlots();

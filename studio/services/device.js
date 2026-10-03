@@ -217,6 +217,18 @@ class Device extends EventEmitter {
     return name;
   }
 
+  // A GIF's frames (RGBA each): one space check, then each frame as a tile (repeated frames share one).
+  async putTiles(list) {
+    if (this.link.isOpen()) {
+      const info = await this.fsinfo();
+      const need = new Set(list.map((rgba) => tiles.tileName(tiles.rgbaToRgb565(Buffer.from(rgba))))).size * tiles.TILE_BYTES;
+      if (info && info.total - info.used - need < FS_RESERVE) return { ok: false, error: `The keypad has ${Math.round((info.total - info.used) / 1024)} KB free; these frames need ${Math.round(need / 1024)} KB.` };
+    }
+    const names = [];
+    for (const rgba of list) names.push(await this.putTile(rgba));
+    return { ok: true, names };
+  }
+
   _tileBytes(name) {
     if (this.tileCache.has(name)) return this.tileCache.get(name);
     if (!this.tileDir) return null;
@@ -237,7 +249,7 @@ class Device extends EventEmitter {
   async syncTiles(profile) {
     this.deviceTiles = tiles.parseTileList(await this.link.command("ls /t"));
     const need = new Set();
-    for (const pg of profile.pages) for (const k of pg.keys) if (k && k.tile && !this.deviceTiles.has(k.tile)) need.add(k.tile);
+    for (const pg of profile.pages) for (const k of pg.keys) for (const t of k ? [k.tile, ...(k.frames || [])] : []) if (t && !this.deviceTiles.has(t)) need.add(t);
     const missing = [...need].filter((n) => this._tileBytes(n));
     if (need.size > missing.length) this.emit("log", `${need.size - missing.length} tile(s) are neither on the device nor cached here; they will show blank.\n`);
     if (!missing.length) return { ok: true, uploaded: 0 };

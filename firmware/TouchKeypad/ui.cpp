@@ -69,7 +69,7 @@ enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL };
 static Mode mode = M_HOME;
 static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal" };
 
-struct CellAnim { uint32_t pop0, ring0; uint8_t ring; };   // ring: 0 none, 1 ok, 2 alert
+struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen
 static CellAnim ca[NUM_CELLS];
 static int pressed = -1, released = -1;
 static uint32_t press0 = 0, release0 = 0;
@@ -351,20 +351,29 @@ static void keyWell(const Theme &th, float x, float y, float sz, float r, int A)
 // ---------------------------------------------------------------- keys
 // Custom tile images, kept decoded for the last few keys drawn so an animation
 // does not read flash every frame (a read also stalls the UART interrupt).
-static struct { char crc[9]; uint16_t *img; uint32_t used; } tileCache[3];
+// Tiles (and GIF frames) are read from flash on a miss: about 31 ms for 10 KB, so keep four.
+#define TILE_CACHE 4
+static struct { char crc[9]; uint16_t *img; uint32_t used; } tileCache[TILE_CACHE];
+static int tileLoads = 0;   // flash reads this frame (uiTick resets it): GIF keys take turns
+
+static bool tileCached(const char *crc) {
+  for (auto &t : tileCache) if (t.img && !strncmp(t.crc, crc, 8)) return true;
+  return false;
+}
 
 static const uint16_t *tileImage(const char *crc) {
   int slot = 0;
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < TILE_CACHE; i++) {
     if (tileCache[i].img && !strncmp(tileCache[i].crc, crc, 8)) { tileCache[i].used = millis(); return tileCache[i].img; }
     if (tileCache[i].used < tileCache[slot].used) slot = i;
   }
   char path[24];
   snprintf(path, sizeof path, "/t/%.8s.565", crc);
-  if (!LittleFS.exists(path)) return nullptr;
+  File f = LittleFS.open(path, "r");   // no exists() first: that alone is another 15 ms
+  if (!f) return nullptr;
+  tileLoads++;
   auto &t = tileCache[slot];
   if (!t.img) t.img = (uint16_t *)malloc(TILE_PX * TILE_PX * 2);
-  File f = LittleFS.open(path, "r");
   bool ok = t.img && f && f.read((uint8_t *)t.img, TILE_PX * TILE_PX * 2) == TILE_PX * TILE_PX * 2;
   f.close();
   if (!ok) { t.crc[0] = 0; return nullptr; }
@@ -397,6 +406,15 @@ static bool cellAnimating(int c, uint32_t now) {
   if (!strcmp(anim, "eq")) return np.playing;
   if (!strcmp(anim, "pulse")) return !on;
   return false;
+}
+
+// An animated key (a GIF from Studio): "frames" lists tiles, shown in turn for "frame_ms" each.
+// -1 for a key without frames. Every key on the page runs on the same clock.
+static int frameIndex(JsonVariant k, uint32_t now) {
+  JsonArray fr = k["frames"].as<JsonArray>();
+  if (fr.size() < 2) return -1;
+  uint32_t ms = constrain(k["frame_ms"] | 100, 40, 2000);
+  return (now / ms) % fr.size();
 }
 
 // A folder: a key whose only action opens another page. It is drawn as a stack.
@@ -457,7 +475,12 @@ static void drawCell(int c, uint32_t now) {
     }
     C3 gc = (!strcmp(anim, "rec") && on && (now / 600) % 2) ? (th.ks == KS_PIXEL ? th.track : RED) : ink;
     const char *icon = k["icon"] | "", *tile = k["tile"] | "";
-    if (*icon && iconFind(icon, false)) {   // native size: no resampling per frame
+    int fi = frameIndex(k, now);
+    // One flash read per frame for all GIF keys: a key whose next frame isn't cached keeps its
+    // last one this frame (still cached) and gets its turn on the next.
+    if (fi >= 0 && fi != ca[c].frame && ca[c].frame >= 0 && tileLoads > 0 && !tileCached(k["frames"][fi] | "")) fi = ca[c].frame;
+    if (fi >= 0 && drawTile(k["frames"][fi] | "", x, y + sink, sz, A)) ca[c].frame = fi;   // a frame missing on the keypad falls back to the icon
+    else if (*icon && iconFind(icon, false)) {   // native size: no resampling per frame
       if (drop) glyphLit(icon, false, roundf(mx), roundf(my), 36, gc, sh, A);
       else glyph(iconFind(icon, false), false, roundf(mx), roundf(my), 36, gc, A);
     }
@@ -1076,6 +1099,8 @@ static bool animate(uint32_t now) {
       if (released == c) { if (now - release0 < 280) m = true; else released = -1; }
       if (cellAnimating(c, now)) m = true;
       JsonVariant k = keyAt(c);
+      int fi = k.isNull() || dimState == 2 ? -1 : frameIndex(k, now);   // a dark screen doesn't play GIFs
+      if (fi >= 0 && fi != ca[c].frame) m = true;   // redraw on a new frame only: each one is a tile read
       if (!k.isNull() && !strcmp(k["anim"] | "", "rec") && (k["toggle"] | false) && toggled(c)) {
         static uint32_t lastPhase = 0;
         if (now / 600 != lastPhase) { m = true; lastPhase = now / 600; }
@@ -1158,6 +1183,7 @@ void uiTick() {
     else if (dimState == 2 && !usb && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
   }
   if (now - lastFrame < 16) return;
+  tileLoads = 0;
   bool live = animate(now);
   if (!dmgN) { lastFrame = now; return; }
   uint32_t t0 = micros();
@@ -1198,6 +1224,24 @@ void uiRenderBench() {
   run("status", 0, 0, 480, 18, [] { drawStatus(); });
   run("sheet", 0, 120, 480, 18, [] { int m = mode; mode = M_SHEET; sheetClosing = false; sheet0 = 0; drawSheet(STATUS_H); mode = (Mode)m; });
   run("player", 0, 200, 480, 18, [&] { drawPlayer(now); });
+  // A GIF key's frame change: a tile from flash (cache miss), then the blit.
+  File dir = LittleFS.open("/t");
+  File f0 = dir.openNextFile();
+  String nm = f0 ? String(f0.name()) : String();
+  if (f0) f0.close();
+  dir.close();
+  uint8_t *b = nm.length() ? (uint8_t *)malloc(TILE_PX * TILE_PX * 2) : nullptr;
+  if (b) {
+    String path = "/t/" + nm;
+    t = micros();
+    for (int i = 0; i < 10; i++) LittleFS.exists(path);
+    Con.printf("rbench %-10s %5u us\n", "t.exists", (unsigned)((micros() - t) / 10));
+    t = micros();
+    for (int i = 0; i < 10; i++) { File f = LittleFS.open(path, "r"); f.read(b, TILE_PX * TILE_PX * 2); f.close(); }
+    Con.printf("rbench %-10s %5u us\n", "t.read", (unsigned)((micros() - t) / 10));
+    run("t.blit", 0, 30, 96, 90, [&] { blitImage((const uint16_t *)b, TILE_PX, TILE_PX, 15, 34, 66, 66, KEY_R, 255); });
+    free(b);
+  }
 }
 
 void uiPerf(bool reset) {

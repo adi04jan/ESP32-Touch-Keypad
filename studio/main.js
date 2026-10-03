@@ -264,6 +264,8 @@ ipcMain.handle("contexts:list", () => {
 });
 ipcMain.handle("autogen:run", (_e, force) => autogen.run(!!force));
 ipcMain.handle("chat:send", (_e, req) => chat.chatTurn(req));
+ipcMain.handle("tiles:put", (_e, list) => device.putTiles(list));
+ipcMain.handle("tile:get", (_e, name) => device._tileBytes(String(name)) || null);   // RGB565 for the preview
 ipcMain.handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
 
 ipcMain.handle("dialog:import", async () => {

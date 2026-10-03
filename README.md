@@ -38,16 +38,16 @@ python tools/kp.py build --release && cd studio && npm run dist   # installer wi
 
 Studio's editor shows the keypad's screen in its current theme; keys edit live (Ctrl+Z undoes, Ctrl+C / Ctrl+V copy keys, arrows move). It tells you when the keypad needs calibrating or has older firmware than Studio bundles, and its Device view installs that firmware over USB (profiles, pairings and calibration are kept). Without a keypad Studio only previews: profiles live on the keypad.
 
-Studio follows the app in front: each mapped app (VS Code, Chrome, Slack, Terminal, Signal, Claude, File Explorer, Notepad++, Bruno, from `tools/profiles/app_profiles.py`) switches the keypad to its profile. A folder key (its only action opens another page) is drawn as a stack of cards; VS Code's page 1 has a Git folder with Pull, Push, Commit, Stash and the rest. In the editor, **Ask Claude** (under the preview) organizes, creates and edits the open profile from a plain request ("put the Git keys in a folder"); each change is undoable and the keypad follows. For any other app, tap the profile name on the keypad, then **Generate**. Studio asks Claude (through Claude Code on this PC) for that app's shortcuts and loads the result; the next tap reuses it.
+Studio follows the app in front: each mapped app (VS Code, Chrome, Slack, Terminal, Signal, Claude, File Explorer, Notepad++, Bruno, from `tools/profiles/app_profiles.py`) switches the keypad to its profile. A key can show a still image or play a GIF: in the editor choose **Choose a GIF or image…**; Studio decodes it (up to 16 frames at 72 × 72) and the keypad plays it, about 10 KB per frame. A folder key (its only action opens another page) is drawn as a stack of cards; VS Code's page 1 has a Git folder with Pull, Push, Commit, Stash and the rest. In the editor, **Ask Claude** (under the preview) organizes, creates and edits the open profile from a plain request ("put the Git keys in a folder"); each change is undoable and the keypad follows. For any other app, tap the profile name on the keypad, then **Generate**. Studio asks Claude (through Claude Code on this PC) for that app's shortcuts and loads the result; the next tap reuses it.
 
 Studio connects over USB or, with no cable, over Bluetooth to a keypad paired with this PC (the keypad's console on a Nordic UART service, through `native/KpLink`). Everything works over Bluetooth except installing firmware, which needs the cable. The Device view shows USB or battery and the charge, and sets how long the keypad waits on battery before it sleeps.
 
 ## Tests, from fastest to fullest
 
 ```
-cd studio && npm test                # 58 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
+cd studio && npm test                # 60 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
 cd studio && npm run smoke           # Electron boots and draws the glass preview with all icons
-python -m pytest tools/tests -v      # 59 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power, quick switch, Generate, folders
+python -m pytest tools/tests -v      # 60 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power, quick switch, Generate, folders, GIF keys
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
 python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): media keys read from Windows' HID stack, types, toggles, host action through Studio, Play/Pause

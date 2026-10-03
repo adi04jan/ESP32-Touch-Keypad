@@ -33,7 +33,9 @@ contextBridge.exposeInMainWorld("api", {
   contexts: call("contexts:list"),
   autogen: call("autogen:run"),              // (force) — the app in front gets a profile
   autogenState: call("autogen:state"),
-  chat: call("chat:send"),                   // ({history, message, profile, slot, slots}) -> {reply, profile|null, error?}
+  chat: call("chat:send"),
+  putTiles: call("tiles:put"),               // ([RGBA 72x72]) -> {ok, names} | {ok:false, error}
+  getTile: call("tile:get"),                 // (name) -> RGB565 big-endian bytes or null                   // ({history, message, profile, slot, slots}) -> {reply, profile|null, error?}
   importProfile: call("dialog:import"),
   exportProfile: call("dialog:export"),
   flashInfo: call("flash:info"),

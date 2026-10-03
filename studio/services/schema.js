@@ -12,6 +12,7 @@ const MAX_REPEAT_DEPTH = 4;
 const NUM_PROFILES = 16;
 const COLS = 5, ROWS = 3, CELLS = COLS * ROWS;
 const MAX_LABEL = 14;
+const MAX_FRAMES = 16;            // a GIF key: each frame is a 10 KB tile on the keypad
 const HOST_SLOTS = 48;
 const MAX_UPLOAD_BYTES = 64 * 1024;
 const AXIS_MIN = -127, AXIS_MAX = 127;
@@ -305,6 +306,9 @@ function validateProfile(p) {
       } else {
         if (!isRgb(k.led_color)) e.push(`${kp}.led_color must be [r,g,b]`);
         if (k.tile !== undefined && !/^[0-9a-f]{8}$/.test(k.tile)) e.push(`${kp}.tile must be 8 lowercase hex chars`);
+        if (k.frames !== undefined && (!Array.isArray(k.frames) || k.frames.length < 2 || k.frames.length > MAX_FRAMES || !k.frames.every((f) => /^[0-9a-f]{8}$/.test(f))))
+          e.push(`${kp}.frames must be 2 to ${MAX_FRAMES} tile names (8 lowercase hex chars)`);
+        if (k.frame_ms !== undefined && (!Number.isInteger(k.frame_ms) || k.frame_ms < 40 || k.frame_ms > 2000)) e.push(`${kp}.frame_ms must be 40 to 2000`);
       }
       for (const field of ["actions", "hold_actions", "off_actions"]) {
         if (field !== "actions" && k[field] === undefined) continue;
@@ -331,6 +335,8 @@ function repairKey(k, i) {
     if (typeof k.icon === "string" && k.icon) out.icon = k.icon;
     out.led_color = fixRgb(k.led_color ?? k.glow) || [110, 100, 92];
     if (typeof k.tile === "string" && /^[0-9a-fA-F]{8}$/.test(k.tile)) out.tile = k.tile.toLowerCase();
+    const frames = Array.isArray(k.frames) ? k.frames.filter((f) => typeof f === "string" && /^[0-9a-fA-F]{8}$/.test(f)).map((f) => f.toLowerCase()).slice(0, MAX_FRAMES) : [];
+    if (frames.length >= 2) { out.frames = frames; out.frame_ms = clampInt(k.frame_ms, 40, 2000, 100); }
     if (ANIMS.includes(k.anim)) out.anim = k.anim;
     if (k.toggle === true) out.toggle = true;
   }
@@ -409,7 +415,7 @@ function hostActions(p) {
 }
 
 module.exports = {
-  SCHEMA_VERSION, MAX_TEXT_LEN, MAX_REPEAT_COUNT, NUM_PROFILES, COLS, ROWS, CELLS, MAX_LABEL,
+  SCHEMA_VERSION, MAX_TEXT_LEN, MAX_REPEAT_COUNT, NUM_PROFILES, COLS, ROWS, CELLS, MAX_LABEL, MAX_FRAMES,
   HOST_SLOTS, MAX_UPLOAD_BYTES, WIDGETS, ANIMS,
   KEY_NAMES, MODIFIER_NAMES, KEY_AND_MODIFIER, MEDIA_NAMES, TELEPHONY_NAMES,
   MOUSE_BUTTONS, LED_ANIM_VALUES, ACTION_TYPES, ALIASES,

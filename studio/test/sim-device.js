@@ -64,9 +64,11 @@ class SimDevice extends EventEmitter {
   }
   _gcTiles() {
     const used = new Set();
-    for (const [name, buf] of this.files) {
-      if (!/^\/profile\d\.json$/.test(name)) continue;
-      for (const m of buf.toString("utf8").matchAll(/"tile"\s*:\s*"([0-9a-f]{8})"/g)) used.add(m[1]);
+    for (const [name, buf] of this.files) {   // like the firmware: tiles named by any key's tile or frames, in all 16 profiles
+      if (!/^\/profile\d+\.json$/.test(name)) continue;
+      let p;
+      try { p = JSON.parse(buf.toString("utf8")); } catch (_) { return; }   // unreadable: delete nothing
+      for (const pg of p.pages || []) for (const k of pg.keys || []) if (k) for (const t of [k.tile, ...(k.frames || [])]) if (t) used.add(t);
     }
     for (const name of [...this.files.keys()]) {
       const m = name.match(/^\/t\/([0-9a-f]{8})\.565$/);

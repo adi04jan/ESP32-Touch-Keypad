@@ -653,3 +653,34 @@ def test_folder_key_is_drawn_as_a_stack(d):
     card = img.getpixel((fx + 69, fy + 30))              # just right of the key: the next card of the stack
     ground = img.getpixel((nx + 69, ny + 30))            # the same spot beside a plain key: the ground
     assert sum(abs(a - b) for a, b in zip(card, ground)) > 30, (card, ground)
+
+
+def solid_tile(rgb565):
+    return rgb565.to_bytes(2, "big") * (TILE_W * TILE_W)
+
+
+def test_gif_key_plays_its_frames(dev):
+    """A key with frames (a GIF from Studio) cycles its tiles on the keypad's clock."""
+    red, blue = solid_tile(0xF800), solid_tile(0x001F)
+    names = [f"{zlib.crc32(t):08x}" for t in (red, blue)]
+    for n, t in zip(names, (red, blue)):
+        assert any(l.startswith("SAVED") for l in dev.upload_bin(f"/t/{n}.565", t))
+    keys = [None] * 15
+    keys[0] = key(1, "GIF", [{"type": "key", "value": "F13"}], frames=names, frame_ms=250)
+    prof = {"schema_version": 2, "profile_name": "GIF", "color": [79, 140, 255], "default_delay": 5, "pages": [{"name": "One", "keys": keys}]}
+    assert any(l.startswith("SAVED") for l in dev.upload_text("profile15.json", json.dumps(prof, indent=1)))
+    try:
+        dev.ok("setprofile 15")
+        time.sleep(0.8)
+        x, y = key_box(1)
+        seen = set()
+        for _ in range(8):                               # 2 frames x 250 ms: both show within a second or two
+            r, g, b = dev.shot().getpixel((x + 33, y + 33))
+            seen.add("red" if r > 150 and b < 100 else "blue" if b > 150 and r < 100 else "other")
+            time.sleep(0.2)
+        assert {"red", "blue"} <= seen, seen
+    finally:
+        dev.ok(f"setprofile {SLOT}")
+        dev.cmd("rm /profile15.json")
+        for n in names:
+            dev.cmd(f"rm /t/{n}.565")
