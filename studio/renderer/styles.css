@@ -194,6 +194,7 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .key::before { content: ""; position: absolute; inset: 1px 1px 52% 1px; border-radius: 18px 18px 9px 9px; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0)); pointer-events: none; }
 .dev .key > svg { position: relative; width: 36px; height: 36px; filter: drop-shadow(0 1px 2px color-mix(in oklab, var(--t) 60%, #000)); }
 .dev .key .ini { position: relative; font: 700 19px var(--body); }
+.icon-motion .icon-gif { width: 72px; height: 72px; border-radius: 14px; box-shadow: 0 0 0 1px var(--hair-2); }
 .dev .key img.tile { position: absolute; inset: 0; width: 66px; height: 66px; border-radius: 19px; object-fit: cover; }
 .dev[data-theme="retro"] .key img.tile { border-radius: 3px; image-rendering: pixelated; }
 

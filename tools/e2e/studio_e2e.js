@@ -154,6 +154,7 @@ test(`Editor: create a key in empty slot ${SLOT}; autosave writes it to the keyp
   await click('[data-del="0"]');                      // drop the default F13 action, keep the text action
   await setInput('[data-af="0"]', "e2e-studio-ok ");
   await click('[data-ic="rocket"]');
+  await until("the icon's moving GIF in the inspector", async () => run(() => { const g = document.querySelector("#st-side img.icon-gif"); return g && g.complete && g.naturalWidth === 72 && /rocket\.gif$/.test(g.src); }), 5000, 200);
   const k = await until("key written to the keypad", async () => { const k = await keyOf(0, 0); return k && k.name === "E2E key" && k.icon === "rocket" && k; }, 12000, 500);
   if (k.actions.length !== 1 || k.actions[0].value !== "e2e-studio-ok ") throw new Error(JSON.stringify(k));
   await until("slot strip no longer says Empty", async () => !(await text("#st-slots")).includes(`${SLOT} · Empty`), 5000);
