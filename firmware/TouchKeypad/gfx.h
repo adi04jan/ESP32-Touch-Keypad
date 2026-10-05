@@ -70,7 +70,11 @@ void glyphLit(const char *name, bool ui, float cx, float cy, float size, C3 c, C
 int iconAnimFrames(const IconDef *ic);
 extern const int ICON_ANIM_MS;
 void glyphFrame(const IconDef *ic, int frame, float cx, float cy, C3 c, int alpha = 255);
-void iconAnimRelease();   // nothing is playing: free the inflated animations
+// A key starting an icon animation acquires it (inflated once, shared, within a RAM budget: false
+// when there is no room yet) and releases it when it ends.
+bool iconAnimAcquire(const IconDef *ic);
+void iconAnimRelease(const IconDef *ic);
+void iconAnimReleaseAll();   // nothing is playing: free whatever is left
 void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha = 255);
 
 // ---- text

@@ -775,8 +775,9 @@ def after_ring_frames(d, cell):
 
 
 def test_icon_animations_play_on_fire_and_take_turns(d):
-    """A fired key's icon acts out its key (copy pulls a second sheet out of the first) and idle keys
-    take turns; each redraw fits a frame, the inflated frames are freed after; off, icons stay still."""
+    """A fired key's icon acts out its key (copy pulls a second sheet out of the first); idle keys play
+    a few at a time, and a wave runs across the page; each redraw fits a frame, the inflated frames
+    are freed after; off, icons stay still."""
     heap = lambda: int(re.search(r"free:(\d+)", d.cmd("heap")[0]).group(1))
     time.sleep(0.8)
     rest = heap()
@@ -785,7 +786,10 @@ def test_icon_animations_play_on_fire_and_take_turns(d):
         assert d.cmd("iconanim on") == ["iconanim on"]
         assert after_ring_frames(d, 1) >= 4                                 # on: copy's sheets are still moving
         frames, rate, worst = fps(d, lambda: None, wait=3.5)
-        assert frames >= 20 and worst <= 20, (frames, rate, worst)          # idle keys take turns; each redraw fits a frame
+        assert frames >= 40 and worst <= 20, (frames, rate, worst)          # a few idle keys at a time; each redraw fits a frame
+        assert d.cmd("iconanim wave") == ["iconanim on"]
+        frames, rate, worst = fps(d, lambda: None, wait=3.0)
+        assert frames >= 60 and worst <= 20, (frames, rate, worst)          # a wave across the page, still inside each frame
         frames, rate, _ = fps(d, lambda: d.touch(*cell_xy(2), 700))
         assert rate >= FPS_FLOOR, rate                                      # and a press still runs at full speed
     finally:

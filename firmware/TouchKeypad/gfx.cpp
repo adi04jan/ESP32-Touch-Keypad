@@ -365,31 +365,50 @@ int iconAnimFrames(const IconDef *ic) {
   return ic && ic >= ICONS && ic < ICONS + ICON_COUNT ? ANIMS[ic - ICONS].frames : 0;
 }
 
-// An icon's animation inflated (ROM tinfl), kept while it plays: the two latest icons, as a fired
-// key and an idle turn can overlap. nullptr when the heap can't spare it (the icon stays still).
-static struct { const IconDef *ic; uint8_t *runs; } inflated[2];
-static uint8_t inflatedNext;
+// Icon animations inflated (ROM tinfl) while keys play them: one copy per icon however many keys
+// show it, counted by the keys using it, inside a RAM budget so a wave never starves Bluetooth.
+#define ANIM_SLOTS 12
+#define ANIM_BUDGET (36 * 1024)       // inflated bytes at once
+#define ANIM_HEAP_FLOOR (24 * 1024)   // and this much heap left free after the inflate's ~11 KB (a page of image keys has ~54 KB)
+static struct { const IconDef *ic; uint8_t *runs; uint16_t size, refs; } inflated[ANIM_SLOTS];
+static uint32_t inflatedBytes;
 static const uint8_t *animRuns(const IconDef *ic) {
   for (auto &s : inflated) if (s.ic == ic) return s.runs;
-  const AnimDef &a = ANIMS[ic - ICONS];
-  auto &s = inflated[inflatedNext ^= 1];   // replace the older of the two
-  free(s.runs);
-  s.ic = nullptr;
-  s.runs = (uint8_t *)malloc(a.raw);
-  tinfl_decompressor *d = (tinfl_decompressor *)malloc(sizeof(tinfl_decompressor));   // ~11 KB, only while inflating
-  size_t in = a.z, out = a.raw;
-  bool ok = s.runs && d;
-  if (ok) {
-    tinfl_init(d);
-    ok = tinfl_decompress(d, ANIM_DATA + a.off, &in, s.runs, s.runs, &out, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) == TINFL_STATUS_DONE && out == a.raw;
-  }
-  free(d);
-  if (!ok) { free(s.runs); s.runs = nullptr; return nullptr; }
-  s.ic = ic;
-  return s.runs;
+  return nullptr;
 }
-void iconAnimRelease() {
-  for (auto &s : inflated) { free(s.runs); s.runs = nullptr; s.ic = nullptr; }
+bool iconAnimAcquire(const IconDef *ic) {
+  if (!iconAnimFrames(ic)) return false;
+  for (auto &s : inflated) if (s.ic == ic) { s.refs++; return true; }
+  const AnimDef &a = ANIMS[ic - ICONS];
+  if (inflatedBytes + a.raw > ANIM_BUDGET || ESP.getFreeHeap() < ANIM_HEAP_FLOOR + a.raw + sizeof(tinfl_decompressor)) return false;
+  for (auto &s : inflated) {
+    if (s.ic) continue;
+    uint8_t *runs = (uint8_t *)malloc(a.raw);
+    tinfl_decompressor *d = runs ? (tinfl_decompressor *)malloc(sizeof(tinfl_decompressor)) : nullptr;   // only while inflating
+    size_t in = a.z, out = a.raw;
+    bool ok = d;
+    if (ok) {
+      tinfl_init(d);
+      ok = tinfl_decompress(d, ANIM_DATA + a.off, &in, runs, runs, &out, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) == TINFL_STATUS_DONE && out == a.raw;
+    }
+    free(d);
+    if (!ok) { free(runs); return false; }
+    s.ic = ic;
+    s.runs = runs;
+    s.size = a.raw;
+    s.refs = 1;
+    inflatedBytes += a.raw;
+    return true;
+  }
+  return false;   // every slot taken
+}
+void iconAnimRelease(const IconDef *ic) {
+  for (auto &s : inflated)
+    if (s.ic == ic && s.refs && !--s.refs) { free(s.runs); inflatedBytes -= s.size; s.ic = nullptr; s.runs = nullptr; }
+}
+void iconAnimReleaseAll() {
+  for (auto &s : inflated) { free(s.runs); s.ic = nullptr; s.runs = nullptr; s.refs = 0; }
+  inflatedBytes = 0;
 }
 
 // Frame k of a key icon's animation: its resting mask with the frame's changed runs written over

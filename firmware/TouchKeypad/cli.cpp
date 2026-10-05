@@ -377,7 +377,7 @@ static bool runCommand(char *s) {
     if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Con.println("traw <rx> <ry> [ms]");
     else { touchInjectRaw(a, b, e); return false; }
   } else if (cmd == "perf") {
-    uiPerf(!strcmp(arg, "reset"));
+    if (!strcmp(arg, "log")) uiPerfLog(); else uiPerf(!strcmp(arg, "reset"));
   } else if (cmd == "rbench") {
     uiRenderBench();
     uiMarkAll();
@@ -408,7 +408,8 @@ static bool runCommand(char *s) {
       Con.printf("theme %s\n", uiThemeId(t));
     }
   } else if (cmd == "iconanim") {
-    if (*arg) uiSetIconMotion(!strcmp(arg, "on"));
+    if (!strcmp(arg, "wave")) uiIconWave();
+    else if (*arg) uiSetIconMotion(!strcmp(arg, "on"));
     Con.printf("iconanim %s\n", uiIconMotion() ? "on" : "off");
   } else if (cmd == "click") {
     if (*arg) feedbackSetClick(!strcmp(arg, "on"));

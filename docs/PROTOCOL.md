@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.7.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.8.0.
 
 ## Transport
 
@@ -45,7 +45,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
 | `theme [id\|title\|1-6\|default]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; `default` forgets the saved theme (Daylight); an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
 | `power [sim battery\|usb\|off \| sleep <min> \| divider <k>]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests), the battery divider (NVS `kp/batk`, a calibration knob), CPU MHz, screen lit/dim/off |
-| `iconanim [on\|off]` | `iconanim on\|off` | moving icons: every key icon has a signature animation that acts out its key (copy pulls a second sheet out of the first, a bell rings, wifi lights its arcs from the dot, a check draws itself), played when the key fires; while idle, one key at a time takes a turn every 1.6 s; none while the screen is dim. Off, icons never move. NVS `kp/ianim`, on by default |
+| `iconanim [on\|off]` | `iconanim on\|off` | moving icons: every key icon has a signature animation that acts out its key (copy pulls a second sheet out of the first, a bell rings, wifi lights its arcs from the dot, a check draws itself), played when the key fires; while idle, a few keys play at once (a new one every 0.5 s, three at most) and every 20-30 s a wave runs across the grid diagonal by diagonal (six keys at once at most); none while the screen is dim. `iconanim wave` runs a wave now. Off, icons never move. NVS `kp/ianim`, on by default |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
 | `ble use <n>` | `using <n>` or `ERR no host <n>` | drop the current link and advertise only to bond n |

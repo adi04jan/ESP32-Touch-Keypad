@@ -69,7 +69,7 @@ enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL, M_SHADE, M_MENU };   // sh
 static Mode mode = M_HOME;
 static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal", "shade", "menu" };
 
-struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t sig0; int16_t sig; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen
+struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t sig0; int16_t sig; const IconDef *sigIc; uint32_t waveAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen, sigIc the icon it holds; waveAt: its turn in a wave
 static CellAnim ca[NUM_CELLS];
 static int pressed = -1, released = -1;
 static uint32_t press0 = 0, release0 = 0;
@@ -137,6 +137,8 @@ static const int16_t CAL_PT[4][2] = { { 36, 36 }, { 444, 36 }, { 444, 284 }, { 3
 #define CAL_VY 236
 
 static struct { uint32_t frames, sumUs, maxUs, sumGap, gaps, lastAnim; } perf;
+static struct { uint32_t at, us, px; } perfLog[24];   // the latest animated frames, for `perf log`
+static uint8_t perfLogN;
 
 // ---------------------------------------------------------------- damage
 struct Rect { int16_t x, y, w, h; };
@@ -159,6 +161,8 @@ static void mark(int x, int y, int w, int h) {
 }
 static void markCellRect(int c) { mark(cellX(c), cellY(c), CELL_W, CELL_H); }
 static void markScreen() { dmgN = 1; dmg[0] = { 0, 0, SCR_W, SCR_H }; }
+static uint32_t dmgPx() { uint32_t px = 0; for (int i = 0; i < dmgN; i++) px += dmg[i].w * dmg[i].h; return px; }
+#define FRAME_PX 30000   // dirty pixels a frame takes icon frames up to (~0.45 us a pixel: inside 16 ms)
 
 // ---------------------------------------------------------------- helpers
 static JsonVariant keyAt(int c) { return pageDoc["keys"][c]; }
@@ -422,14 +426,22 @@ static bool cellAnimating(int c, uint32_t now) {
 // ---------------------------------------------------------------- icon animations
 // Every key icon has a signature animation (tools/icons/anim_designs.js): copy pulls a second
 // sheet out of the first, a bell rings, wifi lights its arcs from the dot. A key plays it when it
-// fires, so the icon names what just happened; while the screen is idle one key at a time takes a
-// turn, so the page feels alive without fifteen things moving at once. "Moving icons" (`iconanim`)
-// off keeps every icon still.
+// fires, so the icon names what just happened. While the screen is idle a few keys play at once,
+// a new one every half-second, and every 20-30 s a wave ripples across the grid from the top-left
+// corner, diagonal by diagonal, like the page's pop-in. "Moving icons" (`iconanim`) off keeps every
+// icon still. Each playing key holds its icon's inflated frames (gfx: shared, within a RAM budget).
 static bool iconMotion = true;
-#define TURN_MS 1600   // an idle key starts its animation this often
+#define TURN_MS 500        // an idle key starts its animation this often
+#define TURN_MAX 3         // with at most this many playing
+#define WAVE_MIN 20000     // a wave every 20-30 s
+#define WAVE_SPAN 10000
+#define WAVE_STEP 110      // the wave's step from one diagonal to the next
+#define WAVE_MAX_MS 6000   // keys still waiting for room by then sit this wave out
+#define WAVE_PLAYING 6     // at most this many keys playing at once in a wave: each frame stays in budget
 static const uint8_t TURN_ORDER[NUM_CELLS] = { 6, 0, 13, 3, 10, 8, 1, 14, 5, 11, 2, 9, 4, 12, 7 };   // scattered over the grid
-static uint32_t nextTurn;
+static uint32_t nextTurn, nextWave, wave0;
 static uint8_t turnAt;
+static bool waveOn;
 
 // Key c's icon when it has an animation to play (a GIF key shows its frames instead).
 static const IconDef *animIcon(int c) {
@@ -443,21 +455,74 @@ static int iconFrame(int c, uint32_t now) {
   if (!ca[c].sig0) return -1;
   int32_t dt = now - ca[c].sig0;   // signed: sig0 is now | 1, a millisecond ahead half the time
   int f = dt < 0 ? 0 : dt / ICON_ANIM_MS;
-  return f < iconAnimFrames(animIcon(c)) ? f : -1;
+  return f < iconAnimFrames(ca[c].sigIc) ? f : -1;
 }
-static void playIcon(int c, uint32_t now) {
-  if (!iconMotion || !animIcon(c)) return;
-  ca[c].sig0 = now | 1;
+static void stopIcon(int c) {   // back to rest, its frames let go
+  if (!ca[c].sig0) return;
+  iconAnimRelease(ca[c].sigIc);
+  ca[c].sig0 = 0;
+  ca[c].sigIc = nullptr;
+  if (ca[c].sig >= 0) markCellRect(c);
   ca[c].sig = -1;
 }
-// While idle, the next key in TURN_ORDER with an animated icon takes its turn.
+static void stopIcons() {
+  for (int c = 0; c < NUM_CELLS; c++) { stopIcon(c); ca[c].waveAt = 0; }
+  waveOn = false;
+}
+// Start key c's animation: false when it has none, or no room yet. A fired key is feedback, so
+// it makes room by stopping the idle ones.
+static bool playIcon(int c, uint32_t now, bool fired = false) {
+  const IconDef *ic = iconMotion ? animIcon(c) : nullptr;
+  if (!ic) return false;
+  stopIcon(c);
+  if (!iconAnimAcquire(ic)) {
+    if (!fired) return false;
+    stopIcons();
+    if (!iconAnimAcquire(ic)) return false;
+  }
+  ca[c].sig0 = now | 1;
+  ca[c].sig = -1;
+  ca[c].sigIc = ic;
+  return true;
+}
+static void startIconWave(uint32_t now) {
+  waveOn = true;
+  wave0 = now;
+  for (int c = 0; c < NUM_CELLS; c++) ca[c].waveAt = animIcon(c) ? (now + (c % GRID_COLS + c / GRID_COLS) * WAVE_STEP) | 1 : 0;
+}
+// While idle: the wave when it is due (its keys start at their moment, as room allows), else a new
+// key every TURN_MS while fewer than TURN_MAX play.
 static void idleTurn(uint32_t now) {
-  if (!iconMotion || dimState || pressed >= 0 || (int32_t)(now - nextTurn) < 0) return;
+  if (!iconMotion || dimState || pressed >= 0) return;
+  if (!waveOn && (int32_t)(now - nextWave) >= 0) {
+    startIconWave(now);
+    nextWave = now + WAVE_MIN + esp_random() % WAVE_SPAN;
+  }
+  if (waveOn) {
+    bool left = false;
+    int playing = 0;
+    for (auto &a : ca) playing += a.sig0 != 0;
+    for (int c = 0; c < NUM_CELLS; c++) {
+      if (!ca[c].waveAt) continue;
+      if ((int32_t)(now - ca[c].waveAt) >= 0 && !ca[c].sig0 && playing < WAVE_PLAYING && playIcon(c, now)) { ca[c].waveAt = 0; playing++; }
+      else if (now - wave0 > WAVE_MAX_MS) ca[c].waveAt = 0;
+      else left = true;
+    }
+    waveOn = left;
+    return;
+  }
+  if ((int32_t)(now - nextTurn) < 0) return;
   nextTurn = now + TURN_MS;
+  int playing = 0;
+  for (auto &a : ca) playing += a.sig0 != 0;
+  if (playing >= TURN_MAX) return;
   for (int i = 0; i < NUM_CELLS; i++) {
     int c = TURN_ORDER[turnAt++ % NUM_CELLS];
     if (!ca[c].pop0 && !ca[c].sig0 && animIcon(c)) { playIcon(c, now); return; }
   }
+}
+void uiIconWave() {   // `iconanim wave`: one now
+  if (iconMotion && mode == M_HOME && !playerPage()) startIconWave(millis());
 }
 
 void uiSetIconMotion(bool on) {
@@ -544,8 +609,7 @@ static void drawCell(int c, uint32_t now) {
     if (fi >= 0 && drawTile(k["frames"][fi] | "", x, y + sink, sz, A)) ca[c].frame = fi;   // a frame missing on the keypad falls back to the icon
     else if (*icon && iconFind(icon, false)) {   // at native size, in its animation frame while it plays
       const IconDef *ic = iconFind(icon, false);
-      int f = iconFrame(c, now);
-      ca[c].sig = f;
+      int f = ca[c].sig0 ? ca[c].sig : -1;   // the frame animate() committed with a whole-key repaint
       float gx = roundf(mx), gy = roundf(my);
       if (drop) glyphFrame(ic, f, gx, gy + 1, sh, A * 110 / 255);
       glyphFrame(ic, f, gx, gy, gc, A);
@@ -796,13 +860,21 @@ static const C3 SWATCH[8] = { HEXC(0x4f8cff), HEXC(0x3fc6e0), HEXC(0x52d68f), HE
 #define GEN_X 248              // the Generate button, left of Done
 #define GEN_W 132
 
+// The saved hosts, cheaply (no file system walk): true when something shown changed.
+static bool refreshHosts() {
+  auto before = info;
+  info.bonds = min(bleBondCount(), 3);
+  for (int i = 0; i < info.bonds; i++) { info.up[i] = bleHostUp(i); strlcpy(info.names[i], bleHostName(i).c_str(), sizeof info.names[i]); }
+  if (before.bonds != info.bonds) return true;
+  for (int i = 0; i < info.bonds; i++) if (before.up[i] != info.up[i] || strcmp(before.names[i], info.names[i])) return true;
+  return false;
+}
 static void refreshInfo() {
-  info.used = LittleFS.usedBytes();
+  info.used = LittleFS.usedBytes();   // walks the file system: ~0.2 s with many tiles
   info.total = LittleFS.totalBytes();
   info.heap = ESP.getFreeHeap();
   strlcpy(info.mac, NimBLEDevice::getAddress().toString().c_str(), sizeof info.mac);
-  info.bonds = min(bleBondCount(), 3);
-  for (int i = 0; i < info.bonds; i++) { info.up[i] = bleHostUp(i); strlcpy(info.names[i], bleHostName(i).c_str(), sizeof info.names[i]); }
+  refreshHosts();
 }
 
 static void loadSlots() {
@@ -1143,7 +1215,8 @@ static int shadeRows() { return min(noteN, 3); }
 static int shadeHeight() { return SH_LIST + (noteN ? shadeRows() * SH_ROWH : 40) + 14; }   // the shade's bottom
 static int shadeBot(uint32_t now) {
   if (mode != M_SHADE) return STATUS_H;
-  float e = easeQuad((now - shade0) / 220.0f);
+  if (!shade0) return shadeClosing ? shadeHeight() : STATUS_H;   // its first frame has not come yet
+  float e = easeQuad((int32_t)(now - shade0) / 220.0f);   // signed: shade0 is now | 1, a millisecond ahead half the time
   if (shadeClosing) e = 1 - e;
   return STATUS_H + (int)((shadeHeight() - STATUS_H) * e);
 }
@@ -1329,12 +1402,12 @@ static void renderDamage(uint32_t now) {
 // Marks what moves this frame; true when something animates every frame.
 static bool animate(uint32_t now) {
   bool live = false, playing = false;
-  for (auto &a : ca) {
-    if (mode != M_HOME || playerPage()) a.sig0 = 0;   // icons play on the key grid only
-    playing |= a.sig0 != 0;
-  }
-  if (!playing) iconAnimRelease();
   bool home = mode == M_HOME || mode == M_SHADE || mode == M_MENU;   // the page still runs under the shade and the menu
+  uint16_t iconDue = 0;   // keys whose next icon frame waits for the frame budget, at the end
+  int8_t iconDueFrame[NUM_CELLS];
+  if (!home || playerPage()) stopIcons();   // icons play on the key grid only
+  for (auto &a : ca) playing |= a.sig0 != 0;
+  if (!playing && !waveOn) iconAnimReleaseAll();   // nothing should be left; make sure
   if (home && !playerPage()) {
     if (mode == M_HOME) idleTurn(now);
     for (int c = 0; c < NUM_CELLS; c++) {
@@ -1351,17 +1424,21 @@ static bool animate(uint32_t now) {
       JsonVariant k = keyAt(c);
       int fi = k.isNull() || dimState == 2 ? -1 : frameIndex(k, now);   // a dark screen doesn't play GIFs
       if (fi >= 0 && fi != ca[c].frame) m = true;   // redraw on a new frame only: each one is a tile read
-      if (ca[c].sig0) {   // an icon animation: redraw on each new frame, and once more at rest
-        int f = iconFrame(c, now);
-        if (f != ca[c].sig) m = true;
-        if (f < 0) ca[c].sig0 = 0;
+      int f = -1;   // an icon frame due on this key
+      if (ca[c].sig0) {
+        int g = iconFrame(c, now);
+        if (g < 0) stopIcon(c);   // over: repainted at rest
+        else if (g != ca[c].sig) f = g;
         live = true;
       }
       if (!k.isNull() && !strcmp(k["anim"] | "", "rec") && (k["toggle"] | false) && toggled(c)) {
         static uint32_t lastPhase = 0;
         if (now / 600 != lastPhase) { m = true; lastPhase = now / 600; }
       }
-      if (m) { markCellRect(c); live = true; }
+      bool hidden = mode == M_SHADE && cellY(c) + CELL_H <= shadeBot(now);   // under the shade: waits for it to lift
+      if (m && !hidden) { markCellRect(c); if (f >= 0) ca[c].sig = f; }
+      else if (f >= 0 && !hidden) { iconDue |= 1 << c; iconDueFrame[c] = f; }
+      if (m) live = true;
     }
   }
   if (home && playerPage()) {
@@ -1391,11 +1468,13 @@ static bool animate(uint32_t now) {
     }
   }
   if (mode == M_SHADE) {
+    if (!shade0) shade0 = now | 1;
     int bot = shadeBot(now);
-    if (shadeClosing && now - shade0 > 220) { shadeClosing = false; mode = M_HOME; emitMode(); bot = STATUS_H; }
+    if (shadeClosing && (int32_t)(now - shade0) > 220) { shadeClosing = false; mode = M_HOME; emitMode(); bot = STATUS_H; }
     if (bot != shadeBotDrawn) {
       int a = min(bot, shadeBotDrawn), b = max(bot, shadeBotDrawn);
-      mark(0, a - 18, SCR_W, b - a + 34);
+      mark(0, a, SCR_W, b - a + 14);   // the rows the edge crossed, and the shadow under it
+      if (!shadeClosing && bot == shadeHeight()) mark(0, bot - 18, SCR_W, 18);   // settled: its rounded corners
       shadeBotDrawn = bot;
       live = true;
     }
@@ -1431,6 +1510,17 @@ static bool animate(uint32_t now) {
     if (t < 140 || (t > 1410 && t < 1600)) { mark(HUD_X - 6, HUD_Y - 4, HUD_W + 12, HUD_H + 22); live = true; }
     if (t >= 1600) { hudOn = false; mark(HUD_X - 6, HUD_Y - 4, HUD_W + 12, HUD_H + 22); }
   }
+  // Icon frames go last, while the frame stays within its pixel budget; the rest show theirs a
+  // tick later (taking turns, so none is starved).
+  static uint8_t iconFirst;
+  for (int i = 0; i < NUM_CELLS && iconDue; i++) {
+    int c = (iconFirst + i) % NUM_CELLS;
+    if (!(iconDue >> c & 1)) continue;
+    if (dmgPx() + CELL_W * CELL_H > FRAME_PX) break;
+    markCellRect(c);
+    ca[c].sig = iconDueFrame[c];
+  }
+  iconFirst++;
   if (timeEpoch && mode != M_CAL) {
     time_t tt = timeEpoch + tzMin * 60 + (now - timeBase) / 1000;
     struct tm tm;
@@ -1466,10 +1556,13 @@ void uiTick() {
   tileLoads = 0;
   bool live = animate(now);
   if (!dmgN) { lastFrame = now; return; }
+  uint32_t px = 0;
+  for (int i = 0; i < dmgN; i++) px += dmg[i].w * dmg[i].h;
   uint32_t t0 = micros();
   renderDamage(now);
   uint32_t us = micros() - t0;
   if (live) {
+    perfLog[perfLogN++ % 24] = { now, us, px };
     perf.frames++;
     perf.sumUs += us;
     if (us > perf.maxUs) perf.maxUs = us;
@@ -1524,8 +1617,15 @@ void uiRenderBench() {
   }
 }
 
+void uiPerfLog() {   // `perf log`: each recent animated frame: ms since the first, render us, dirty px
+  int n = min((int)perfLogN, 24), first = perfLogN - n;
+  for (int i = first; i < (int)perfLogN; i++) {
+    auto &e = perfLog[i % 24];
+    Con.printf("%lu %lu %lu\n", (unsigned long)(e.at - perfLog[first % 24].at), (unsigned long)e.us, (unsigned long)e.px);
+  }
+}
 void uiPerf(bool reset) {
-  if (reset) { memset(&perf, 0, sizeof perf); Con.println("perf reset"); return; }
+  if (reset) { memset(&perf, 0, sizeof perf); perfLogN = 0; Con.println("perf reset"); return; }
   float avgGap = perf.gaps ? perf.sumGap / (float)perf.gaps : 0;
   Con.printf("perf frames:%u avg_ms:%.2f max_ms:%.2f fps:%.1f\n", (unsigned)perf.frames,
                 perf.frames ? perf.sumUs / 1000.0f / perf.frames : 0.0f, perf.maxUs / 1000.0f, avgGap > 0 ? 1000.0f / avgGap : 0.0f);
@@ -1559,12 +1659,13 @@ void uiBegin() {
 
 void uiMarkAll() { markScreen(); }
 void uiMarkCell(int c) { if (c >= 0 && c < NUM_CELLS) { if (playerPage()) mark(0, STATUS_H, SCR_W, LINE_Y - STATUS_H); else markCellRect(c); } }
-void uiMarkStatus() {   // BLE state changed: refresh the cached names, then redraw
+void uiMarkStatus() {   // BLE state or the battery changed: refresh the cached names, then redraw
   strlcpy(hostName, hidConnected() ? bleHostName(bleConnectedSlot()).c_str() : "", sizeof hostName);
   mark(0, 0, SCR_W, STATUS_H);
-  if (mode == M_SHEET && sheetTab == 2) { refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
-  if (mode == M_SHADE) { refreshInfo(); markShade(); }
-  if (mode == M_MENU) { markMenu(); refreshInfo(); markMenu(); }
+  // The host lists repaint only when a host changed (the battery reading changes every few seconds).
+  if (mode == M_SHEET && sheetTab == 2 && refreshHosts()) mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H);
+  if (mode == M_SHADE && refreshHosts()) markShade();
+  if (mode == M_MENU) { markMenu(); if (refreshHosts()) markMenu(); }
 }
 void uiActivity() { lastAct = millis(); }
 const char *uiModeName() { return MODE_NAMES[mode]; }
@@ -1650,15 +1751,18 @@ static void startWave() {
     for (int c = 0; c < NUM_CELLS; c++)
       if (c % GRID_COLS + c / GRID_COLS == d) ca[c].pop0 = (now + order++ * POP_STEP) | 1;
   pressed = released = -1;
-  for (int c = 0; c < NUM_CELLS; c++) { ca[c].ring = 0; ca[c].sig0 = 0; }
-  nextTurn = now + order * POP_STEP + POP_MS + TURN_MS;   // idle turns wait for the wave
+  stopIcons();
+  for (int c = 0; c < NUM_CELLS; c++) ca[c].ring = 0;
+  nextTurn = now + order * POP_STEP + POP_MS + TURN_MS;   // idle turns wait for the page's wave
+  nextWave = now + WAVE_MIN + esp_random() % WAVE_SPAN;
   mark(0, 0, SCR_W, STATUS_H);
   mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
 }
 
 // The page kind changes (keys <-> player): wipe the new page down over the old.
 static void startWipe() {
-  for (int c = 0; c < NUM_CELLS; c++) { ca[c].pop0 = 0; ca[c].ring = 0; ca[c].sig0 = 0; }
+  stopIcons();
+  for (int c = 0; c < NUM_CELLS; c++) { ca[c].pop0 = 0; ca[c].ring = 0; }
   pressed = released = -1;
   wiping = true;
   wipe0 = millis();
@@ -1717,7 +1821,7 @@ void uiFlash(int c, bool ok) {
   if (c < 0 || c >= NUM_CELLS) return;
   ca[c].ring = ok ? 1 : 2;
   ca[c].ring0 = millis();
-  if (ok) playIcon(c, ca[c].ring0);   // the icon acts out what the key just did
+  if (ok) playIcon(c, ca[c].ring0, true);   // the icon acts out what the key just did
   markCellRect(c);
 }
 
@@ -1863,22 +1967,21 @@ void uiNotifyList() {
 
 void uiOpenShade() {
   if (mode != M_HOME) return;
-  loadSlots();
+  refreshHosts();   // what the shade shows; nothing slow (all the profiles' details took 1.5 s)
   if (banOn) { banOn = false; markBanner(); }
   mode = M_SHADE;
   shadeClosing = false;
-  shade0 = millis();
+  shade0 = 0;   // the slide's clock starts at its first frame (animate), so a slow moment before it can't make it jump
   shadeBotDrawn = STATUS_H;
   pressed = pressedBtn = dragSlider = -1;
-  noteUnread = 0;   // the shade shows them
-  mark(0, 0, SCR_W, STATUS_H);
+  if (noteUnread) { noteUnread = 0; mark(0, 0, SCR_W, STATUS_H); }   // the shade shows them: the bell's count goes
   emitMode();
 }
 void uiCloseShade() {   // and the host menu
   if (mode == M_MENU) { markMenu(); mode = M_HOME; emitMode(); return; }
   if (mode != M_SHADE || shadeClosing) return;
   shadeClosing = true;
-  shade0 = millis();
+  shade0 = 0;
   pressedBtn = dragSlider = -1;
 }
 
@@ -1988,10 +2091,12 @@ static int shadeButtonAt(int x, int y) {   // ids match drawShade's pressedBtn
   for (int k = 0; k < shadeRows(); k++) if (inRect(x, y, 8, SH_LIST + k * SH_ROWH, 464, 42)) return 140 + k;
   return -1;
 }
-static void stepProfile(int dir) {   // the next saved profile that way, round the ring
+static void stepProfile(int dir) {   // the next saved profile that way, round the ring (a file check each, on the tap)
+  char path[24];
   for (int k = 1; k < NUM_PROFILES; k++) {
     int n = (currentProfile - 1 + dir * k + 2 * NUM_PROFILES) % NUM_PROFILES + 1;
-    if (slots[n - 1].ok) { uiSetProfile(n); return; }
+    snprintf(path, sizeof path, "/profile%d.json", n);
+    if (LittleFS.exists(path)) { uiSetProfile(n); return; }
   }
 }
 static void shadeTap(int x, int y, int b) {

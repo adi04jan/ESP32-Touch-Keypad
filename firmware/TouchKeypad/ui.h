@@ -51,7 +51,8 @@ void uiOpenShade();                     // the pull-down: brightness, profile, h
 void uiCloseShade();
 void uiSetBrightness(int level);     // 0-255, live + NVS
 int  uiBrightness();
-void uiSetIconMotion(bool on);       // every key's icon moves a little (spin, swing, bounce...), NVS kp/ianim
+void uiSetIconMotion(bool on);       // icon animations: on a fired key, a few idle keys at a time, a wave every 20-30 s; NVS kp/ianim
+void uiIconWave();                   // `iconanim wave`: run the wave now
 bool uiIconMotion();
 void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS; wakes the screen
 void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
@@ -67,4 +68,5 @@ void uiCalibrateCancel();
 bool uiCalibrating();
 const char *uiModeName();            // home | sheet | pair | cal | shade | menu
 void uiPerf(bool reset);             // `perf`: frame timing of animated frames
+void uiPerfLog();                    // `perf log`: the latest frames one by one
 void uiRenderBench();                // `rbench`: render cost per scene part
