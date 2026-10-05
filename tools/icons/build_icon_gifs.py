@@ -1,25 +1,64 @@
-"""An animated GIF for every key icon: studio/assets/icon-gifs/<icon>.gif.
+"""An animated GIF for every key icon in every theme: studio/assets/icon-gifs/<theme>/<icon>.gif.
 
     python tools/icons/build_icon_gifs.py      (after node tools/icons/build_anims.js)
 
 Each GIF is the keypad's own key playing the icon's signature animation: the frames come from
 firmware/TouchKeypad/anims_gen.h, decoded over the icon's mask from icons_gen.h exactly as the
-firmware decodes them, on a Glass-style key. The loop holds the resting icon, then plays the
-animation at the keypad's frame rate, so the GIF is what the key does when it fires.
+firmware decodes them; the key is the theme's real key (tools/icons/keys/<theme>.png, captured
+from the keypad by capture_keys.py, in the demo tint #4f8cff), and the glyph takes the theme's ink
+as ui.cpp keyInk() gives it (a one-pixel drop on Glass and Aurora, hard pixels on Retro). The loop
+holds the resting icon, then plays the animation at the keypad's frame rate.
 """
 import re
 import zlib
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 ICONS_H = ROOT / "firmware" / "TouchKeypad" / "icons_gen.h"
 ANIMS_H = ROOT / "firmware" / "TouchKeypad" / "anims_gen.h"
+KEYS = Path(__file__).parent / "keys"
 OUT = ROOT / "studio" / "assets" / "icon-gifs"
-SRC, KEY, SS, HOLD_MS = 36, 72, 4, 900          # mask px, GIF px, supersampling, rest before each play
+SRC, HOLD_MS, AT = 36, 900, 18                  # mask px, rest before each play, glyph corner in the 72 px key
+TINT = (79, 140, 255)
 
 
+# ---------------------------------------------------------------- the firmware's colour rules (gfx.h, ui.cpp)
+def mix(a, b, t):
+    if t <= 0:
+        return a
+    if t >= 255:
+        return b
+    t += t >> 7
+    return tuple(x + (((y - x) * t) >> 8) for x, y in zip(a, b))
+
+
+def luma(c):
+    return (c[0] * 77 + c[1] * 150 + c[2] * 29) >> 8
+
+
+def frost_ink(c):
+    for _ in range(6):
+        if luma(c) <= 118:
+            break
+        c = mix(c, (0, 0, 0), 45)
+    return c
+
+
+SHADOW = mix(TINT, (0, 0, 0), 150)
+# theme -> (ink, drop shadow under the glyph, hard pixels): ui.cpp keyInk(), keyInkDrop(), crisp
+THEMES = {
+    "glass": ((255, 255, 255), True, False),
+    "paper": ((0x1f, 0x1a, 0x14) if luma(mix(TINT, (0xef, 0xe4, 0xcc), 46)) > 165 else (0xff, 0xfa, 0xf0), False, False),
+    "daylight": (frost_ink(TINT), False, False),
+    "aurora": (mix(TINT, (255, 255, 255), 130), True, False),
+    "synth": ((0x1b, 0x1b, 0x1b), False, False),
+    "retro": ((0x0f, 0x38, 0x0f), False, True),
+}
+
+
+# ---------------------------------------------------------------- the frames
 def hex_bytes(text, start):
     block = text[text.index(start):]
     return bytes(int(x, 16) for x in re.findall(r"0x([0-9a-fA-F]{2})", block[:block.index("};")]))
@@ -67,45 +106,35 @@ def frames_of(base, data, off, z, n):
     return out
 
 
-def key_base():
-    """A Glass key (the default theme's look) on the keypad's ground, at SS x size."""
-    n = KEY * SS
-    base = Image.new("RGB", (n, n), (14, 22, 32))
-    grad = Image.new("RGB", (n, n))
-    top, bot = (79, 140, 255), (24, 52, 108)
-    for y in range(n):
-        f = y / (n - 1)
-        ImageDraw.Draw(grad).line([(0, y), (n, y)], fill=tuple(round(a + (b - a) * f) for a, b in zip(top, bot)))
-    m = Image.new("L", (n, n), 0)
-    ImageDraw.Draw(m).rounded_rectangle([3 * SS, 3 * SS, n - 3 * SS, n - 3 * SS], radius=19 * SS, fill=255)
-    base.paste(grad, (0, 0), m)
-    return base
-
-
-def frame(base, px):
-    """The icon's mask drawn on the key as the firmware draws it: a drop shadow 1 px down, then white."""
-    g = Image.new("L", (SRC, SRC))
-    g.putdata([v * 17 for v in px])
-    g = g.resize((SRC * SS, SRC * SS), Image.NEAREST)
-    img = base.copy()
-    o = (KEY - SRC) * SS // 2
-    img.paste(Image.new("RGB", g.size, (10, 20, 45)), (o, o + SS), g.point(lambda v: v * 110 // 255))
-    img.paste(Image.new("RGB", g.size, (255, 255, 255)), (o, o), g)
-    return img.resize((KEY, KEY), Image.LANCZOS)
+# ---------------------------------------------------------------- the key
+def frame(key, px, ink, drop, crisp):
+    """The mask drawn on the key as the firmware draws it: the drop 1 px down at 110/255, then the ink."""
+    a = [v * 17 for v in px]
+    if crisp:
+        a = [255 if v >= 128 else 0 for v in a]   # gfxSetCrisp: every blend snaps to 0 or 255
+    m = Image.new("L", (SRC, SRC))
+    m.putdata(a)
+    img = key.copy()
+    if drop:
+        img.paste(Image.new("RGB", m.size, SHADOW), (AT, AT + 1), m.point(lambda v: v * 110 // 255))
+    img.paste(Image.new("RGB", m.size, ink), (AT, AT), m)
+    return img
 
 
 def main():
-    OUT.mkdir(parents=True, exist_ok=True)
     frame_ms, data, rows = anims()
-    base = key_base()
-    count, total = 0, 0
-    for (name, px), (off, z, n) in zip(masks(), rows):
-        seq = [frame(base, px)] + [frame(base, f) for f in frames_of(px, data, off, z, n)]
-        path = OUT / f"{name}.gif"
-        seq[0].save(path, save_all=True, append_images=seq[1:], duration=[HOLD_MS] + [frame_ms] * n, loop=0, optimize=True)
-        count += 1
-        total += path.stat().st_size
-    print(f"{count} GIFs -> {OUT} ({total // 1024} KB)")
+    icons = [(name, px, frames_of(px, data, off, z, n)) for (name, px), (off, z, n) in zip(masks(), rows)]
+    for theme, (ink, drop, crisp) in THEMES.items():
+        key = Image.open(KEYS / f"{theme}.png").convert("RGB")
+        out = OUT / theme
+        out.mkdir(parents=True, exist_ok=True)
+        total = 0
+        for name, px, fr in icons:
+            seq = [frame(key, f, ink, drop, crisp) for f in [px] + fr]
+            path = out / f"{name}.gif"
+            seq[0].save(path, save_all=True, append_images=seq[1:], duration=[HOLD_MS] + [frame_ms] * len(fr), loop=0, optimize=True)
+            total += path.stat().st_size
+        print(f"{theme}: {len(icons)} GIFs ({total // 1024} KB)")
 
 
 if __name__ == "__main__":

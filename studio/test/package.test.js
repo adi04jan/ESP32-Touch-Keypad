@@ -23,14 +23,15 @@ test("the installer ships the Bluetooth helper where bleport.js looks for it", (
   assert.match(fs.readFileSync(path.join(__dirname, "..", "services", "bleport.js"), "utf8"), /"kplink", "KpLink\.exe"/);
 });
 
-test("every built-in icon has its moving GIF in assets (tools/icons/build_icon_gifs.py)", () => {
+test("every built-in icon has its animated GIF in every theme (tools/icons/build_icon_gifs.py)", () => {
   const icons = [...fs.readFileSync(path.join(__dirname, "..", "renderer", "keyicons.js"), "utf8").matchAll(/"([a-z0-9-]+)":\{"f":/g)].map((m) => m[1]);
-  const gifs = new Set(fs.readdirSync(path.join(__dirname, "..", "assets", "icon-gifs")).map((f) => f.replace(/\.gif$/, "")));
+  const themes = ["glass", "paper", "daylight", "aurora", "synth", "retro"];
+  const gifs = new Set(themes.flatMap((t) => fs.readdirSync(path.join(__dirname, "..", "assets", "icon-gifs", t)).map((f) => `${t}/${f.replace(/\.gif$/, "")}`)));
   const h = fs.readFileSync(path.join(__dirname, "..", "..", "firmware", "TouchKeypad", "icons_gen.h"), "utf8");
   const keyTable = h.slice(h.indexOf("static const IconDef ICONS[]"), h.indexOf("};", h.indexOf("static const IconDef ICONS[]")));   // key icons, not the UI's
   const keypad = [...keyTable.matchAll(/\{"([a-z0-9-]+)", \d+\}/g)].map((m) => m[1]);
   assert.ok(keypad.length >= 200);
-  for (const n of keypad) assert.ok(gifs.has(n), `no GIF for ${n}`);
+  for (const t of themes) for (const n of keypad) assert.ok(gifs.has(`${t}/${n}`), `no ${t} GIF for ${n}`);
   assert.ok(icons.length >= keypad.length);
 });
 
