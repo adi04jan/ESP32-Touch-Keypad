@@ -125,7 +125,10 @@ void MacroEngine::finish() {
   inText = false;
   depth = 0;
   hidReleaseAll();
-  if (dropped && cell >= 0) uiFlash(cell, false);   // no host: alert flash (§6.7)
+  if (dropped && cell >= 0) {   // no host: alert flash (§6.7), and why
+    uiFlash(cell, false);
+    uiNotify("Keypad", "Key not sent", "No Bluetooth host is connected", "bluetooth-off", "nohost");
+  }
 }
 
 void MacroEngine::abort() { finish(); }

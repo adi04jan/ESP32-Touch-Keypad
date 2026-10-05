@@ -164,7 +164,7 @@ It replaced a papercraft screen the owner judged too playful. It is drawn by an 
 
 ## Layout
 
-A fixed 480×320 landscape canvas. Status band 28 px with a hairline under it; a 5×3 grid of 96×90 cells from y 30; a 66 px key 4 px from the cell top with its label 5 px below; the page line in the bottom 20 px. The whole cell is the touch target. The player and the sheet replace the grid area and keep the status band. Sheet controls are at least 44 px tall.
+A fixed 480×320 landscape canvas. Status band 28 px with a hairline under it: the clock and the profile chip on the left; the bell (an unread badge in magenta), the host chip, the battery and settings on the right, each chip with a caret when it opens a list; a 5×3 grid of 96×90 cells from y 30; a 66 px key 4 px from the cell top with its label 5 px below; the page line in the bottom 20 px. The whole cell is the touch target. The player and the sheet replace the grid area and keep the status band. Sheet controls are at least 44 px tall.
 
 ## Elevation & Depth
 
@@ -192,7 +192,7 @@ Segments 44 px; the current one is magenta text on a magenta-tinted fill with a 
 128 px album art with a highlight, title in Head, album in Body, artist and source in Text 2 with the source in green and a live equalizer while playing, a seek bar (6 px track, cyan fill, white knob, 44 px touch band), tabular times, and six round controls with an 84 px cyan play key.
 
 ### Overlays
-Toast: a 40 px pill under the status band with the profile line dot. Volume: a 260×76 panel with a 16-segment level and the number.
+Toast: a 40 px pill under the status band with the profile line dot. Volume: a 260×76 panel with a 16-segment level and the number. Notification banner: a 464×54 pill dropped over the status band for 4 s, icon, title and age, then the app in cyan and the text. Shade: pulled down from the status band (a swipe down, or the bell) on the sheet's ply; brightness slider and the profile stepper (< name >), three host chips (connected: a green ring), then the newest three notifications on cards, a handle at the foot; a swipe sideways dismisses one, a swipe up or a tap below closes it. Host menu: the status band's host chip drops a 236 px list of the saved hosts (connected: green and a check) and Pair new host.
 
 ## Themes
 

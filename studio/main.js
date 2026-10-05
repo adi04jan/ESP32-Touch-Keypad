@@ -27,6 +27,7 @@ const { withBluetooth, BLE_PATH } = require("./services/bleport");
 const { Device } = require("./services/device");
 const { Autogen, appKey } = require("./services/autogen");
 const chat = require("./services/chat");
+const { WinNotify } = require("./services/winnotify");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
@@ -34,7 +35,7 @@ const SMOKE = process.env.STUDIO_SMOKE === "1";
 const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: tests the Bluetooth link with the cable in
 const ICON = path.join(__dirname, "assets", "icon.ico");
 
-let win = null, tray = null, link = null, device = null, bridge = null, autogen = null;
+let win = null, tray = null, link = null, device = null, bridge = null, autogen = null, winNotify = null;
 let manualDisconnect = false, connecting = false, pollTimer = null, currentContext = "global";
 
 function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send("evt", { type, data }); }
@@ -80,6 +81,7 @@ function initServices() {
   send("bridge", bridge.apply(s.host_slots));
   startFocusWatch();
   if (s.nowplaying_enabled) startNowPlaying();
+  if (s.notifications_enabled) startWinNotify();
 }
 
 // Stand-in port class when serial is disabled: lists nothing, opens nothing.
@@ -128,6 +130,16 @@ function startFocusWatch() {
     send("context", { context: ctx, process: proc, slot: slot || null });
     if (slot) device.setActiveProfile(slot);
   });
+}
+// This PC's notifications to the keypad's bell, banner and shade (Settings › Notifications).
+function startWinNotify() {
+  if (winNotify || process.platform !== "win32") return;
+  winNotify = new WinNotify({ onNote: (n) => device.notify(n), log });
+  winNotify.start();
+}
+function stopWinNotify() {
+  if (winNotify) winNotify.stop();
+  winNotify = null;
 }
 function startNowPlaying() {
   feeds.startNowPlaying((np) => { send("nowplaying", np); device.nowPlaying(np); }, (e) => log(`Now Playing helper: ${e}\n`),
@@ -247,6 +259,7 @@ ipcMain.handle("settings:set", (_e, patch) => {
   const before = store.load(), s = store.save(patch || {});
   if (before.auto_switch_enabled !== s.auto_switch_enabled) currentContext = "global";   // the next focus change applies
   if (before.nowplaying_enabled !== s.nowplaying_enabled) { if (s.nowplaying_enabled) startNowPlaying(); else feeds.stopNowPlaying(); }
+  if (before.notifications_enabled !== s.notifications_enabled) { if (s.notifications_enabled) startWinNotify(); else stopWinNotify(); }
   if (patch && "host_slots" in patch) send("bridge", bridge.apply(s.host_slots));
   if (patch && patch.auto_connect) { manualDisconnect = false; tryAutoConnect(); }
   return s;
@@ -258,6 +271,7 @@ ipcMain.handle("bridge:state", (_e, profile) => ({
   conflicts: profile ? hostbridge.findActionConflicts(profile) : [],
 }));
 ipcMain.handle("bridge:test", (_e, cmd) => bridge.execute(cmd));
+ipcMain.handle("notify:test", () => device.notify({ app: "Studio", title: "Test notification", body: "Swipe down on the keypad to read it", icon: "bell" }));
 ipcMain.handle("contexts:list", () => {
   const known = ["global", ...CONTEXT_MATCH.map(([id]) => id)];
   return [...known, ...Object.keys(store.load().context_profiles || {}).filter((k) => !known.includes(k))];   // + generated apps

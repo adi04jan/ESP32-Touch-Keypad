@@ -41,7 +41,7 @@ raspberrypi linux ubuntu android firefoxbrowser openai anthropic`.trim().split(/
 const UI_ICONS = `bluetooth bluetooth-off bluetooth-searching settings plug-zap battery-full battery-medium battery-low
 x check chevron-left chevron-right sun moon lightbulb volume-1 volume-2 volume-x sliders-horizontal palette cpu
 info layers keyboard crosshair refresh-cw trash-2 link unlink power rotate-ccw monitor sparkles hand mic-off
-play pause skip-back skip-forward circle-dot`.trim().split(/\s+/);
+play pause skip-back skip-forward circle-dot bell bell-ring chevron-down`.trim().split(/\s+/);
 
 function readLucide(name) {
   const f = path.join(LUCIDE, `${name}.svg`);

@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.6.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.7.0.
 
 ## Transport
 
@@ -54,6 +54,9 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `ble cancel` | `pair closed` | |
 | `calibrate [cancel]` | `ui cal` / `ui home` | opens the calibration screen (four targets, a check point, a test pad); progress as `EVT:CAL` |
 | `sheet [close\|profiles]` | `ui sheet` / `ui home` | the settings sheet; `profiles` opens it on Profiles (what the status band's profile button does) |
+| `shade [close]` | `ui shade` / `ui home` | the pull-down shade (what a swipe down or the bell does): brightness, the profile stepper, the Bluetooth hosts and the newest notifications; `close` also closes the host menu |
+| `notify <json>` | `notify` | a notification: `{"app", "title", "body", "icon", "tag", "banner"}`. The bell in the status band counts the unread, a banner drops in over the status band for 4 s (`banner:false`: none, and not counted), the shade lists the newest three; the keypad keeps eight. `icon` is a key icon's name (else a UI icon, else the bell); `tag` updates the notification with that tag. Studio sends this PC's Windows notifications; the keypad adds its own (host connected or lost, key not sent, battery low, Generate) |
+| `notify list\|clear` | `notify <n> unread <u>` then `<i> <app>	<title>	<body>	<icon>` per notification / `notify clear` | the notifications, newest first |
 | `autogen busy\|done\|fail <text>` | `autogen <state>` | Studio's progress for `EVT:AUTOGEN`: `busy` holds a toast with a breathing dot, `done` and `fail` end it |
 | `toast <text>` | `toast` | a toast under the status band |
 
@@ -86,7 +89,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:KEY <page> <id> 1\|0\|H` | touch down on a key, release, hold fired. A tap's actions run on release, inside the same cell |
 | `EVT:PAGE <n>` | page shown (swipe, station, folder key, `back`, `page`) |
 | `EVT:PROFILE <n>` | profile loaded |
-| `EVT:UI home\|sheet\|pair\|cal` | the screen mode changed |
+| `EVT:UI home\|sheet\|pair\|cal\|shade\|menu` | the screen mode changed (`menu`: the status band's host list) |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
 | `EVT:POWER sleep` | on battery, idle past the sleep time: the keypad goes into deep sleep; a touch wakes it (a reboot) |
 | `EVT:AUTOGEN` | the Generate button in Profiles: the host should give the app in front a profile (Autogenerate below) |

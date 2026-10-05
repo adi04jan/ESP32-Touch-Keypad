@@ -41,6 +41,14 @@ void uiPairClose();
 void uiOpenSheet(int tab = -1);         // tab 1 = Profiles (the status band's profile button)
 void uiCloseSheet();
 bool uiSheetOpen();
+// Notifications: the bell in the status band counts the unread, a banner drops in for each new
+// one (banner false: kept quietly in the list), the shade lists the newest. Studio sends the PC's
+// (`notify`); the keypad adds its own. A tag updates the notification that has it.
+void uiNotify(const char *app, const char *title, const char *body, const char *icon, const char *tag = "", bool banner = true);
+void uiNotifyClear();
+void uiNotifyList();                    // `notify list`
+void uiOpenShade();                     // the pull-down: brightness, profile, hosts, notifications
+void uiCloseShade();
 void uiSetBrightness(int level);     // 0-255, live + NVS
 int  uiBrightness();
 void uiSetIconMotion(bool on);       // every key's icon moves a little (spin, swing, bounce...), NVS kp/ianim
@@ -57,6 +65,6 @@ const char *uiScreenState();         // lit | dim | off (tests)               //
 void uiCalibrate();                  // touch calibration screen (also on first boot and BOOT held 2 s)
 void uiCalibrateCancel();
 bool uiCalibrating();
-const char *uiModeName();            // home | sheet | pair | cal
+const char *uiModeName();            // home | sheet | pair | cal | shade | menu
 void uiPerf(bool reset);             // `perf`: frame timing of animated frames
 void uiRenderBench();                // `rbench`: render cost per scene part

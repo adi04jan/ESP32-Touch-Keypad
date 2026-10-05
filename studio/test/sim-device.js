@@ -244,6 +244,16 @@ class SimDevice extends EventEmitter {
       case "reboot": return this.println("rebooting");
       case "iconanim": if (arg) this.iconanim = arg === "on"; return this.println(`iconanim ${this.iconanim === false ? "off" : "on"}`);
       case "autogen": (this.toasts = this.toasts || []).push(arg); return this.println(`autogen ${arg.split(" ")[0]}`);
+      case "notify": {   // the keypad keeps the newest eight
+        this.notes = this.notes || [];
+        if (!arg || arg === "list") return this.println([`notify ${this.notes.length} unread ${this.notes.length}`, ...this.notes.map((n, i) => `${i + 1} ${n.app}\t${n.title}\t${n.body}\t${n.icon}`)].join("\n"));
+        if (arg === "clear") { this.notes = []; return this.println("notify clear"); }
+        const n = json(arg);
+        if (!n || typeof n !== "object") return this.println("notify {app,title,body,icon,tag,banner}|list|clear");
+        this.notes = [{ app: n.app || "PC", title: n.title || "", body: n.body || "", icon: n.icon || "bell" }, ...this.notes].slice(0, 8);
+        return this.println("notify");
+      }
+      case "shade": this.ui = arg === "close" ? "home" : "shade"; return this.println(`ui ${this.ui}`);
       default: return this.println("unknown");
     }
   }

@@ -129,6 +129,7 @@ def d(dev):
         dev.cmd("ble cancel")
         dev.cmd("calibrate cancel")
         dev.cmd("sheet close")
+        dev.cmd("shade close")
     if "theme:glass" not in st:   # pixel checks below are written against Glass
         dev.cmd("theme glass")
         time.sleep(0.4)
@@ -611,6 +612,81 @@ def test_profile_chip_opens_profiles_and_a_card_switches(d):
     d.ok("sheet close")
     time.sleep(0.4)
     d.ok(f"setprofile {SLOT}")
+
+
+# ---------------------------------------------------------------- notifications, the shade, the host menu
+NOTE = '{"app":"Slack","title":"Sam","body":"Lunch at one?","icon":"message-square"}'
+
+
+def test_notification_rings_the_bell_and_drops_a_banner(d):
+    """A notification counts on the bell and drops a banner over the status band; a tap on the
+    banner pulls the shade down, which marks it read; a swipe up puts the shade away."""
+    d.ok("notify clear")
+    try:
+        time.sleep(0.4)
+        base = d.shot().getpixel((240, 40))
+        assert d.cmd(f"notify {NOTE}") == ["notify"]
+        assert d.cmd("notify list") == ["notify 1 unread 1", "1 Slack\tSam\tLunch at one?\tmessage-square"]
+        time.sleep(0.4)
+        assert d.shot().getpixel((240, 40)) != base                        # the banner is down
+        time.sleep(1.5)                                                    # and gone (4 s)
+        assert d.cmd("notify " + NOTE.replace("Sam", "Ana").replace('"}', '","tag":"lunch"}')) == ["notify"]
+        assert d.cmd("notify " + NOTE.replace("Sam", "Ana B").replace('"}', '","tag":"lunch"}')) == ["notify"]
+        assert d.cmd("notify list")[:2] == ["notify 2 unread 2", "1 Slack\tAna B\tLunch at one?\tmessage-square"]   # a tag updates its own
+        time.sleep(0.3)
+        since = len(d.events)
+        d.touch(240, 30)                                                   # tap the banner: the shade
+        d.wait_event(r"^EVT:UI shade$", 3, since)
+        assert d.cmd("notify list")[0] == "notify 2 unread 0"
+        since = len(d.events)
+        d.swipe(240, 260, 240, 60)
+        d.wait_event(r"^EVT:UI home$", 3, since)
+    finally:
+        d.cmd("notify clear")
+
+
+def test_shade_brightness_profile_and_clear(d):
+    """Swipe down from the keys: the shade, at full speed. Its slider sets brightness, its arrows
+    step through the saved profiles, Clear all empties it, and a tap below closes it."""
+    old = d.cmd("setbrightness")[0]
+    d.ok("notify clear")
+    d.ok('notify {"app":"Mail","title":"Standup","body":"10:30","icon":"mail","banner":false}')
+    try:
+        since = len(d.events)
+        frames, rate, worst = fps(d, lambda: d.swipe(240, 70, 240, 270), wait=0.6)
+        d.wait_event(r"^EVT:UI shade$", 3, since)
+        assert rate >= FPS_FLOOR and worst <= 20, (frames, rate, worst)
+        time.sleep(0.3)
+        d.touch(30 + 13 + 4, 60)                                           # the slider's left end: dimmest
+        assert d.cmd("setbrightness")[0] == "brightness 13"
+        d.touch(30 + 256 - 13 - 2, 60)                                     # its right end: brightest
+        assert int(d.cmd("setbrightness")[0].split()[1]) >= 245
+        since = len(d.events)
+        d.touch(432 + 19, 38 + 22)                                         # the next saved profile, round the ring
+        m = d.wait_event(r"^EVT:PROFILE (\d+)$", 3, since)
+        assert m.group(1) != str(SLOT), m.group(0)
+        d.touch(430, 150)                                                  # Clear all
+        assert d.cmd("notify list") == ["notify 0 unread 0"]
+        time.sleep(0.4)
+        since = len(d.events)
+        d.touch(240, 285)                                                  # below the shade
+        d.wait_event(r"^EVT:UI home$", 3, since)
+    finally:
+        d.cmd("shade close")
+        d.cmd(f"setbrightness {old.split()[1]}")
+        d.cmd("notify clear")
+        d.ok(f"setprofile {SLOT}")
+
+
+def test_host_chip_lists_the_hosts(d):
+    """The status band's host chip drops the host list; a tap outside puts it away."""
+    since = len(d.events)
+    d.touch(405, 14)
+    d.wait_event(r"^EVT:UI menu$", 3, since)
+    assert "ui:menu" in d.cmd("status")[0]
+    since = len(d.events)
+    d.touch(100, 250)
+    d.wait_event(r"^EVT:UI home$", 3, since)
 
 
 def test_sixteen_profile_slots(d):

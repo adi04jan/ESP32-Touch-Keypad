@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("api", {
   setSettings: call("settings:set"),
   bridgeState: call("bridge:state"),
   bridgeTest: call("bridge:test"),
+  notifyTest: call("notify:test"),             // a sample notification to the keypad -> false when not connected
   contexts: call("contexts:list"),
   autogen: call("autogen:run"),              // (force) — the app in front gets a profile
   autogenState: call("autogen:state"),

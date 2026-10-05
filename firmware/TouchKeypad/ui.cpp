@@ -65,9 +65,9 @@ static float easeBack(float t) { t = clamp01(t); float u = t - 1; return 1 + 2.7
 static bool inRect(int x, int y, int rx, int ry, int rw, int rh) { return x >= rx && x < rx + rw && y >= ry && y < ry + rh; }
 
 // ---------------------------------------------------------------- state
-enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL };
+enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL, M_SHADE, M_MENU };   // shade: the pull-down; menu: the host list
 static Mode mode = M_HOME;
-static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal" };
+static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal", "shade", "menu" };
 
 struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t sig0; int16_t sig; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen
 static CellAnim ca[NUM_CELLS];
@@ -109,6 +109,17 @@ static struct { char name[24]; int pages; uint8_t col[3]; bool ok; } slots[NUM_P
 // opens or changes, never inside a render.
 static struct { size_t used, total; uint32_t heap; char mac[20]; int bonds; bool up[3]; char names[3][24]; } info;
 static char hostName[24] = "";
+
+// Notifications, newest first: the PC's (Studio sends them) and the keypad's own (host connected
+// or lost, key not sent, battery low, Generate). The bell in the status band counts the unread (the
+// newest noteUnread); a banner drops in for each new one; the shade lists them.
+#define NOTE_MAX 8
+struct Note { char app[20], title[48], body[96], icon[24], tag[12]; uint32_t at; };
+static Note notes[NOTE_MAX], banNote;
+static int noteN = 0, noteUnread = 0;
+static uint32_t ban0 = 0, shade0 = 0, menu0 = 0;
+static bool banOn = false, shadeClosing = false;
+static int shadeBotDrawn = STATUS_H;
 
 static uint32_t pairKey = 0;
 static uint32_t wipe0 = 0;           // keys <-> player, or a new theme: the new screen wipes in from the top
@@ -430,7 +441,8 @@ static const IconDef *animIcon(int c) {
 // The frame of key c's animation on screen now; -1 at rest.
 static int iconFrame(int c, uint32_t now) {
   if (!ca[c].sig0) return -1;
-  int f = (int)((now - ca[c].sig0) / ICON_ANIM_MS);
+  int32_t dt = now - ca[c].sig0;   // signed: sig0 is now | 1, a millisecond ahead half the time
+  int f = dt < 0 ? 0 : dt / ICON_ANIM_MS;
   return f < iconAnimFrames(animIcon(c)) ? f : -1;
 }
 static void playIcon(int c, uint32_t now) {
@@ -600,12 +612,42 @@ static int drawBattery(int cx, int cy) {
   return textW(fRead, b) + 8;
 }
 
-static int profChipX = 0, profChipW = 0;   // the status band's profile button
+static int profChipX = 0, profChipW = 0, hostChipX = 0, hostChipW = 0, bellX = 0;   // the status band's buttons
 static bool onProfChip(int x, int y) { return y < STATUS_H && x < profChipX + profChipW + 4; }   // the clock too: a bigger target
+static bool onBell(int x, int y) { return y < STATUS_H && x >= bellX - 4 && x < bellX + 30; }
+static bool onHostChip(int x, int y) { return y < STATUS_H && x >= hostChipX - 2 && x < hostChipX + hostChipW + 2; }
 
 static void drawStatus() {
   if (!gfxHits(0, 0, SCR_W, STATUS_H)) return;
   fillRect(0, 28, SCR_W, T->crisp ? 2 : 1, HAIR, T->hairA);
+  // Right to left: settings, the battery, the host switch (a tap lists the hosts), the bell.
+  rrFill(454, 2, 24, 24, 12, ctlFill());
+  glyph(iconFind("settings", true), true, 466, 14, 18, TXT);
+  int right = 424 - drawBattery(440, 14);
+  bool pairing = blePairing(), up = hidConnected();
+  String host = pairing ? String("Pairing") : up ? String(hostName) : String("No host");
+  host = ellipsize(fRead, host.c_str(), 96);
+  C3 hc = pairing ? MAG : up ? GREEN : AMBER;
+  int tw = textW(fRead, host.c_str());
+  hostChipW = 48 + tw;
+  hostChipX = right - 2 - hostChipW;
+  rrFill(hostChipX, 2, hostChipW, 24, 12, ctlFill());
+  glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, hostChipX + 16, 14, 18, hc);
+  text(fRead, hostChipX + 28, 19, host.c_str(), hc);
+  glyph(iconFind("chevron-down", true), true, hostChipX + hostChipW - 12, 14, 14, TXT2);
+  int left = hostChipX - 8;
+  if (hidDry()) { tag(left, 6, "DRY", RED, false, RED, inkOn(RED), 255); left -= 38; }
+  bellX = left - 30;
+  rrFill(bellX, 2, 26, 24, 12, ctlFill());
+  glyph(iconFind(noteUnread ? "bell-ring" : "bell", true), true, bellX + 13, 14, 16, noteUnread ? TXT : noteN ? TXT2 : TXT3);
+  if (noteUnread) {   // the unread count on a badge
+    char b[4];
+    snprintf(b, sizeof b, noteUnread > 9 ? "9+" : "%d", noteUnread);
+    int bw = max(14, textW(fLabel, b) + 6);
+    rrFill(bellX + 31 - bw, 2, bw, 13, 6.5f, solidFill(MAG));
+    text(fLabel, bellX + 31 - bw / 2, 13, b, inkOn(MAG), 255, AL_C);
+  }
+  // Left: the clock, then the profile switch (a tap opens Profiles) in the room that's left.
   int x = 12;
   if (timeEpoch) {
     time_t t = timeEpoch + tzMin * 60 + (millis() - timeBase) / 1000;
@@ -616,13 +658,13 @@ static void drawStatus() {
     text(fTitle, x, 21, b, TXT);
     x += textW(fTitle, b) + 12;
   }
-  // The profile chip is the quick switch: a tap opens Profiles (and Generate).
   C3 line = lineC();
-  String name = ellipsize(fBodyB, profileName, 150);
   char pg[12];
   sprintf(pg, "%d/%d", currentPage + 1, pageCount);
+  int pgW = textW(fRead, pg);
+  String name = ellipsize(fBodyB, profileName, constrain(bellX - 8 - (x - 6) - (pgW + 50), 24, 150));
   profChipX = x - 6;
-  profChipW = 14 + textW(fBodyB, name.c_str()) + 6 + textW(fRead, pg) + 12;
+  profChipW = textW(fBodyB, name.c_str()) + pgW + 50;
   rrFill(profChipX, 2, profChipW, 24, 12, ctlFill());
   ringC(x + 4, 14, 5, 2, line, 77);
   circle(x + 4, 14, 4, line);
@@ -630,18 +672,7 @@ static void drawStatus() {
   text(fBodyB, x, 19, name.c_str(), TXT);
   x += textW(fBodyB, name.c_str()) + 6;
   text(fRead, x, 19, pg, TXT2);
-
-  rrFill(454, 2, 24, 24, 12, ctlFill());
-  glyph(iconFind("settings", true), true, 466, 14, 18, TXT);
-  int right = 424 - drawBattery(440, 14);
-  bool pairing = blePairing(), up = hidConnected();
-  String host = pairing ? String("Pairing") : up ? String(hostName) : String("No host");
-  host = ellipsize(fRead, host.c_str(), 120);
-  C3 hc = pairing ? MAG : up ? GREEN : AMBER;
-  int tw = textW(fRead, host.c_str());
-  text(fRead, right - tw, 19, host.c_str(), hc);
-  glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, right - tw - 12, 14, 18, hc);
-  if (hidDry()) tag(right - tw - 26, 6, "DRY", RED, false, RED, inkOn(RED), 255);
+  glyph(iconFind("chevron-down", true), true, x + pgW + 11, 14, 14, TXT2);
 }
 
 static void drawStations() {
@@ -1095,22 +1126,180 @@ static void drawHud(uint32_t now) {
   }
 }
 
+// ---------------------------------------------------------------- the shade
+// Pulled down from the status band: brightness and the profile on top, the hosts, then the newest
+// notifications. Its content stays put while its edge moves, like the sheet's.
+#define SH_ROW1 38              // brightness, profile
+#define SH_ROW2 90              // hosts
+#define SH_LIST 162             // the first notification
+#define SH_ROWH 46
+#define SH_SLX 30               // the brightness slider
+#define SH_SLW 256
+#define SH_PRV 292              // the profile stepper: < name >
+#define SH_NAME 334
+#define SH_NAMEW 94
+#define SH_NXT 432
+static int shadeRows() { return min(noteN, 3); }
+static int shadeHeight() { return SH_LIST + (noteN ? shadeRows() * SH_ROWH : 40) + 14; }   // the shade's bottom
+static int shadeBot(uint32_t now) {
+  if (mode != M_SHADE) return STATUS_H;
+  float e = easeQuad((now - shade0) / 220.0f);
+  if (shadeClosing) e = 1 - e;
+  return STATUS_H + (int)((shadeHeight() - STATUS_H) * e);
+}
+static void markShade() { mark(0, STATUS_H, SCR_W, shadeHeight() - STATUS_H + 14); }
+
+static void ago(char *b, size_t n, uint32_t at) {
+  uint32_t s = (millis() - at) / 1000;
+  if (s < 60) snprintf(b, n, "now");
+  else if (s < 3600) snprintf(b, n, "%lum", (unsigned long)(s / 60));
+  else snprintf(b, n, "%luh", (unsigned long)(s / 3600));
+}
+// A notification's icon: the key icon by that name, else the UI icon, else the bell.
+static void noteIcon(const char *name, float cx, float cy, C3 c) {
+  const IconDef *ic = iconFind(name, false);
+  if (ic) glyph(ic, false, cx, cy, 22, c);
+  else glyph(iconFind(iconFind(name, true) ? name : "bell", true), true, cx, cy, 20, c);
+}
+static void iconButton(int x, int y, int w, int h, const char *icon, bool down) {
+  button(x, y, w, h, "", nullptr, 0, down);
+  glyph(iconFind(icon, true), true, x + w / 2, y + h / 2, 18, TXT);
+}
+// One notification on a card: title and age, then the app and the text.
+static void noteCard(const Note &n, int x, int y, int w, int h, float r, Fill f) {
+  char v[8];
+  rrFill(x, y, w, h, r, f);
+  noteIcon(n.icon, x + 22, y + h / 2, TXT);
+  ago(v, sizeof v, n.at);
+  int vw = textW(fRead, v), ty = y + h / 2 - 3, by = y + h / 2 + 14;
+  text(fRead, x + w - 10, ty, v, TXT3, 255, AL_R);
+  text(fBodyB, x + 42, ty, ellipsize(fBodyB, n.title[0] ? n.title : n.app, w - 62 - vw).c_str(), TXT);
+  String app = ellipsize(fRead, n.app, 110);
+  int ax = x + 42 + textW(fRead, app.c_str()) + 6;
+  text(fRead, x + 42, by, app.c_str(), CYAN);
+  if (n.body[0]) text(fRead, ax, by, ellipsize(fRead, n.body, x + w - 10 - ax).c_str(), TXT2);
+}
+
+static void drawShade(int bot) {
+  if (bot <= STATUS_H || !gfxHits(0, STATUS_H, SCR_W, bot - STATUS_H + 14)) return;
+  int h = shadeHeight();
+  gfxClip(0, STATUS_H, SCR_W, bot + 14);
+  softShadow(0, STATUS_H, SCR_W, bot - STATUS_H, 200);
+  gfxClip(0, STATUS_H, SCR_W, bot);
+  Fill f = solidFill(PLY); f.top = PLY; f.bot = PLY2;
+  if (T->light) { f.edge = HAIR; f.edgeA = T->hairA; }
+  rrFill(0, STATUS_H - 20, SCR_W, h - STATUS_H + 20, T->crisp ? 4 : 16, f);
+  if (T->crisp) fillRect(0, h - 2, SCR_W, 2, TXT);
+  // brightness, and the profile: step through the saved ones; the name opens Profiles
+  glyph(iconFind("sun", true), true, 17, SH_ROW1 + 22, 18, TXT2);
+  slider(SH_SLX, SH_ROW1, SH_SLW, brightness / 255.0f);
+  iconButton(SH_PRV, SH_ROW1, 38, 44, "chevron-left", pressedBtn == 101);
+  button(SH_NAME, SH_ROW1, SH_NAMEW, 44, ellipsize(fBodyB, profileName, SH_NAMEW - 12).c_str(), nullptr, 0, pressedBtn == 102);
+  iconButton(SH_NXT, SH_ROW1, 38, 44, "chevron-right", pressedBtn == 103);
+  // the hosts: tap one to switch to it
+  for (int i = 0; i < 3; i++) {
+    int x = 12 + i * 154, y = SH_ROW2;
+    if (i < info.bonds) {
+      bool up = info.up[i];
+      button(x, y, 148, 46, "", nullptr, 0, pressedBtn == 110 + i);
+      if (up) rrRing(x + 1, y + 1, 146, 44, T->crisp ? 3 : 11, 2, GREEN);
+      glyph(iconFind("bluetooth", true), true, x + 18, y + 23, 18, up ? GREEN : TXT2);
+      text(fBodyB, x + 32, y + 21, ellipsize(fBodyB, info.names[i], 108).c_str(), TXT);
+      text(fRead, x + 32, y + 38, up ? "Connected" : "Tap to use", up ? GREEN : TXT2);
+    } else if (i == info.bonds) button(x, y, 148, 46, "Pair new", "link", 0, pressedBtn == 120);
+    else {
+      rrRing(x + 0.5f, y + 0.5f, 147, 45, T->crisp ? 4 : 11.5f, 1, mix(PLY, HAIR, 20));
+      text(fRead, x + 74, y + 28, "Empty", TXT3, 255, AL_C);
+    }
+  }
+  // the notifications
+  char v[28];
+  snprintf(v, sizeof v, noteN ? "Notifications \xc2\xb7 %d" : "Notifications", noteN);
+  text(fRead, 14, SH_LIST - 9, v, TXT2);
+  if (noteN) text(fBodyB, 466, SH_LIST - 8, "Clear all", pressedBtn == 130 ? TXT : CYAN, 255, AL_R);
+  else text(fBody, 240, SH_LIST + 25, "No notifications", TXT3, 255, AL_C);
+  for (int k = 0; k < shadeRows(); k++)
+    noteCard(notes[k], 8, SH_LIST + k * SH_ROWH, 464, 42, T->crisp ? 4 : 12, pressedBtn == 140 + k ? ctlFill() : cardFill());
+  rrFill(220, h - 9, 40, 4, 2, solidFill(mix(PLY, TXT2, 90)));   // the handle
+  gfxUnclip();
+}
+
+// ---------------------------------------------------------------- the host menu
+// The status band's host switch: the saved hosts under the host chip, then Pair.
+#define MENU_W 236
+#define MENU_ROW 46
+#define MENU_Y 32
+static int menuX() { return constrain(hostChipX + hostChipW - MENU_W, 4, SCR_W - 4 - MENU_W); }
+static int menuH() { return (info.bonds + 1) * MENU_ROW + 8; }
+static void markMenu() { mark(menuX() - 6, MENU_Y - 2, MENU_W + 12, menuH() + 18); }
+static void drawMenu(uint32_t now) {
+  if (mode != M_MENU) return;
+  int x = menuX(), h = menuH();
+  if (!gfxHits(x - 4, MENU_Y, MENU_W + 8, h + 14)) return;
+  gfxClip(0, 0, SCR_W, MENU_Y + (int)((h + 14) * easeOut((now - menu0) / 140.0f)));
+  softShadow(x, MENU_Y, MENU_W, h, 220);
+  rrFill(x, MENU_Y, MENU_W, h, T->crisp ? 4 : 14, pillFill());
+  for (int i = 0; i <= info.bonds; i++) {
+    int y = MENU_Y + 4 + i * MENU_ROW;
+    if (pressedBtn == 200 + i) rrFill(x + 4, y, MENU_W - 8, MENU_ROW, T->crisp ? 3 : 10, solidFill(mix(CTL, T->light ? T->hair : WHITE, 40)));
+    if (i) fillRect(x + 14, y, MENU_W - 28, 1, HAIR, T->hairA);
+    if (i < info.bonds) {
+      bool up = info.up[i];
+      glyph(iconFind("bluetooth", true), true, x + 22, y + 23, 18, up ? GREEN : TXT2);
+      text(fBodyB, x + 40, y + 21, ellipsize(fBodyB, info.names[i], MENU_W - 76).c_str(), TXT);
+      text(fRead, x + 40, y + 38, up ? "Connected" : "Saved \xc2\xb7 tap to use", up ? GREEN : TXT2);
+      if (up) glyph(iconFind("check", true), true, x + MENU_W - 22, y + 23, 18, GREEN);
+    } else {
+      glyph(iconFind("link", true), true, x + 22, y + 23, 18, CYAN);
+      text(fBodyB, x + 40, y + 28, "Pair new host", CYAN);
+    }
+  }
+  gfxUnclip();
+}
+
+// ---------------------------------------------------------------- the banner
+// A new notification drops in over the status band for a few seconds; a tap opens the shade.
+#define BAN_X 8
+#define BAN_Y 2
+#define BAN_W 464
+#define BAN_H 54
+static float banProg(uint32_t now) {
+  uint32_t t = now - ban0;
+  if (t < 180) return easeOut(t / 180.0f);
+  if (t < 3800) return 1;
+  if (t < 3980) return 1 - easeOut((t - 3800) / 180.0f);
+  return 0;
+}
+static void markBanner() { mark(0, 0, SCR_W, BAN_Y + BAN_H + 16); }
+static void drawBanner(uint32_t now) {
+  if (!banOn) return;
+  float p = banProg(now);
+  if (p <= 0 || !gfxHits(BAN_X - 4, 0, BAN_W + 8, BAN_Y + BAN_H + 14)) return;
+  gfxClip(0, 0, SCR_W, BAN_Y + (int)((BAN_H + 14) * p));
+  softShadow(BAN_X, BAN_Y, BAN_W, BAN_H, 220);
+  noteCard(banNote, BAN_X, BAN_Y, BAN_W, BAN_H, T->crisp ? 4 : 18, pillFill());
+  gfxUnclip();
+}
+
 // ---------------------------------------------------------------- frame
 static void renderChunk(uint32_t now) {
   if (mode == M_CAL) { gfxFill(CAL_BG); drawCal(); return; }
   gfxGround();
   drawStatus();
-  int top = sheetTop(now);
+  int top = sheetTop(now), bot = shadeBot(now);
   bool sheetCovers = mode == M_SHEET && top <= STATUS_H;
   if (mode == M_PAIR) drawPair();
   else if (!sheetCovers) {
-    gfxClip(0, 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet (its corners are 16 px)
+    gfxClip(0, bot > STATUS_H ? bot - 18 : 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet or shade (corners are 16 px)
     if (playerPage()) drawPlayer(now);
     else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
     drawStations();
     gfxUnclip();
   }
   drawSheet(top);
+  drawShade(bot);
+  drawMenu(now);
+  drawBanner(now);
   drawToast(now);
   drawHud(now);
 }
@@ -1145,8 +1334,9 @@ static bool animate(uint32_t now) {
     playing |= a.sig0 != 0;
   }
   if (!playing) iconAnimRelease();
-  if (mode == M_HOME && !playerPage()) {
-    idleTurn(now);
+  bool home = mode == M_HOME || mode == M_SHADE || mode == M_MENU;   // the page still runs under the shade and the menu
+  if (home && !playerPage()) {
+    if (mode == M_HOME) idleTurn(now);
     for (int c = 0; c < NUM_CELLS; c++) {
       bool m = false;
       if (ca[c].pop0) {
@@ -1174,7 +1364,7 @@ static bool animate(uint32_t now) {
       if (m) { markCellRect(c); live = true; }
     }
   }
-  if (mode == M_HOME && playerPage()) {
+  if (home && playerPage()) {
     static uint32_t lastSec = 0;
     if (np.playing) {
       mark(SEEK_X, 70, SEEK_W, 50);   // the live equalizer by the source
@@ -1199,6 +1389,22 @@ static bool animate(uint32_t now) {
       sheetTopDrawn = top;
       live = true;
     }
+  }
+  if (mode == M_SHADE) {
+    int bot = shadeBot(now);
+    if (shadeClosing && now - shade0 > 220) { shadeClosing = false; mode = M_HOME; emitMode(); bot = STATUS_H; }
+    if (bot != shadeBotDrawn) {
+      int a = min(bot, shadeBotDrawn), b = max(bot, shadeBotDrawn);
+      mark(0, a - 18, SCR_W, b - a + 34);
+      shadeBotDrawn = bot;
+      live = true;
+    }
+  }
+  if (mode == M_MENU && now - menu0 < 160) { markMenu(); live = true; }
+  if (banOn) {
+    uint32_t t = now - ban0;
+    if (t < 200 || (t > 3790 && t < 4000)) { markBanner(); live = true; }
+    if (t >= 4000) { banOn = false; markBanner(); }
   }
   if (mode == M_PAIR) {
     static uint32_t lastSec = 0;
@@ -1229,7 +1435,7 @@ static bool animate(uint32_t now) {
     time_t tt = timeEpoch + tzMin * 60 + (now - timeBase) / 1000;
     struct tm tm;
     gmtime_r(&tt, &tm);
-    if (tm.tm_min != lastMinute) { lastMinute = tm.tm_min; mark(0, 0, 240, STATUS_H); }
+    if (tm.tm_min != lastMinute) { lastMinute = tm.tm_min; mark(0, 0, 240, STATUS_H); if (mode == M_SHADE && noteN) markShade(); }   // and the ages
   }
   return live;
 }
@@ -1248,6 +1454,14 @@ void uiTick() {
     else if (dimState == 1 && idle > offMs) { dimState = 2; displaySetBacklight(0); if (!usb) powerSave(true); }
     else if (dimState == 2 && !usb && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
   }
+  static bool lowWarned = false;   // once per drop under 15 %
+  int pct = powerBatteryPct();
+  if (!usb && pct >= 0 && pct <= 15 && !lowWarned) {
+    char b[40];
+    snprintf(b, sizeof b, "%d%% left, plug in USB to charge", pct);
+    uiNotify("Keypad", "Battery low", b, "battery-low", "battery");
+    lowWarned = true;
+  } else if (usb || pct > 20) lowWarned = false;
   if (now - lastFrame < 16) return;
   tileLoads = 0;
   bool live = animate(now);
@@ -1349,6 +1563,8 @@ void uiMarkStatus() {   // BLE state changed: refresh the cached names, then red
   strlcpy(hostName, hidConnected() ? bleHostName(bleConnectedSlot()).c_str() : "", sizeof hostName);
   mark(0, 0, SCR_W, STATUS_H);
   if (mode == M_SHEET && sheetTab == 2) { refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
+  if (mode == M_SHADE) { refreshInfo(); markShade(); }
+  if (mode == M_MENU) { markMenu(); refreshInfo(); markMenu(); }
 }
 void uiActivity() { lastAct = millis(); }
 const char *uiModeName() { return MODE_NAMES[mode]; }
@@ -1480,6 +1696,7 @@ void uiToast(const char *t) {
 void uiAutogen(int state, const char *text) {
   uiToast(*text ? text : state == AG_DONE ? "Profile ready" : state == AG_FAIL ? "Could not generate" : "Generating...");
   if (state <= AG_BUSY) { agState = state; agAt = millis(); }
+  else uiNotify("Generate", toastText, "", "sparkles", "autogen", false);   // the toast told it; the shade keeps it
 }
 
 void uiSetProfile(int n) {
@@ -1489,6 +1706,7 @@ void uiSetProfile(int n) {
   loadProfileSafe(n);
   if (!dimState) displaySetBacklight(profileBrightness >= 0 ? profileBrightness : brightness);
   if (mode == M_SHEET) { loadSlots(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
+  if (mode == M_SHADE) markShade();
   char t[48];
   snprintf(t, sizeof t, "Profile %d \xc2\xb7 %s", currentProfile, profileName);
   uiToast(t);
@@ -1601,6 +1819,91 @@ void uiCloseSheet() {
 }
 bool uiSheetOpen() { return mode == M_SHEET && !sheetClosing; }
 
+void uiNotify(const char *app, const char *title, const char *body, const char *icon, const char *tag, bool banner) {
+  int at = noteN < NOTE_MAX ? noteN : NOTE_MAX - 1;   // the slot it takes: a new one, or the oldest's
+  if (tag && *tag) for (int i = 0; i < noteN; i++) if (!strcmp(notes[i].tag, tag)) { at = i; break; }   // or the one it updates
+  bool reuse = at < noteN;
+  if (reuse && at < noteUnread) noteUnread--;
+  memmove(&notes[1], &notes[0], at * sizeof(Note));
+  if (!reuse) noteN++;
+  Note &n = notes[0];
+  strlcpy(n.app, app && *app ? app : "PC", sizeof n.app);
+  strlcpy(n.title, title ? title : "", sizeof n.title);
+  strlcpy(n.body, body ? body : "", sizeof n.body);
+  strlcpy(n.icon, icon && *icon ? icon : "bell", sizeof n.icon);
+  strlcpy(n.tag, tag ? tag : "", sizeof n.tag);
+  n.at = millis();
+  if (mode == M_SHADE) { noteUnread = 0; markShade(); }   // on screen: seen
+  else if (banner) noteUnread = min(noteUnread + 1, noteN);
+  mark(0, 0, SCR_W, STATUS_H);
+  if (banner && mode == M_HOME) {
+    banNote = n;
+    ban0 = banOn ? millis() - 180 : millis();   // one already down: swap the text, no second entrance
+    banOn = true;
+    markBanner();
+    uiWake();
+  }
+}
+static void notifyRemove(int i) {
+  if (i < 0 || i >= noteN) return;
+  markShade();
+  if (i < noteUnread) noteUnread--;
+  memmove(&notes[i], &notes[i + 1], (--noteN - i) * sizeof(Note));
+  mark(0, 0, SCR_W, STATUS_H);
+}
+void uiNotifyClear() {
+  if (mode == M_SHADE) markShade();
+  noteN = noteUnread = 0;
+  mark(0, 0, SCR_W, STATUS_H);
+}
+void uiNotifyList() {
+  Con.printf("notify %d unread %d\n", noteN, noteUnread);
+  for (int i = 0; i < noteN; i++) Con.printf("%d %s\t%s\t%s\t%s\n", i + 1, notes[i].app, notes[i].title, notes[i].body, notes[i].icon);
+}
+
+void uiOpenShade() {
+  if (mode != M_HOME) return;
+  loadSlots();
+  if (banOn) { banOn = false; markBanner(); }
+  mode = M_SHADE;
+  shadeClosing = false;
+  shade0 = millis();
+  shadeBotDrawn = STATUS_H;
+  pressed = pressedBtn = dragSlider = -1;
+  noteUnread = 0;   // the shade shows them
+  mark(0, 0, SCR_W, STATUS_H);
+  emitMode();
+}
+void uiCloseShade() {   // and the host menu
+  if (mode == M_MENU) { markMenu(); mode = M_HOME; emitMode(); return; }
+  if (mode != M_SHADE || shadeClosing) return;
+  shadeClosing = true;
+  shade0 = millis();
+  pressedBtn = dragSlider = -1;
+}
+
+static void openHostMenu() {
+  if (mode != M_HOME) return;
+  refreshInfo();
+  mode = M_MENU;
+  menu0 = millis();
+  pressed = pressedBtn = -1;
+  markMenu();
+  emitMode();
+}
+static void closeMenu() {
+  markMenu();
+  mode = M_HOME;
+  emitMode();
+}
+static void useHost(int i) {   // from the shade or the host menu
+  if (i < 0 || i >= info.bonds || info.up[i]) return;
+  char t[48];
+  snprintf(t, sizeof t, "Switching to %s", info.names[i]);
+  bleUse(i);
+  uiToast(t);
+}
+
 // ---------------------------------------------------------------- calibration
 void uiCalibrate() {
   mode = M_CAL;
@@ -1671,6 +1974,40 @@ static void calTap(int x, int y) {
 }
 
 // ---------------------------------------------------------------- gestures
+static void shadeSlider(int x) {
+  uiSetBrightness(max(13, (int)(clamp01((x - (SH_SLX + 13)) / (float)(SH_SLW - 26)) * 255)));
+  mark(SH_SLX - 4, SH_ROW1 - 2, SH_SLW + 8, 48);
+}
+static int shadeButtonAt(int x, int y) {   // ids match drawShade's pressedBtn
+  if (inRect(x, y, SH_PRV, SH_ROW1, 38, 44)) return 101;
+  if (inRect(x, y, SH_NAME, SH_ROW1, SH_NAMEW, 44)) return 102;
+  if (inRect(x, y, SH_NXT, SH_ROW1, 38, 44)) return 103;
+  for (int i = 0; i < 3; i++)
+    if (inRect(x, y, 12 + i * 154, SH_ROW2, 148, 46)) return i < info.bonds ? 110 + i : i == info.bonds ? 120 : -1;
+  if (noteN && inRect(x, y, 370, SH_LIST - 28, 106, 28)) return 130;
+  for (int k = 0; k < shadeRows(); k++) if (inRect(x, y, 8, SH_LIST + k * SH_ROWH, 464, 42)) return 140 + k;
+  return -1;
+}
+static void stepProfile(int dir) {   // the next saved profile that way, round the ring
+  for (int k = 1; k < NUM_PROFILES; k++) {
+    int n = (currentProfile - 1 + dir * k + 2 * NUM_PROFILES) % NUM_PROFILES + 1;
+    if (slots[n - 1].ok) { uiSetProfile(n); return; }
+  }
+}
+static void shadeTap(int x, int y, int b) {
+  if (y >= shadeHeight() - 16) { uiCloseShade(); return; }   // the handle, or the page below
+  if (b < 0 || shadeButtonAt(x, y) != b) return;
+  if (b == 101 || b == 103) stepProfile(b == 101 ? -1 : 1);
+  else if (b == 102) { mode = M_HOME; markScreen(); uiOpenSheet(1); }
+  else if (b >= 110 && b < 113) { useHost(b - 110); markShade(); }
+  else if (b == 120) { mode = M_HOME; emitMode(); markScreen(); blePairOpen(); }
+  else if (b == 130) uiNotifyClear();
+}
+static int menuRowAt(int x, int y) {
+  if (!inRect(x, y, menuX(), MENU_Y + 4, MENU_W, (info.bonds + 1) * MENU_ROW)) return -1;
+  return 200 + (y - MENU_Y - 4) / MENU_ROW;
+}
+
 static void sheetSlider(int which, int x) {
   float f = clamp01((x - (PANE_X + 13)) / (float)(PANE_W - 26));
   if (which == 0) uiSetBrightness(max(13, (int)(f * 255)));
@@ -1781,7 +2118,43 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     }
     return;
   }
+  if (mode == M_MENU) {
+    if (kind == G_DOWN) { pressedBtn = menuRowAt(x0, y0); markMenu(); }
+    else if (kind == G_TAP) {
+      int b = menuRowAt(x1, y1) == pressedBtn ? pressedBtn : -1;
+      pressedBtn = -1;
+      closeMenu();
+      if (b >= 200 && b - 200 < info.bonds) useHost(b - 200);
+      else if (b == 200 + info.bonds) blePairOpen();
+    } else if (kind >= G_SWIPE_L && kind <= G_SWIPE_D) { pressedBtn = -1; closeMenu(); }
+    return;
+  }
+  if (mode == M_SHADE) {
+    if (shadeClosing) return;
+    if (kind == G_DOWN) {
+      if (inRect(x0, y0, SH_SLX, SH_ROW1, SH_SLW, 44)) { dragSlider = 2; shadeSlider(x0); }
+      else { pressedBtn = shadeButtonAt(x0, y0); if (pressedBtn >= 0) markShade(); }
+    } else if (kind == G_MOVE && dragSlider == 2) shadeSlider(x1);
+    else if (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D)) {
+      bool wasDrag = dragSlider >= 0;
+      int b = pressedBtn;
+      dragSlider = pressedBtn = -1;
+      if (b >= 0) markShade();
+      if (wasDrag) return;
+      if (kind == G_SWIPE_U) uiCloseShade();
+      else if ((kind == G_SWIPE_L || kind == G_SWIPE_R) && b >= 140) notifyRemove(b - 140);   // swipe one away
+      else if (kind == G_TAP) shadeTap(x1, y1, b);
+    }
+    return;
+  }
   if (mode != M_HOME) return;
+
+  // The banner: a tap opens the shade, a swipe sends it away; keys under it stay untouched.
+  if (banOn && banProg(now) > 0.3f && inRect(x0, y0, BAN_X, BAN_Y, BAN_W, BAN_H)) {
+    if (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D)) { banOn = false; markBanner(); }
+    if (kind == G_TAP || kind == G_SWIPE_D) uiOpenShade();
+    return;
+  }
 
   if (playerPage()) {
     if (kind == G_DOWN) {
@@ -1802,6 +2175,8 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
         np.at = now;
         mark(SEEK_X - 8, 140, SEEK_W + 16, 56);
       } else if (y0 < STATUS_H && x0 >= 440) uiOpenSheet();
+      else if (onBell(x0, y0)) uiOpenShade();
+      else if (onHostChip(x0, y0)) openHostMenu();
       else if (onProfChip(x0, y0)) uiOpenSheet(1);
       else if (y0 >= LINE_Y) {
         int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
@@ -1811,6 +2186,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     } else if (kind == G_SWIPE_L) { pressedBtn = -1; if (currentPage + 1 < pageCount) uiGoPage(currentPage + 1, false); }
     else if (kind == G_SWIPE_R) { pressedBtn = -1; if (currentPage > 0) uiGoPage(currentPage - 1, false); }
     else if (kind == G_SWIPE_U) { pressedBtn = -1; uiOpenSheet(); }
+    else if (kind == G_SWIPE_D) { pressedBtn = -1; uiOpenShade(); }
     return;
   }
 
@@ -1854,6 +2230,8 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       release(c);
       if (fire) { runKey(c, false); if (c >= 0) uiFlash(c, true); }
       else if (c < 0 && y0 < STATUS_H && x0 >= 440) uiOpenSheet();
+      else if (c < 0 && onBell(x0, y0)) uiOpenShade();
+      else if (c < 0 && onHostChip(x0, y0)) openHostMenu();
       else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
       else if (c < 0 && y0 >= LINE_Y && pageCount > 1) {
         int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
@@ -1865,6 +2243,6 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     case G_SWIPE_L: release(pressed); if (currentPage + 1 < pageCount) uiGoPage(currentPage + 1, false); break;
     case G_SWIPE_R: release(pressed); if (currentPage > 0) uiGoPage(currentPage - 1, false); break;
     case G_SWIPE_U: release(pressed); uiOpenSheet(); break;
-    case G_SWIPE_D: release(pressed); break;
+    case G_SWIPE_D: release(pressed); uiOpenShade(); break;   // pull the shade down
   }
 }

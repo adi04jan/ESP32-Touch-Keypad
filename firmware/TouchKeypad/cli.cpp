@@ -255,7 +255,7 @@ static bool runCommand(char *s) {
   if (cmd == "help") {
     Con.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
                    "setface <id> <tile> <r> <g> <b> title <id> <text> show <id> ok|alert widget <name> <json> "
-                   "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> "
+                   "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> notify <json>|list|clear shade [close] "
                    "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
@@ -430,6 +430,19 @@ static bool runCommand(char *s) {
   } else if (cmd == "sheet") {
     if (!strcmp(arg, "close")) uiCloseSheet(); else uiOpenSheet(!strcmp(arg, "profiles") ? 1 : -1);
     Con.printf("ui %s\n", uiModeName());
+  } else if (cmd == "shade") {
+    if (!strcmp(arg, "close")) uiCloseShade(); else uiOpenShade();
+    Con.printf("ui %s\n", uiModeName());
+  } else if (cmd == "notify") {
+    // Studio's notifications (the PC's): {app, title, body, icon, tag, banner}; list and clear for tests.
+    JsonDocument doc;
+    if (!*arg || !strcmp(arg, "list")) uiNotifyList();
+    else if (!strcmp(arg, "clear")) { uiNotifyClear(); Con.println("notify clear"); }
+    else if (deserializeJson(doc, arg) || !doc.is<JsonObject>()) Con.println("notify {app,title,body,icon,tag,banner}|list|clear");
+    else {
+      uiNotify(doc["app"] | "PC", doc["title"] | "", doc["body"] | "", doc["icon"] | "bell", doc["tag"] | "", doc["banner"] | true);
+      Con.println("notify");
+    }
   } else {
     Con.println("unknown");
   }
@@ -463,7 +476,7 @@ static void handleLine(char *s, size_t n) {
     prompt();
   } else {
     // An edit from Studio lights a dark screen so it shows; feeds (widget, settime) and readouts don't.
-    static const char *const WAKES[] = { "setprofile", "page", "setkey", "sethold", "setface", "show", "theme", "setbrightness", "sheet" };
+    static const char *const WAKES[] = { "setprofile", "page", "setkey", "sethold", "setface", "show", "theme", "setbrightness", "sheet", "shade" };
     for (const char *w : WAKES) {
       size_t l = strlen(w);
       if (!strncmp(s, w, l) && s[l] == ' ') { uiWake(); break; }

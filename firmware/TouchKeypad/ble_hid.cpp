@@ -367,10 +367,12 @@ void blePoll() {
         Con.printf("EVT:BLE %d up\n", e.slot);
         if (e.newBond) { if (pairOpen) pairClose("ok"); else { Con.println("EVT:BLE pair ok"); uiPairClose(); } }
         uiMarkStatus();
+        if (e.slot >= 0) uiNotify("Bluetooth", "Connected", bleHostName(e.slot).c_str(), "bluetooth", "ble", false);   // kept quietly in the shade
         break;
       case EV_DOWN:
         Con.printf("EVT:BLE %d down\n", e.slot);
         uiMarkStatus();
+        if (e.slot >= 0) uiNotify("Bluetooth", "Disconnected", bleHostName(e.slot).c_str(), "bluetooth-off", "ble", false);
         break;
       case EV_FAIL:
       case EV_REJECT:

@@ -324,6 +324,13 @@ class Device extends EventEmitter {
     if (newTrack && this._art && this._art.key === `${np.title ?? ""}|${np.artist ?? ""}|${np.album ?? ""}`) this._sendArt();
     return true;
   }
+
+  // A notification for the keypad's bell, banner and shade: {app, title, body, icon} (services/winnotify.js).
+  notify(note) {
+    if (!this.link.isOpen()) return false;
+    this.link.command(`notify ${JSON.stringify(note)}`);
+    return true;
+  }
 }
 
 module.exports = { Device };

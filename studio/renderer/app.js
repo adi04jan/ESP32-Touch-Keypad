@@ -651,6 +651,10 @@ async function renderSettings() {
       <label class="check"><input type="checkbox" data-set="nowplaying_enabled" ${s.nowplaying_enabled ? "checked" : ""}> Send what's playing on this PC to the keypad's player page</label>
       <label class="check"><input type="checkbox" data-set="art_enabled" ${s.art_enabled !== false ? "checked" : ""}> Include album art</label>
       <p class="hint">Uses the Windows media session: Spotify, browsers and most players publish to it. Seeking on the keypad moves the track here.</p></div>
+    <div class="book"><h2>Notifications</h2>
+      <label class="check"><input type="checkbox" data-set="notifications_enabled" ${s.notifications_enabled !== false ? "checked" : ""}> Show this PC's notifications on the keypad</label>
+      <p class="hint">Each new Windows notification (Slack, Teams, Outlook, any app) drops in at the top of the keypad, and the bell counts the unread ones. Swipe down on the keypad, or tap the bell, to read the newest and to set brightness, the profile and the Bluetooth host.</p>
+      <div class="row"><button id="nt-test">${ico("bell")} Send a test notification</button></div></div>
     <div class="book"><h2>OBS</h2>
       <label class="check"><input type="checkbox" data-set="obs_enabled" ${s.obs_enabled ? "checked" : ""}> Switch OBS scenes (OBS WebSocket v5)</label>
       <label class="field"><span>WebSocket URL</span><input data-set="obs_url" value="${esc(s.obs_url)}"></label>
@@ -697,6 +701,7 @@ async function renderSettings() {
   };
   $("ag-run").onclick = () => gen(false);
   $("ag-force").onclick = () => gen(true);
+  $("nt-test").onclick = async () => cli("notify", (await api.notifyTest()) ? "notify: sent a test notification to the keypad" : "! notify: connect the keypad first");
 }
 
 /* ---- Ask Claude (services/chat.js): one conversation per profile slot ---- */

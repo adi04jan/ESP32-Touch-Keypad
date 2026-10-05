@@ -18,6 +18,7 @@ const DEFAULTS = {
   obs_url: "ws://127.0.0.1:4455",
   obs_password: "",
   nowplaying_enabled: true,
+  notifications_enabled: true,   // this PC's Windows notifications to the keypad's bell, banner and shade
   art_enabled: true,             // album art to the keypad's player page
   preview_theme: "daylight",
   console_open: false,           // the device console starts folded away     // the editor preview's theme while no keypad is connected

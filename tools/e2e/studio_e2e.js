@@ -358,6 +358,20 @@ test("Autogenerate: Generate on the keypad gets Claude's profile for the app in 
   }
 });
 
+test("Notifications: a Windows notification on this PC reaches the keypad's bell", async () => {
+  await cmd("notify clear");
+  const title = `E2E toast ${Date.now() % 100000}`;
+  // A real toast, under PowerShell's own app id (Studio skips its own toasts).
+  execFileSync("powershell", ["-NoProfile", "-Command", `
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+$x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$t = $x.GetElementsByTagName('text'); $t.Item(0).InnerText = '${title}'; $t.Item(1).InnerText = 'from the Studio E2E run'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))`], { timeout: 20000 });
+  const line = await until("the toast in the keypad's notifications", async () => (await cmd("notify list")).split("\n").find((l) => l.includes(title)), 12000, 500);
+  if (!/^1 PowerShell\t.*\tfrom the Studio E2E run\tterminal$/.test(line.trim())) throw new Error(line);
+  await cmd("notify clear");
+});
+
 test("Device view: power readout, and the battery sleep time reaches the keypad", async () => {
   await view("device");
   const pane = await text("#device-pane");
