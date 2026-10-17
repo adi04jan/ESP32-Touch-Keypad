@@ -5,10 +5,12 @@
    which idles high only while USB powers that chip (unpowered, it holds the
    ESP32's RX low). On USB the keypad runs at full power; on battery it dims
    sooner, darkens the LED and slows the CPU while the screen is off, and
-   deep-sleeps after a few idle minutes (a touch wakes it). */
+   deep-sleeps after a few idle minutes (a touch wakes it). At 0 % it says so
+   and sleeps. */
 #pragma once
 #include <Arduino.h>
 
+void powerUnhold();               // first thing in setup(): frees the pins powerDeepSleep() held
 void powerBegin();
 void powerTick();                 // samples every 2 s
 bool powerOnUsb();
@@ -17,9 +19,10 @@ int  powerBatteryMv();
 bool powerCharging();             // on USB with a battery that is still filling
 uint8_t powerSleepMin();          // deep sleep after N idle minutes on battery, 0 = never (NVS kp/bsleep)
 void powerSetSleepMin(uint8_t m);
-void powerSim(int mode);          // tests: -1 real, 0 battery, 1 USB (RAM only)
+void powerSim(int mode, int mv = 0);   // tests: -1 real, 0 battery (at mv when given), 1 USB (RAM only)
 int  powerSimMode();
 void powerSetDivider(float k);    // calibration: battery mV per ADC mV (NVS kp/batk)
 float powerDivider();
 void powerSave(bool on);          // screen off on battery: CPU 80 MHz and a dark LED; off again on wake
-void powerDeepSleep();            // never returns; a touch (IO36 low) wakes the board
+bool powerSaving();
+void powerDeepSleep(uint32_t wakeS = 0);   // never returns; a touch (IO36 low) wakes the board, or wakeS seconds (`power nap`)

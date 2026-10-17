@@ -597,6 +597,38 @@ def test_power_sleep_minutes(d):
     d.cmd(f"power sleep {old}")
 
 
+def test_battery_gauge_only_falls_on_battery(d):
+    try:
+        assert " pct:52 " in d.cmd("power sim battery 3800")[0]
+        assert " pct:52 " in d.cmd("power sim battery 3900")[0]   # a dark screen's rebound is not charge
+        assert " pct:42 " in d.cmd("power sim battery 3750")[0]
+        d.cmd("power sim usb")
+        assert " pct:65 " in d.cmd("power sim battery 3900")[0]   # off USB again: a fresh reading
+    finally:
+        d.cmd("power sim off")
+
+
+def test_battery_cutoff_warns_then_sleeps(d):
+    try:
+        since = len(d.events)
+        d.cmd("power sim battery 3250")
+        d.wait_event(r"POWER empty", 3, since)
+        assert any("Battery empty" in l for l in d.cmd("notify list"))
+        d.wait_event(r"POWER sleep", 8, since)
+    finally:
+        d.reset()                                             # only a touch wakes it; RTS stands in
+    assert "pwr:usb" in d.cmd("status")[0]
+
+
+def test_nap_wakes_with_a_working_screen(d):
+    since = len(d.events)
+    d.write_line("power nap 2")
+    d.wait_event(r"POWER sleep", 3, since)
+    d.wait_event(r"POWER wake timer", 15, since)              # held pins were released, or the LCD stays deaf
+    d.ready()
+    assert len(d.shot().getcolors(1 << 20)) > 50              # the screen came back and draws
+
+
 # ---------------------------------------------------------------- quick switch and autogenerate
 TOAST_PX = (240, 56)                                     # inside the toast pill, over key 3
 

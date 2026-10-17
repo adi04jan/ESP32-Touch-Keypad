@@ -75,6 +75,8 @@ test("EVT lines are diverted to events, never into a command's output", async ()
   sim.press(2, 7, "H");          // arrives while cat is in flight
   assert.deepEqual(JSON.parse(await p), { x: 1 });
   sim.event("BLE 1 up");
+  sim.event("BLE 1 params 15.00 ms latency 30");   // not a link change
+  sim.event("BLE pair open");
   assert.equal(await link.command("page 1"), "page 1");   // the page command also emits EVT:PAGE 1
   assert.deepEqual(keys, [{ page: 2, id: 7, state: "H" }]);
   assert.deepEqual(pages, [1]);

@@ -64,5 +64,7 @@ The BLE E2E types only into the window it opens and keeps focused, and presses P
 - **DTR and RTS** must be released after opening the port: DTR alone holds IO0 low, which reads as a BOOT hold.
 - **NimBLE** asks `onPassKeyDisplay()` only while the static passkey is the default. `bleForget` stops advertising first, because the resolving list can't change while advertising.
 - **USB or battery:** the board has no VBUS pin. The CH340's TX line idles high only while USB powers the chip, so RX (IO3) tells them apart.
+- **Deep sleep** leaves the GPIOs floating: the backlight (IO27), amp enable (IO4), LED and chip-select pins are held through it with `gpio_hold_en`, and released first thing at boot, or the LCD ignores its init after a wake.
+- **Bluetooth power:** this core has no power management (`CONFIG_PM_ENABLE` off) and the ESP32 needs a 32 kHz crystal on IO32/33 to keep a BLE link in light sleep (IO33 is the touch CS), so a connected keypad can only let the radio nap between connection events. Windows gives HID 15 ms with a peripheral latency of 30 on its own.
 - **Windows GATT:** open the console service shared and dispose it on exit. A service left to the finalizer stays held, and the next connection gets AccessDenied. Read characteristics and descriptors uncached: after a firmware update, the cached CCCD handle answers "write not permitted".
 - **Heap:** about 114 KB free with NimBLE, the double DMA buffers and the album-art buffer.

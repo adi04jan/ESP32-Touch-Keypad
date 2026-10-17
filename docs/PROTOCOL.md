@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.8.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.9.0.
 
 ## Transport
 
@@ -44,7 +44,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
 | `theme [id\|title\|1-6\|default]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; `default` forgets the saved theme (Daylight); an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
-| `power [sim battery\|usb\|off \| sleep <min> \| divider <k>]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests), the battery divider (NVS `kp/batk`, a calibration knob), CPU MHz, screen lit/dim/off |
+| `power [sim battery [mv]\|usb\|off \| sleep <min> \| divider <k> \| nap <s>]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 link:15.00/30 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests; `sim battery <mv>` holds the cell at that voltage), the battery divider (NVS `kp/batk`, a calibration knob), the first host's connection interval in ms and its peripheral latency (`0.00/-1` with none), CPU MHz, screen lit/dim/off. `nap <s>` deep-sleeps now until a touch or s seconds (1-3600): for tests and the power profiler |
 | `iconanim [on\|off]` | `iconanim on\|off` | moving icons: every key icon has a signature animation that acts out its key (copy pulls a second sheet out of the first, a bell rings, wifi lights its arcs from the dot, a check draws itself), played when the key fires; while idle, a few keys play at once (a new one every 0.5 s, three at most) and every 20-30 s a wave runs across the grid diagonal by diagonal (six keys at once at most); none while the screen is dim. `iconanim wave` runs a wave now. Off, icons never move. NVS `kp/ianim`, on by default |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
@@ -91,11 +91,14 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:PROFILE <n>` | profile loaded |
 | `EVT:UI home\|sheet\|pair\|cal\|shade\|menu` | the screen mode changed (`menu`: the status band's host list) |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
-| `EVT:POWER sleep` | on battery, idle past the sleep time: the keypad goes into deep sleep; a touch wakes it (a reboot) |
+| `EVT:POWER sleep` | on battery, idle past the sleep time (or empty, or `power nap`): the keypad goes into deep sleep; a touch wakes it (a reboot) |
+| `EVT:POWER empty` | on battery at 0 % (3.30 V): a "Battery empty" notice, then deep sleep 5 s later; a touch wakes it to say so again |
+| `EVT:POWER wake touch\|timer` | at boot, after a deep sleep: what woke it |
 | `EVT:AUTOGEN` | the Generate button in Profiles: the host should give the app in front a profile (Autogenerate below) |
 | `EVT:SEEK <s>` | tap on the player's seek bar; the host should seek its media session there |
 | `EVT:CAL start\|point <n> <rx> <ry>\|retry fit <px>\|retry verify <px>\|saved <px>\|redo\|done\|cancel` | calibration progress; `saved` carries the check-point error in px (at most 16) |
 | `EVT:BLE <slot> up\|down` | host link up (encrypted) or down |
+| `EVT:BLE <slot> params <ms> ms latency <n>` | the connection interval and peripheral latency the host granted (the keypad asks for 7.5-15 ms, latency 30; Windows sets 15 ms, 30 itself) |
 | `EVT:BLE pair open\|ok\|timeout\|closed\|fail\|rejected` | pairing window |
 | `EVT:PASSKEY <6 digits>` | the passkey on screen; type it into the host |
 | `EVT:HID <report id> <hex>` | dry-run only: 1 = keyboard (8 B), 2 = consumer (2 B, little-endian usage), 3 = mouse, 8 = telephony |
@@ -147,7 +150,9 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 USB is detected from the CH340's TX line, which idles high while USB powers the chip
 (sampled on RX, IO3). The cell is read on IO34 through the board's divider.
 - **On USB:** full power and the owner's dim setting. A reading under 4.25 V is a cell charging (`charging:1`); the status band shows a green battery with a bolt. Higher is the charger with no cell, and the band shows a plug.
-- **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz and the LED goes dark. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it.
+- **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz, the LED goes dark and the main loop rests 20 ms a pass instead of 1. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it. In deep sleep the backlight, amp, LED and chip-select pins are held (they float otherwise) and the click's DAC is off.
+- **Empty:** at 0 % (3.30 V on the resting curve) the keypad shows "Battery empty" for 5 s and deep-sleeps; the 15 % warning stays above 0 %. On battery the percentage only falls (a lit screen sags the cell; the reading doesn't climb back when it goes dark); a USB visit or a reboot takes a fresh one.
+- **Bluetooth:** the keypad asks for 7.5-15 ms with a peripheral latency of 30: key reports still leave at the next event, and the radio may skip up to 30 idle ones. Windows applies 15 ms / 30 to HID on its own and overrides a request for 0.
 - Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.
 - The Bluetooth Battery Service carries the charge (100 when no cell is read).
 

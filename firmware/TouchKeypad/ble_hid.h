@@ -37,6 +37,7 @@ bool bleUse(int n);                          // switch to bond n (directed adver
 String bleHostName(int n);                   // the name Studio gave it, or "Host n+1"
 bool bleSetHostName(const char *name);
 void bleSetBattery(uint8_t pct);
+bool bleLinkParams(float *ms, int *latency); // the first host's interval and latency; false with none
 // Bluetooth console: the line CLI over a Nordic UART service, paired hosts only.
 void bleConsoleWrite(const uint8_t *b, size_t n);   // Con copies output here
 void bleConsoleFlush();

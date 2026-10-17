@@ -50,7 +50,12 @@ static uint32_t passkey = 0, pairStart = 0;
 
 // NimBLE callbacks run in the NimBLE task; they only post here and loop()
 // does the printing and drawing, so serial output never interleaves.
-enum : uint8_t { EV_UP, EV_DOWN, EV_PASSKEY, EV_FAIL, EV_REJECT };
+enum : uint8_t { EV_UP, EV_DOWN, EV_PASSKEY, EV_FAIL, EV_REJECT, EV_PARAMS };
+
+// Connection events the keypad may skip while it has nothing to send. Key reports
+// still leave at the next 7.5-15 ms event; only the host's writes wait, up to
+// (1 + n) intervals. Windows picks 15 ms / 30 for HID itself and overrides a 0.
+#define LATENCY 30
 struct BleEvt { uint8_t type; int8_t slot; uint8_t newBond; uint32_t val; };
 static QueueHandle_t evq;
 
@@ -131,7 +136,10 @@ class ServerCb : public NimBLEServerCallbacks {
   void onMTUChange(uint16_t mtu, NimBLEConnInfo &info) override { nusChunk = min((int)sizeof txBuf, max(20, (int)mtu - 3)); }
   void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override {
     bondsAtConnect = NimBLEDevice::getNumBonds();
-    s->updateConnParams(info.getConnHandle(), 6, 12, 0, 400);   // 7.5-15 ms
+    s->updateConnParams(info.getConnHandle(), 6, 12, LATENCY, 400);   // 7.5-15 ms, 4 s timeout
+  }
+  void onConnParamsUpdate(NimBLEConnInfo &info) override {   // what the host granted
+    post(EV_PARAMS, slotOf(info.getIdAddress()), info.getConnInterval() | (uint32_t)info.getConnLatency() << 16);
   }
   void onDisconnect(NimBLEServer *s, NimBLEConnInfo &info, int reason) override {
     linkUp = s->getConnectedCount() > 0;
@@ -380,6 +388,9 @@ void blePoll() {
         pairOpen = false;
         uiPairClose();
         break;
+      case EV_PARAMS:
+        Con.printf("EVT:BLE %d params %.2f ms latency %u\n", e.slot, (e.val & 0xFFFF) * 1.25f, (unsigned)(e.val >> 16));
+        break;
     }
   }
   if (pairOpen && millis() - pairStart > PAIR_WINDOW_MS) pairClose("timeout");
@@ -412,6 +423,15 @@ uint32_t blePairLeftMs() {
 }
 
 int bleBondCount() { return NimBLEDevice::getNumBonds(); }
+
+bool bleLinkParams(float *ms, int *latency) {
+  std::vector<uint16_t> peers = server->getPeerDevices();
+  if (peers.empty()) return false;
+  NimBLEConnInfo info = server->getPeerInfoByHandle(peers[0]);
+  *ms = info.getConnInterval() * 1.25f;
+  *latency = info.getConnLatency();
+  return true;
+}
 
 void bleList() {
   int n = NimBLEDevice::getNumBonds();

@@ -1546,7 +1546,7 @@ void uiTick() {
   }
   static bool lowWarned = false;   // once per drop under 15 %
   int pct = powerBatteryPct();
-  if (!usb && pct >= 0 && pct <= 15 && !lowWarned) {
+  if (!usb && pct > 0 && pct <= 15 && !lowWarned) {   // 0 % is the cutoff's own notice
     char b[40];
     snprintf(b, sizeof b, "%d%% left, plug in USB to charge", pct);
     uiNotify("Keypad", "Battery low", b, "battery-low", "battery");

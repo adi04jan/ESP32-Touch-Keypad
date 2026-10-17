@@ -9,12 +9,18 @@
 #include <driver/gpio.h>
 #include <esp_sleep.h>
 
-static int mvNow = 0, pctNow = -1, sim = -1;
+static int mvNow = 0, pctNow = -1, sim = -1, simMv = 0;
 static float mvAvg = 0;
 static bool usb = true, saving = false;
 static float kDiv = 2.0f;           // the board's 100k/100k divider; a calibration knob
 static uint8_t sleepMin = 5;
-static uint32_t lastSample = 0;
+static uint32_t lastSample = 0, emptyAt = 0;
+
+// Held through deep sleep, or they float: the backlight and the amp could sit half on.
+static const struct { uint8_t pin, level; } HOLD[] = {
+  { PIN_LCD_BL, LOW }, { PIN_AMP_EN, HIGH }, { PIN_LED_R, HIGH }, { PIN_LED_G, HIGH }, { PIN_LED_B, HIGH },
+  { PIN_LCD_CS, HIGH }, { PIN_TOUCH_CS, HIGH },
+};
 
 static int readMv() {
   uint32_t s = 0;
@@ -48,11 +54,24 @@ static void sample() {
   mvNow = readMv();
   mvAvg = mvAvg ? mvAvg * 0.75f + mvNow * 0.25f : mvNow;
   usb = sim >= 0 ? sim == 1 : usbLine();
+  if (sim == 0 && simMv) mvNow = mvAvg = simMv;    // tests: a battery at a chosen voltage
   // On battery the cell is the supply. On USB a reading under 4.25 V is a cell
   // being charged; above it is the charger's open output (no cell) or a full one.
   bool cell = !usb || (mvAvg > 2800 && mvAvg < 4250);
   if (sim == 0 && mvAvg >= 4250) mvAvg = 3950;     // simulated battery on a USB-only bench
-  pctNow = cell ? toPct((int)mvAvg) : -1;
+  int pct = cell ? toPct((int)mvAvg) : -1;
+  // On battery the charge only falls: a lit screen sags the cell, and the
+  // reading must not climb back when the screen goes dark.
+  // ponytail: reads a few % low while lit; compensating needs the cell's internal resistance (measure a real cell)
+  if (!usb && !wasUsb && wasPct >= 0 && pct > wasPct) pct = wasPct;
+  pctNow = pct;
+  if (usb) emptyAt = 0;
+  else if (pct == 0 && !emptyAt) {                 // 3.30 V, spent: say so, then sleep (a touch wakes it to say so again)
+    emptyAt = millis() | 1;
+    Con.println("EVT:POWER empty");
+    uiWake();
+    uiNotify("Keypad", "Battery empty", "Plug in USB to charge", "battery-low", "battery");
+  }
   if (usb != wasUsb) uiPowerChanged();
   if (usb != wasUsb || pctNow != wasPct) {
     uiMarkStatus();
@@ -60,7 +79,15 @@ static void sample() {
   }
 }
 
+void powerUnhold() {
+  gpio_deep_sleep_hold_dis();
+  for (auto &h : HOLD) gpio_hold_dis((gpio_num_t)h.pin);
+}
+
 void powerBegin() {
+  esp_sleep_wakeup_cause_t w = esp_sleep_get_wakeup_cause();
+  if (w == ESP_SLEEP_WAKEUP_EXT0 || w == ESP_SLEEP_WAKEUP_TIMER)
+    Con.printf("EVT:POWER wake %s\n", w == ESP_SLEEP_WAKEUP_EXT0 ? "touch" : "timer");
   analogSetPinAttenuation(PIN_BAT_ADC, ADC_11db);
   Preferences p;
   p.begin("kp", true);
@@ -71,6 +98,7 @@ void powerBegin() {
 }
 
 void powerTick() {
+  if (emptyAt && millis() - emptyAt > 5000) powerDeepSleep();   // the banner has had its moment
   if (millis() - lastSample < 2000) return;
   lastSample = millis();
   sample();
@@ -100,11 +128,15 @@ void powerSetDivider(float k) {
   p.putFloat("batk", k);
   p.end();
   mvAvg = 0;
+  pctNow = -1;                                       // a fresh reading, free to rise
   sample();
 }
 
-void powerSim(int mode) {
-  sim = mode < -1 || mode > 1 ? -1 : mode;
+void powerSim(int mode, int mv) {
+  mode = mode < -1 || mode > 1 ? -1 : mode;
+  if (mode != sim) pctNow = -1;                      // a new source starts a fresh reading
+  sim = mode;
+  simMv = mode == 0 ? mv : 0;
   mvAvg = 0;
   sample();
 }
@@ -115,15 +147,21 @@ void powerSave(bool on) {
   setCpuFrequencyMhz(on ? 80 : 240);
   ledsDark(on);
 }
+bool powerSaving() { return saving; }
 
-void powerDeepSleep() {
+void powerDeepSleep(uint32_t wakeS) {
   Con.println("EVT:POWER sleep");
   Con.flush(); Serial.flush();
-  ledsDark(true);
-  ledsTick();
-  digitalWrite(PIN_AMP_EN, HIGH);                    // amp off
   displaySetBacklight(0);
   lcd.sleep();
+  dacDisable(PIN_DAC);                               // the click's DAC idles at mid-scale otherwise
+  for (auto &h : HOLD) {                             // pinMode also detaches the LEDs' PWM
+    pinMode(h.pin, OUTPUT);
+    digitalWrite(h.pin, h.level);
+    gpio_hold_en((gpio_num_t)h.pin);
+  }
+  gpio_deep_sleep_hold_en();
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);      // the touch controller's IRQ goes low on a touch
+  if (wakeS) esp_sleep_enable_timer_wakeup(wakeS * 1000000ULL);
   esp_deep_sleep_start();
 }

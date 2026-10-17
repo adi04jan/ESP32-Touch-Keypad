@@ -53,6 +53,18 @@ Done 2026-10-02: firmware 3.2.1 and Studio 3.2.1. 54 board tests, Studio 49 unit
 - [x] 3.8.0: livelier idle icons. A few keys play at once (a new one every 0.5 s, three at most) and every 20-30 s a wave ripples across the grid, diagonal by diagonal like the page pop-in (six at once at most, so every frame stays under 16 ms: measured 8.7 ms worst for the few, 15.7 ms for the wave). Inflated animations are now shared per icon and counted by the keys playing them, inside a 36 KB budget that also keeps 36 KB of heap free; a fired key makes room by stopping the idle ones. Icon frames are redrawn only while a frame stays within a pixel budget (the rest show theirs a tick later), and a key's frame advances only with a whole-key repaint. The shade opens at once (it read every profile, 1.5 s) and its first frames no longer jump (its clock is signed); the battery reading no longer makes the shade or the Bluetooth tab walk the file system every few seconds. `iconanim wave`.
 - [x] Ask Claude in Studio's editor: a chat that organizes, creates and edits the open profile (studio/services/chat.js). Claude's profile is validated as sent, before any repair, so a broken answer can never empty a profile; a change is one undo step and autosaves.
 
+**3.9.0 task list: battery** (owner's brief, 2026-10-14: the battery is still planned; a battery optimization plan and USB or battery detected on its own, for every use: unplugged all day, a spare, days of standby. Approach: fix what needs no numbers now, measure the rest with a Nordic PPK2.) USB or battery detection and the battery policy shipped in 3.2.1; this list closes the gaps found reading it.
+- [x] Deep sleep holds the pins that float otherwise (backlight IO27 low, amp enable IO4 high, the LED, LCD CS and touch CS high) and turns the click's DAC off; `powerUnhold()` frees them first thing at boot, or a woken LCD ignores its init.
+- [x] Empty: at 0 % (3.30 V on the resting curve) a "Battery empty" notice, then deep sleep after 5 s, again after each touch-wake until USB; the 15 % warning stays above 0 % so it can't replace that notice. Advertising stops with the sleep.
+- [x] The gauge only falls on battery (a lit screen sags the cell; it no longer climbs back when the screen goes dark); USB or a reboot takes a fresh reading. Known ceiling: it reads a few % low while lit, until a real cell's internal resistance is measured.
+- [x] The main loop rests 20 ms a pass instead of 1 while the screen is off on battery (not while a macro runs).
+- [x] Bluetooth: measured, Windows sets 15 ms with a peripheral latency of 30 for HID on its own and overrides a request for 0 within 2 s. So the keypad now asks for 7.5-15 ms, latency 30 always (key reports still leave at the next event); no idle/active switching. `EVT:BLE <slot> params`, `link:` in `power`.
+- [x] Ruled out: light sleep with a live BLE link. The core is built without power management (`CONFIG_PM_ENABLE` off) and the ESP32 needs a 32 kHz crystal on IO32/33 for it (IO33 is the touch CS).
+- [x] Tools: `power nap <s>` (deep sleep until a touch or the timer, for the profiler and tests), `power sim battery <mv>`, `EVT:POWER empty`, `EVT:POWER wake touch|timer`.
+- [x] Tests: the gauge only falls, the cutoff warns then sleeps, a timer nap wakes to a screen that draws.
+- [ ] PPK2 (source mode at 3.7 V on the battery connector, USB unplugged, the console over Bluetooth): current in each state (lit with idle animations, lit still, dim, off at 80 MHz, advertising, deep sleep with `power nap`), the deep-sleep floor before and after the pin holds, then the knobs on numbers: lit CPU 160 vs 240 MHz against the 16 ms frame budget, the battery backlight cap (160 of 255), the dim level, the off loop's rest.
+- [ ] With a real cell: its internal resistance (the lit sag), for a load-compensated gauge; the runtime per use from the measured currents.
+
 **What changed since v0.1**
 - The project now builds on Macropad v2.1 (§4) instead of starting fresh.
 - Macropad Studio 3 replaces the planned Web Serial configurator and the Tauri companion. It gets a "Touch Keypad" device type (§10).
@@ -352,7 +364,7 @@ As built in 3.1 (docs/device/index.html is the pixel-exact mock, firmware/DESIGN
   - Mouse (ID 3): buttons, X, Y and wheel.
   - Telephony (ID 8): mic mute, answer, decline. Kept from v2.1; behaviour over BLE on Windows is checked in M0 (§14).
 - Battery Service: level from IO34, reports 100% on USB. Device Information Service with PnP ID.
-- Connection interval 7.5–15 ms while active. When idle, request a slower interval to save power.
+- Connection interval 7.5–15 ms with a peripheral latency of 30 (3.9.0): key reports leave at the next event and the radio may skip idle ones. Windows sets 15 ms / 30 for HID itself.
 - **Host slots:** 3 slots, each with its own static random address and bond. Switch from the settings sheet. Forget from the sheet or with `ble forget <n>`.
 - **Pairing:** IO capability DisplayOnly, LE Secure Connections, and a passkey shown on screen. Just Works is a fallback, allowed only inside a 60 s pairing window started from the device. Don't scan before the server starts. RPA resolution stays on.
 
@@ -385,7 +397,7 @@ Measured on firmware 3.1.0: about 114 KB heap free with NimBLE up, two 96×90 DM
 - **Backlight PWM on IO27:** dims to 20% after 2 minutes, turns off after 10, and wakes on touch.
 - **RGB LED:** in 3.1 a selectable pattern (rainbow by default, breathe, solid, status, off) with its own colour and brightness, from the sheet or Studio (`led`, `ledbright`). Pairing blinks magenta and errors show red over any pattern. The v0.2 plan was solid blue when connected, blinking blue while advertising, magenta in pairing mode, amber when config is unlocked, red on error. `led` and `led_anim` actions tint it.
 - **Key click:** a 4 ms DAC tone on IO26 with the amp enabled on IO4. The amp is disabled between clicks to avoid hiss and save power.
-- **Battery mode (M5):** dims sooner and uses a slower connection interval when idle. If USB power is lost and the battery is low, show a warning and stop advertising below a cutoff.
+- **Battery mode (3.2.1, 3.9.0):** dims sooner, darkens and slows down with the screen off, deep-sleeps when idle, warns at 15 % and sleeps at 0 % (which stops advertising). See the 3.9.0 task list and PROTOCOL.md › Power.
 
 ---
 
@@ -659,7 +671,7 @@ Studio 3 changes live in the Macropad repo (§10).
 
 ## 15. Open questions
 
-1. Is a battery planned? If so, move battery mode and deeper sleep earlier than M5.
+1. ~~Is a battery planned?~~ Yes (owner, 2026-10-14). Battery mode shipped in 3.2.1 and 3.9.0, ahead of M5.
 2. Should the default be 5×3 (Stream Deck MK.2 parity), or 4×3 with larger keys for resistive touch? Decide after the M0 touch accuracy test.
 3. Is the optional EC11 dial worth the enclosure work? It uses the I2C header pins.
 4. ~~Arduino core: stay on 2.0.17 or move to 3.x?~~ Decided in M0: core 3.2.1. LovyanGFX, NimBLE HID, touch, LittleFS and screen readback all run on it (screen readback needs SPI MISO delay mode 2).

@@ -32,6 +32,7 @@
 #include "power.h"
 
 void setup() {
+  powerUnhold();   // after a deep sleep the screen, LED and amp pins are still held
   Serial.setRxBufferSize(SERIAL_RX_BUF);
   Serial.begin(SERIAL_BAUD);
   Con.printf("\nTouch Keypad v%s starting\n", FW_VERSION);
@@ -71,5 +72,5 @@ void loop() {
   if (!cliUploading()) uiTick();
   ledsTick();
   powerTick();
-  delay(1);
+  delay(powerSaving() && !macroEngine.isRunning() ? 20 : 1);   // a dark screen on battery: the CPU idles between passes
 }
