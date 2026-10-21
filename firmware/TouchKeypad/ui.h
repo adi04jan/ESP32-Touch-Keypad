@@ -54,7 +54,7 @@ int  uiBrightness();
 void uiSetIconMotion(bool on);       // icon animations: on a fired key, a few idle keys at a time, a wave every 20-30 s; NVS kp/ianim
 void uiIconWave();                   // `iconanim wave`: run the wave now
 bool uiIconMotion();
-void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS; wakes the screen
+void uiSetDim(int seconds);          // on battery dim after min(N, 20) s idle (0 = 20); USB stays lit. NVS; wakes the screen
 int  uiDim();
 void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
 int  uiTheme();

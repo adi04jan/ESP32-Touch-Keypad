@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.10.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.11.0.
 
 ## Transport
 
@@ -39,7 +39,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `setled <id> <r> <g> <b>` | `setled ok` | key colour (RAM) |
 | `setidle <name>` | `setidle ok` | accepted for v2.1 compatibility; no effect |
 | `setbrightness [8-255]` | `brightness <n>` | live, saved to NVS; no argument reports |
-| `setdim <s>` | `dim <s>` | dim after s seconds idle (0 = never); also wakes the screen |
+| `setdim <s>` | `dim <s>` | on battery, dim after min(s, 20) seconds idle (0 = 20 s; under 20 is for tests); on USB the screen stays lit whatever it says. Bare, it only reports; also wakes the screen |
 | `led [rainbow\|breathe\|solid\|status\|off] [r g b]` | `led <pattern> color <r g b> brightness <n> showing <r g b>` | the RGB status LED; rainbow is the default; the colour is for solid and breathe; no argument reports |
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |

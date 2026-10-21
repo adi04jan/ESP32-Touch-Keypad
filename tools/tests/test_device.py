@@ -576,6 +576,8 @@ def test_power_readout_and_battery_policy(d):
     assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ sim:-1 .*cpu:240 screen:lit$", p), p
     try:
         d.ok("setdim 2")                                   # on battery the dim time is min(setdim, 20 s)
+        time.sleep(3)
+        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])   # on USB the screen stays lit
         d.ok("power sim battery")
         assert re.search(r"pwr:bat bat:\d+$", d.cmd("status")[0])
         time.sleep(3)

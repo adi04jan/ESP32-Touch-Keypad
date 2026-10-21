@@ -849,8 +849,6 @@ static void drawPlayer(uint32_t now) {
 // ---------------------------------------------------------------- settings sheet
 static const char *const TAB_NAME[5] = { "Display", "Profiles", "Bluetooth", "LED", "Device" };
 static const char *const TAB_ICON[5] = { "sun", "layers", "bluetooth", "lightbulb", "cpu" };
-static const int DIM_OPTS[5] = { 30, 60, 120, 300, 0 };
-static const char *const DIM_TXT[5] = { "30 s", "1 min", "2 min", "5 min", "Never" };
 static const C3 SWATCH[8] = { HEXC(0x4f8cff), HEXC(0x3fc6e0), HEXC(0x52d68f), HEXC(0xf2b746), HEXC(0xff8a3d), HEXC(0xff5f57), HEXC(0xff6fae), HEXC(0x9b7bff) };
 #define PANE_X 128
 #define PANE_W 338
@@ -883,17 +881,6 @@ static void loadSlots() {
   refreshInfo();
 }
 
-static void seg5(int y, int cur, const char *const *labels) {
-  float w = (PANE_W - 16) / 5.0f;
-  for (int i = 0; i < 5; i++) {
-    float x = PANE_X + i * (w + 4);
-    bool on = i == cur;
-    rrFill(x, y, w, 44, T->crisp ? 4 : 11, solidFill(on ? (T->crisp ? TXT : mix(PLY, MAG, T->light ? 30 : 36)) : SEGC));
-    rrRing(x + 0.5f, y + 0.5f, w - 1, 43, T->crisp ? 4 : 10.5f, T->crisp ? 2 : 1, on ? MAG : mix(SEGC, HAIR, T->light ? T->hairA : 20));
-    text(fBodyB, (int)(x + w / 2), y + 27, labels[i], on ? (T->crisp ? T->g1 : MAG) : TXT2, 255, AL_C);
-  }
-}
-
 // Settings → Display: one chip per theme, each a small live sample of that theme.
 #define THEME_Y 254
 #define THEME_H 36
@@ -921,11 +908,10 @@ static void drawPane() {
       text(fBody, PANE_X, 106, "Brightness", TXT);
       text(fRead, PANE_X + PANE_W, 106, v, TXT2, 255, AL_R);
       slider(PANE_X, 110, PANE_W, brightness / 255.0f);
-      text(fBody, PANE_X, 174, "Dim after", TXT);
-      text(fRead, PANE_X + PANE_W, 174, "then off at 10 min", TXT2, 255, AL_R);
-      int cur = 4;
-      for (int i = 0; i < 5; i++) if (DIM_OPTS[i] == dimAfterS) cur = i;
-      seg5(182, cur, DIM_TXT);
+      text(fBody, PANE_X, 180, "On USB the screen stays on", TXT);
+      text(fRead, PANE_X, 203, "On battery: dim 20 s, off 1 min,", TXT2);
+      snprintf(v, sizeof v, "deep sleep after %d min", powerSleepMin());
+      text(fRead, PANE_X, 222, powerSleepMin() ? v : "no deep sleep", TXT2);
       text(fBody, PANE_X, 246, "Theme", TXT);
       themeChips();
       break;
@@ -1536,16 +1522,14 @@ void uiTick() {
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
   if (offArmedAt && (int32_t)(now - offArmedAt) > 3000) { offArmedAt = 0; mark(GEN_X, 42, GEN_W, 44); }   // signed: armed is now | 1
-  // On USB the owner's dim setting and full power; on battery dim within 20 s (CPU slowed,
-  // LED dark), the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
+  // On USB the screen stays lit at full power. On battery: dim within 20 s (CPU slowed, LED dark),
+  // the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
   bool usb = powerOnUsb();
-  uint32_t dimMs = usb ? dimAfterS * 1000UL : min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;
-  uint32_t offMs = usb ? OFF_AFTER_MS : BAT_OFF_MS;
-  if (dimMs && mode != M_PAIR && mode != M_CAL) {
-    uint32_t idle = now - lastAct;
-    if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); if (!usb) powerSave(true); }
-    else if (dimState == 1 && idle > offMs) { dimState = 2; displaySetBacklight(0); }
-    else if (dimState == 2 && !usb && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
+  if (!usb && mode != M_PAIR && mode != M_CAL) {
+    uint32_t idle = now - lastAct, dimMs = min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;   // setdim under 20 s: tests
+    if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); powerSave(true); }
+    else if (dimState == 1 && idle > BAT_OFF_MS) { dimState = 2; displaySetBacklight(0); }
+    else if (dimState == 2 && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
   }
   static bool lowWarned = false;   // once per drop under 15 %
   int pct = powerBatteryPct();
@@ -2167,11 +2151,7 @@ static void sheetTap(int x, int y) {
   }
   switch (sheetTab) {
     case 0:
-      if (inRect(x, y, PANE_X, 182, PANE_W, 44)) {
-        int i = (x - PANE_X) * 5 / PANE_W;
-        uiSetDim(DIM_OPTS[constrain(i, 0, 4)]);
-        mark(PANE_X - 4, 176, PANE_W + 8, 56);
-      } else if (inRect(x, y, PANE_X - 4, THEME_Y - 6, PANE_W + 8, THEME_H + 26)) {
+      if (inRect(x, y, PANE_X - 4, THEME_Y - 6, PANE_W + 8, THEME_H + 26)) {
         uiSetTheme(constrain((x - PANE_X) * THEME_COUNT / PANE_W, 0, THEME_COUNT - 1));
       }
       break;
