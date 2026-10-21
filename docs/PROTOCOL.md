@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.9.1.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.10.0.
 
 ## Transport
 
@@ -44,7 +44,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `ledbright [0-255]` | `ledbright <n>` | no argument reports |
 | `click [on\|off]` | `click on\|off` | key click on the speaker |
 | `theme [id\|title\|1-6\|default]` | `theme <id>`, plus `EVT:THEME <id>` when it changes; `default` forgets the saved theme (Daylight); an unknown name lists `theme glass paper daylight aurora synth retro` | the whole-device theme (firmware/DESIGN.md, Themes); saved to NVS; the new theme wipes down the screen |
-| `power [sim battery [mv]\|usb\|off \| sleep <min> \| divider <k> \| nap <s>]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 link:15.00/30 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests; `sim battery <mv>` holds the cell at that voltage), the battery divider (NVS `kp/batk`, a calibration knob), the first host's connection interval in ms and its peripheral latency (`0.00/-1` with none), CPU MHz, screen lit/dim/off. `nap <s>` deep-sleeps now until a touch or s seconds (1-3600): for tests and the power profiler |
+| `power [sim battery [mv]\|usb\|off \| sleep <min> \| divider <k> \| nap <s> \| off]` | `power usb:1 mv:4122 pct:96 charging:1 sleep:5 sim:-1 divider:2.000 link:15.00/30 cpu:240 screen:lit` | USB or battery, the cell's mV and %, charging, minutes on battery before deep sleep (0 never, at most 120; NVS `kp/bsleep`), the simulated supply (-1 real; for tests; `sim battery <mv>` holds the cell at that voltage), the battery divider (NVS `kp/batk`, a calibration knob), the first host's connection interval in ms and its peripheral latency (`0.00/-1` with none), CPU MHz, screen lit/dim/off. `nap <s>` deep-sleeps now until a touch or s seconds (1-3600): for tests and the power profiler. `off` is Settings › Device › Turn off: a "Turned off" banner, then 2 s later deep sleep that only RESET (or a power cycle) ends; it draws what deep sleep does, 0.20 mA |
 | `iconanim [on\|off]` | `iconanim on\|off` | moving icons: every key icon has a signature animation that acts out its key (copy pulls a second sheet out of the first, a bell rings, wifi lights its arcs from the dot, a check draws itself), played when the key fires; while idle, a few keys play at once (a new one every 0.5 s, three at most) and every 20-30 s a wave runs across the grid diagonal by diagonal (six keys at once at most); none while the screen is dim. `iconanim wave` runs a wave now. Off, icons never move. NVS `kp/ianim`, on by default |
 | `hostname <name>` | `hostname set` or `ERR no host connected` | names the connected host (20 chars); shown in the status band and the Bluetooth tab. Studio sends the PC name |
 | `ble list` | `<n> <addr> connected\|bonded <name>` per bond, then `hosts:<n> connected:<n> advertising:0\|1 pairing:0\|1` | name is the `hostname` one, else `Host <n+1>` |
@@ -91,7 +91,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 | `EVT:PROFILE <n>` | profile loaded |
 | `EVT:UI home\|sheet\|pair\|cal\|shade\|menu` | the screen mode changed (`menu`: the status band's host list) |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |
-| `EVT:POWER sleep` | on battery, idle past the sleep time (or empty, or `power nap`): the keypad goes into deep sleep; a touch wakes it (a reboot) |
+| `EVT:POWER sleep` | on battery, idle past the sleep time (or empty, or `power nap`): the keypad goes into deep sleep; a touch wakes it (a reboot). After `power off` only RESET does |
 | `EVT:POWER empty` | on battery at 0 % (3.30 V): a "Battery empty" notice, then deep sleep 5 s later; a touch wakes it to say so again |
 | `EVT:POWER wake touch\|timer` | at boot, after a deep sleep: what woke it |
 | `EVT:AUTOGEN` | the Generate button in Profiles: the host should give the app in front a profile (Autogenerate below) |

@@ -80,6 +80,7 @@ static int8_t backStack[8];
 static int backDepth = 0;
 
 static int pressedBtn = -1;          // player control or sheet button under the finger
+static uint32_t offArmedAt = 0;      // Settings › Device › Turn off, tapped once: a second tap within 3 s turns it off
 static int brightness = 200, dimAfterS = DIM_DEFAULT_S, dimState = 0;   // 0 lit, 1 dim, 2 off
 static uint32_t lastAct = 0;
 static uint32_t timeEpoch = 0, timeBase = 0;
@@ -1011,6 +1012,7 @@ static void drawPane() {
       rrFill(on ? 439 : 417, 102, 24, 24, 12, knob);
       text(fBody, PANE_X, 167, "Touch calibration", TXT);
       button(PANE_X + PANE_W - 130, 140, 130, 44, "Calibrate", "crosshair", 0, pressedBtn == 40);
+      button(GEN_X, 42, GEN_W, 44, offArmedAt ? "Tap again" : "Turn off", "power", 2, pressedBtn == 41);
       size_t used = info.used, total = info.total;
       const char *dt[5] = { "Firmware", "Free memory", "Storage", "Bluetooth", "Power" };
       char dd[5][40];
@@ -1533,6 +1535,7 @@ static bool animate(uint32_t now) {
 void uiTick() {
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
+  if (offArmedAt && (int32_t)(now - offArmedAt) > 3000) { offArmedAt = 0; mark(GEN_X, 42, GEN_W, 44); }   // signed: armed is now | 1
   // On USB the owner's dim setting and full power; on battery dim within 20 s (CPU slowed,
   // LED dark), the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
   bool usb = powerOnUsb();
@@ -2132,6 +2135,7 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
     if (inRect(x, y, PANE_X, 266, PANE_W, 44)) return 30;
   }
   if (sheetTab == 4 && inRect(x, y, PANE_X + PANE_W - 130, 140, 130, 44)) return 40;
+  if (sheetTab == 4 && inRect(x, y, GEN_X, 42, GEN_W, 44)) return 41;
   if (sheetTab == 1 && inRect(x, y, GEN_X, 42, GEN_W, 44)) return 60;
   return -1;
 }
@@ -2150,6 +2154,11 @@ static void sheetTap(int x, int y) {
   if (b >= 20 && b < 23) { bleForget(b - 20); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
   if (b == 30) { mode = M_HOME; blePairOpen(); return; }
   if (b == 40) { uiCalibrate(); return; }
+  if (b == 41) {
+    if (offArmedAt) { offArmedAt = 0; uiCloseSheet(); powerOff(); }
+    else { offArmedAt = millis() | 1; mark(GEN_X, 42, GEN_W, 44); }
+    return;
+  }
   if (b == 60) {   // Studio takes it from here: current app, usage, Claude, upload, setprofile
     Con.println("EVT:AUTOGEN");
     uiCloseSheet();

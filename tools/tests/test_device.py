@@ -646,6 +646,29 @@ def test_nap_wakes_with_a_working_screen(d):
     assert len(d.shot().getcolors(1 << 20)) > 50              # the screen came back and draws
 
 
+def test_turn_off_takes_two_taps_and_sleeps_until_reset(d):
+    try:
+        d.ok("sheet")
+        d.wait_event(r"^EVT:UI sheet$")
+        time.sleep(0.5)
+        d.touch(62, 272)                                      # the Device tab
+        time.sleep(0.3)
+        since = len(d.events)
+        d.touch(248 + 66, 64)                                 # Turn off, left of Done: one tap only arms it
+        time.sleep(1.0)
+        assert not any("POWER sleep" in l for _, l in d.events[since:])
+        d.touch(248 + 66, 64)
+        tapped = time.time()
+        assert any("Turned off" in l for l in d.cmd("notify list"))
+        d.wait_event(r"POWER sleep", 5, since)
+        assert next(t for t, l in d.events[since:] if "POWER sleep" in l) - tapped > 1.5   # the banner had its 2 s
+        time.sleep(3)
+        assert not any("POWER wake" in l for _, l in d.events[since:])   # no timer (a real touch can't be injected while it sleeps)
+    finally:
+        d.reset()                                             # RESET, as the owner would press it
+    assert "pwr:usb" in d.cmd("status")[0]
+
+
 # ---------------------------------------------------------------- quick switch and autogenerate
 TOAST_PX = (240, 56)                                     # inside the toast pill, over key 3
 

@@ -2,7 +2,7 @@
 
 A Stream Deck–style BLE macropad on the LCDwiki 4.0" ESP32-32E board (E32R40T: ESP32-WROOM-32E, ST7796S 480×320, XPT2046 resistive touch), with Macropad Studio for Windows.
 
-Six device themes (Daylight by default, Glass, Paper, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), sixteen profile slots with a quick switch on the status band, this PC's notifications on a bell with a banner and a pull-down shade (brightness, profile, Bluetooth host), a host switch on the status band, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration), touch calibration on first boot, and every screen animating at 60 fps. On a battery it shows the charge, dims, turns its screen off and deep-sleeps after an idle time you choose; on USB it runs at full power and shows charging.
+Six device themes (Daylight by default, Glass, Paper, Aurora, Synth after the OP-1, Retro after the Game Boy), keys with real icons (214 built in, some animated), sixteen profile slots with a quick switch on the status band, this PC's notifications on a bell with a banner and a pull-down shade (brightness, profile, Bluetooth host), a host switch on the status band, a full-page media player fed from Windows (album art, live progress, tap to seek), a settings sheet (display, profiles, three Bluetooth hosts, LED patterns, key click, calibration, turn off until RESET), touch calibration on first boot, and every screen animating at 60 fps. On a battery it shows the charge, dims, turns its screen off and deep-sleeps after an idle time you choose; on USB it runs at full power and shows charging.
 
 | Path | What |
 |---|---|
@@ -45,9 +45,9 @@ Studio connects over USB or, with no cable, over Bluetooth to a keypad paired wi
 ## Tests, from fastest to fullest
 
 ```
-cd studio && npm test                # 60 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
+cd studio && npm test                # 76 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
 cd studio && npm run smoke           # Electron boots and draws the glass preview with all icons
-python -m pytest tools/tests -v      # 64 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power, quick switch, Generate, folders, GIF keys, moving icons, notifications and the shade
+python -m pytest tools/tests -v      # 69 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power and turn off, quick switch, Generate, folders, GIF keys, moving icons, notifications and the shade
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
 python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): media keys read from Windows' HID stack, types, toggles, host action through Studio, Play/Pause

@@ -14,7 +14,7 @@ static float mvAvg = 0;
 static bool usb = true, saving = false;
 static float kDiv = 2.0f;           // the board's 100k/100k divider; a calibration knob
 static uint8_t sleepMin = 5;
-static uint32_t lastSample = 0, emptyAt = 0;
+static uint32_t lastSample = 0, emptyAt = 0, offAt = 0;
 
 // Held through deep sleep, or they float: the backlight and the amp could sit half on.
 static const struct { uint8_t pin, level; } HOLD[] = {
@@ -103,7 +103,9 @@ void powerBegin() {
 }
 
 void powerTick() {
-  if (emptyAt && millis() - emptyAt > 5000) powerDeepSleep();   // the banner has had its moment
+  // signed: both are millis() | 1, a millisecond ahead half the time, and delay(1) can return within it
+  if (emptyAt && (int32_t)(millis() - emptyAt) > 5000) powerDeepSleep();   // the banner has had its moment
+  if (offAt && (int32_t)(millis() - offAt) > 2000) powerDeepSleep(0, false);
   if (millis() - lastSample < 2000) return;
   lastSample = millis();
   sample();
@@ -154,7 +156,14 @@ void powerSave(bool on) {
 }
 bool powerSaving() { return saving; }
 
-void powerDeepSleep(uint32_t wakeS) {
+void powerOff() {
+  if (offAt) return;
+  offAt = millis() | 1;
+  uiWake();
+  uiNotify("Keypad", "Turned off", "Press RESET to turn it on", "power", "power");
+}
+
+void powerDeepSleep(uint32_t wakeS, bool touchWakes) {
   Con.println("EVT:POWER sleep");
   Con.flush(); Serial.flush();
   displaySetBacklight(0);                            // the panel sleeps with it
@@ -165,7 +174,8 @@ void powerDeepSleep(uint32_t wakeS) {
     gpio_hold_en((gpio_num_t)h.pin);
   }
   gpio_deep_sleep_hold_en();
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);      // the touch controller's IRQ goes low on a touch
+  if (touchWakes) esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);   // the touch controller's IRQ goes low on a touch
+  else esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);   // as a touch wake keeps it: the held pins measured at 0.20 mA
   if (wakeS) esp_sleep_enable_timer_wakeup(wakeS * 1000000ULL);
   esp_deep_sleep_start();
 }

@@ -2,11 +2,11 @@
    whether USB is present, and the battery-saving policy ui.cpp applies.
 
    The board has no VBUS pin. USB is read from the USB-serial chip's TX line,
-   which idles high only while USB powers that chip (unpowered, it holds the
-   ESP32's RX low). On USB the keypad runs at full power; on battery it dims
-   sooner, darkens the LED and slows the CPU while the screen is off, and
-   deep-sleeps after a few idle minutes (a touch wakes it). At 0 % it says so
-   and sleeps. */
+   which idles high only while USB powers that chip (unpowered, it lets go of
+   the line, so RX is sampled pulled down). On USB the keypad runs at full power;
+   on battery it dims sooner, slows the CPU and darkens the LED from the dim on,
+   and deep-sleeps after a few idle minutes (a touch wakes it). At 0 % it says so
+   and sleeps. Settings › Device › Turn off sleeps it until RESET. */
 #pragma once
 #include <Arduino.h>
 
@@ -25,4 +25,5 @@ void powerSetDivider(float k);    // calibration: battery mV per ADC mV (NVS kp/
 float powerDivider();
 void powerSave(bool on);          // dim or off on battery: CPU 80 MHz and a dark LED; off again on wake
 bool powerSaving();
-void powerDeepSleep(uint32_t wakeS = 0);   // never returns; a touch (IO36 low) wakes the board, or wakeS seconds (`power nap`)
+void powerDeepSleep(uint32_t wakeS = 0, bool touchWakes = true);   // never returns; a touch (IO36 low) wakes the board, or wakeS seconds (`power nap`)
+void powerOff();                  // Turn off / `power off`: a banner, then deep sleep that only RESET (or a power cycle) ends

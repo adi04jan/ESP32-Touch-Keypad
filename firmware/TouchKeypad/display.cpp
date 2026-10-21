@@ -102,7 +102,7 @@ void displayBegin() {
 static uint32_t sleptAt = 0;   // 0: awake
 void displaySetBacklight(uint8_t level) {
   if (level && sleptAt) {
-    while (millis() - sleptAt < 120) delay(1);
+    while ((int32_t)(millis() - sleptAt) < 120) delay(1);   // signed: sleptAt is millis() | 1
     lcd.wakeup();
     delay(5);
     sleptAt = 0;

@@ -395,7 +395,8 @@ static bool runCommand(char *s) {
     else if (sscanf(arg, "sleep %d", &a) == 1) powerSetSleepMin(constrain(a, 0, 120));
     else if (sscanf(arg, "divider %f", &k) == 1) powerSetDivider(k);
     else if (sscanf(arg, "nap %d", &a) == 1) powerDeepSleep(constrain(a, 1, 3600));   // deep sleep now; a touch or the timer wakes it
-    else if (*arg) { Con.println("power [sim battery [mv]|usb|off | sleep <min, 0 never> | divider <k> | nap <s>]"); return true; }
+    else if (!strcmp(arg, "off")) powerOff();                                        // Settings › Device › Turn off: only RESET wakes it
+    else if (*arg) { Con.println("power [sim battery [mv]|usb|off | sleep <min, 0 never> | divider <k> | nap <s> | off]"); return true; }
     float ms = 0;
     int lat = -1;
     bleLinkParams(&ms, &lat);
