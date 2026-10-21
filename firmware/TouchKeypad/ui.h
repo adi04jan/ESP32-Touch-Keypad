@@ -55,6 +55,7 @@ void uiSetIconMotion(bool on);       // icon animations: on a fired key, a few i
 void uiIconWave();                   // `iconanim wave`: run the wave now
 bool uiIconMotion();
 void uiSetDim(int seconds);          // dim after N s idle (0 = never), NVS; wakes the screen
+int  uiDim();
 void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
 int  uiTheme();
 int  uiThemeCount();

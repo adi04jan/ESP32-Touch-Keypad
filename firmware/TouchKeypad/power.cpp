@@ -28,14 +28,19 @@ static int readMv() {
   return (int)(s / 16 * kDiv);
 }
 
-// The CH340's TXD idles high while USB powers it; unpowered it holds our RX low.
-// Traffic toggles the line, so any high sample in 1 ms counts.
+// The CH340's TXD idles high while USB powers it; unpowered it lets go, and the UART's pull-up
+// would read high on battery too (measured), so sample RX pulled down. Traffic toggles the
+// line, so any high sample in 1 ms counts. On battery the UART reads the low as a break (a NUL).
 static bool usbLine() {
-  for (int i = 0; i < 40; i++) {
-    if (gpio_get_level(GPIO_NUM_3)) return true;
+  gpio_set_pull_mode(GPIO_NUM_3, GPIO_PULLDOWN_ONLY);
+  delay(1);
+  bool high = false;
+  for (int i = 0; i < 40 && !high; i++) {
+    high = gpio_get_level(GPIO_NUM_3);
     delayMicroseconds(25);
   }
-  return false;
+  gpio_set_pull_mode(GPIO_NUM_3, GPIO_PULLUP_ONLY);
+  return high;
 }
 
 // Resting Li-ion curve (mV -> %), interpolated.
@@ -152,8 +157,7 @@ bool powerSaving() { return saving; }
 void powerDeepSleep(uint32_t wakeS) {
   Con.println("EVT:POWER sleep");
   Con.flush(); Serial.flush();
-  displaySetBacklight(0);
-  lcd.sleep();
+  displaySetBacklight(0);                            // the panel sleeps with it
   dacDisable(PIN_DAC);                               // the click's DAC idles at mid-scale otherwise
   for (auto &h : HOLD) {                             // pinMode also detaches the LEDs' PWM
     pinMode(h.pin, OUTPUT);

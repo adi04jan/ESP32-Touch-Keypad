@@ -580,13 +580,30 @@ def test_power_readout_and_battery_policy(d):
         assert re.search(r"pwr:bat bat:\d+$", d.cmd("status")[0])
         time.sleep(3)
         assert d.cmd("theme") == ["theme glass"]           # a readout leaves the screen dark
-        assert "screen:dim" in d.cmd("power")[0]
+        assert re.search(r"cpu:80 screen:dim$", d.cmd("power")[0])   # dim on battery: the CPU slows
         d.ok("theme glass")                                # an edit from Studio lights it
-        assert "screen:lit" in d.cmd("power")[0]
+        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])
     finally:
         d.cmd("power sim off")
         d.ok("setdim 0")
+    assert d.cmd("setdim") == ["dim 0"]                    # a bare setdim only reports
     assert "pwr:usb" in d.cmd("status")[0]
+
+
+def test_dark_screen_wakes_drawing(d):
+    """On battery the screen goes off after a minute and the panel sleeps with it: a wake brings it back."""
+    try:
+        d.ok("power sim battery")
+        d.ok("theme glass")
+        t = time.time()
+        while "screen:off" not in d.cmd("power")[0]:
+            assert time.time() - t < 75, "the screen never went off"
+            time.sleep(2)
+        d.ok("theme glass")
+        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])
+        assert len(d.shot().getcolors(1 << 20)) > 50
+    finally:
+        d.cmd("power sim off")
 
 
 def test_power_sleep_minutes(d):

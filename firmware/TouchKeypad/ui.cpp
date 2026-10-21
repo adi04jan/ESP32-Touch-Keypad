@@ -1533,15 +1533,15 @@ static bool animate(uint32_t now) {
 void uiTick() {
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
-  // On USB the owner's dim setting and full power; on battery dim within 20 s, the screen
-  // off after a minute (CPU slowed, LED dark), and deep sleep after the chosen minutes.
+  // On USB the owner's dim setting and full power; on battery dim within 20 s (CPU slowed,
+  // LED dark), the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
   bool usb = powerOnUsb();
   uint32_t dimMs = usb ? dimAfterS * 1000UL : min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;
   uint32_t offMs = usb ? OFF_AFTER_MS : BAT_OFF_MS;
   if (dimMs && mode != M_PAIR && mode != M_CAL) {
     uint32_t idle = now - lastAct;
-    if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); }
-    else if (dimState == 1 && idle > offMs) { dimState = 2; displaySetBacklight(0); if (!usb) powerSave(true); }
+    if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); if (!usb) powerSave(true); }
+    else if (dimState == 1 && idle > offMs) { dimState = 2; displaySetBacklight(0); }
     else if (dimState == 2 && !usb && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
   }
   static bool lowWarned = false;   // once per drop under 15 %
@@ -1679,6 +1679,7 @@ bool uiWake() {
   return true;
 }
 
+int uiDim() { return dimAfterS; }
 const char *uiScreenState() { return dimState == 0 ? "lit" : dimState == 1 ? "dim" : "off"; }
 
 void uiPowerChanged() {

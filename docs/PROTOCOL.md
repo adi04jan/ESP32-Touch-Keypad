@@ -2,7 +2,7 @@
 
 The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 (`studio/services/serial.js`, `device.js`, `feeds.js`, `tiles.js`) and the test tools
-(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.9.0.
+(`tools/kp.py`). It extends the v2.1 line CLI (PLAN.md §8). Firmware 3.9.1.
 
 ## Transport
 
@@ -148,9 +148,9 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 ## Power
 
 USB is detected from the CH340's TX line, which idles high while USB powers the chip
-(sampled on RX, IO3). The cell is read on IO34 through the board's divider.
+(sampled on RX, IO3, with a pull-down: unpowered the chip lets the line go). The cell is read on IO34 through the board's divider.
 - **On USB:** full power and the owner's dim setting. A reading under 4.25 V is a cell charging (`charging:1`); the status band shows a green battery with a bolt. Higher is the charger with no cell, and the band shows a plug.
-- **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. While off, the CPU drops to 80 MHz, the LED goes dark and the main loop rests 20 ms a pass instead of 1. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it. In deep sleep the backlight, amp, LED and chip-select pins are held (they float otherwise) and the click's DAC is off.
+- **On battery:** the band shows the battery and its percentage (amber at 30 %, red at 15 %). The screen dims after 20 s (or sooner per `setdim`) and turns off after 60 s. From the dim on, the CPU drops to 80 MHz, the LED goes dark and the main loop rests 20 ms a pass instead of 1; off, the panel sleeps too. Measured at 3.7 V: lit 144 mA, dim 67, off 38, deep sleep 0.20-0.24. After `power sleep` minutes the keypad deep-sleeps; a touch on the panel (IO36) wakes it. In deep sleep the backlight, amp, LED and chip-select pins are held (they float otherwise) and the click's DAC is off.
 - **Empty:** at 0 % (3.30 V on the resting curve) the keypad shows "Battery empty" for 5 s and deep-sleeps; the 15 % warning stays above 0 %. On battery the percentage only falls (a lit screen sags the cell; the reading doesn't climb back when it goes dark); a USB visit or a reboot takes a fresh one.
 - **Bluetooth:** the keypad asks for 7.5-15 ms with a peripheral latency of 30: key reports still leave at the next event, and the radio may skip up to 30 idle ones. Windows applies 15 ms / 30 to HID on its own and overrides a request for 0.
 - Edits from Studio (`setprofile`, `page`, `setkey`, `sethold`, `setface`, `show`, `theme`, `setbrightness`, `sheet` with arguments) light a dark screen. Feeds (`widget`, `settime`) and readouts don't.

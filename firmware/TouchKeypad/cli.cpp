@@ -338,8 +338,8 @@ static bool runCommand(char *s) {
     if (*arg) uiSetBrightness(atoi(arg));   // no argument: just report
     Con.printf("brightness %d\n", uiBrightness());
   } else if (cmd == "setdim") {
-    uiSetDim(atoi(arg));
-    Con.printf("dim %d\n", atoi(arg));
+    if (*arg) uiSetDim(atoi(arg));   // no argument: just report
+    Con.printf("dim %d\n", uiDim());
   } else if (cmd == "ble") {
     cmdBle(arg);
   // ---- debug / test harness ----
@@ -498,7 +498,7 @@ void cliBegin() {
 }
 
 static void feed(LineIn &in, char ch, uint8_t src) {
-  if (ch == '\r') return;
+  if (ch == '\r' || !ch) return;   // NUL: the break the USB check reads on battery (power.cpp)
   if (ch != '\n') {
     if (in.len < sizeof in.buf - 1) in.buf[in.len++] = ch;
     else in.tooLong = true;

@@ -23,6 +23,6 @@ void powerSim(int mode, int mv = 0);   // tests: -1 real, 0 battery (at mv when 
 int  powerSimMode();
 void powerSetDivider(float k);    // calibration: battery mV per ADC mV (NVS kp/batk)
 float powerDivider();
-void powerSave(bool on);          // screen off on battery: CPU 80 MHz and a dark LED; off again on wake
+void powerSave(bool on);          // dim or off on battery: CPU 80 MHz and a dark LED; off again on wake
 bool powerSaving();
 void powerDeepSleep(uint32_t wakeS = 0);   // never returns; a touch (IO36 low) wakes the board, or wakeS seconds (`power nap`)
