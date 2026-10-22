@@ -174,6 +174,9 @@ void powerDeepSleep(uint32_t wakeS, bool touchWakes) {
     gpio_hold_en((gpio_num_t)h.pin);
   }
   gpio_deep_sleep_hold_en();
+  // The LED's green and blue pins (IO16/17) sit on the flash rail, VDD_SDIO: powered down they can't
+  // hold high and the LED leaks through them (a green glow while "off"). Keep the rail up.
+  esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_ON);
   if (touchWakes) esp_sleep_enable_ext0_wakeup(GPIO_NUM_36, 0);   // the touch controller's IRQ goes low on a touch
   else esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);   // as a touch wake keeps it: the held pins measured at 0.20 mA
   if (wakeS) esp_sleep_enable_timer_wakeup(wakeS * 1000000ULL);
