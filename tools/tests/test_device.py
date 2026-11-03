@@ -91,6 +91,7 @@ def dev():
     dry = re.search(r"dry:(\d)", st0)
     led = re.match(r"led (\w+) color (\d+ \d+ \d+) brightness (\d+)", d.cmd("led")[0])
     old = d.cmd(f"cat /profile{SLOT}.json")   # someone's slot 16, put back at the end
+    qb0 = d.cmd("quickbar")[0]                # the owner's quick bar, put back at the end
     old = None if not old or old[0].startswith("ERR") else "\n".join(old)
     d.ok("setdim 0")
     d.ok("hid dry on")
@@ -116,6 +117,8 @@ def dev():
     d.cmd("power sim off")
     d.cmd("setdim 120")
     d.cmd("iconanim on" if ianim.endswith("on") else "iconanim off")
+    if qb0.startswith("quickbar "):
+        d.cmd("quickbar set " + qb0.split(" ", 1)[1])
     d.close()
 
 
@@ -325,6 +328,34 @@ def test_player_controls_fit_left_of_the_bar(d):
     d.touch(382, 248)                      # volume up, the rightmost control
     assert any(r.startswith("e9") for r in hid_reports(d, 2, 1))   # consumer usage 0x00E9, little-endian
     d.ok("page 1")
+
+
+# ---------------------------------------------------------------- quick bar
+QB_TEST = [{"profile": SLOT, "page": 1, "icon": "music", "label": "Media"}, None,
+           {"profile": SLOT, "page": 3, "icon": "git-branch", "label": "Git"}, None]
+
+
+def set_qb(d, qb=QB_TEST):
+    d.ok("quickbar set " + json.dumps(qb, separators=(",", ":")))
+
+
+def test_quickbar_round_trips(d):
+    set_qb(d)
+    assert json.loads(d.cmd("quickbar")[0].split(" ", 1)[1]) == QB_TEST
+
+
+def test_quickbar_rejects_bad_config(d):
+    for bad in ['[1,2]', '[{"profile":0,"page":1,"icon":"x","label":"x"},null,null,null]',
+                '[{"profile":1,"page":17,"icon":"x","label":"x"},null,null,null]', 'nope']:
+        assert d.cmd("quickbar set " + bad)[0].startswith("ERR quickbar:"), bad
+
+
+def test_bar_draws_a_set_button_and_leaves_an_empty_one_blank(d):
+    set_qb(d)
+    time.sleep(0.3)
+    img = d.shot()
+    assert any(img.getpixel((450, y)) != img.getpixel((432, y)) for y in range(96, 140))   # button 1: icon and label
+    assert all(img.getpixel((450, y)) == img.getpixel((432, y)) for y in range(150, 200))  # button 2: blank
 
 
 # ---------------------------------------------------------------- screen

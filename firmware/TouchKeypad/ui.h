@@ -71,3 +71,9 @@ const char *uiModeName();            // home | sheet | pair | cal | shade | menu
 void uiPerf(bool reset);             // `perf`: frame timing of animated frames
 void uiPerfLog();                    // `perf log`: the latest frames one by one
 void uiRenderBench();                // `rbench`: render cost per scene part
+// The quick bar (docs/superpowers/specs/2026-11-03-quick-bar-design.md): four buttons right of the
+// keys, each a page of a profile. `quickbar` JSON: [ {"profile","page","icon","label"} | null ] x 4,
+// saved in NVS kp/qbar.
+bool uiQuickbarSet(const char *json, String &err);
+void uiQuickbarPrint();                 // `quickbar <json>`
+void uiProfilesChanged(int id);         // a profile file was saved or removed: re-check the buttons

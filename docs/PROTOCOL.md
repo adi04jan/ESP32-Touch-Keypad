@@ -59,6 +59,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `notify list\|clear` | `notify <n> unread <u>` then `<i> <app>	<title>	<body>	<icon>` per notification / `notify clear` | the notifications, newest first |
 | `autogen busy\|done\|fail <text>` | `autogen <state>` | Studio's progress for `EVT:AUTOGEN`: `busy` holds a toast with a breathing dot, `done` and `fail` end it |
 | `toast <text>` | `toast` | a toast under the status band |
+| `quickbar [set <json> \| clear]` | `quickbar <json>` or `ERR quickbar: <why>` | the quick bar right of the keys: exactly four entries, each `{"profile":1-16,"page":1-16,"icon":"<key icon>","label":"<12 chars at most>"}` or `null` (an empty button); a button whose profile or page is missing draws empty. NVS `kp/qbar`; a fresh keypad starts with Media (profile 1 page 2) and Git (profile 2 page 2), an updated one with four empty buttons |
 
 Cell ids are 1–15, row by row, on a 5×3 grid. Unknown commands reply `unknown`.
 

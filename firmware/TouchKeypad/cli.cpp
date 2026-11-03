@@ -165,6 +165,7 @@ static void uploadFinish() {
   Con.printf("SAVED %s %u\n", up.path + 1, (unsigned)size);
   if (id) {
     gcTiles();
+    uiProfilesChanged(id);
     if (id == currentProfile) {
       int pg = currentPage;
       uiSetProfile(id);
@@ -256,12 +257,21 @@ static bool runCommand(char *s) {
     Con.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
                    "setface <id> <tile> <r> <g> <b> title <id> <text> show <id> ok|alert widget <name> <json> "
                    "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> notify <json>|list|clear shade [close] "
-                   "ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
+                   "quickbar [set <json>|clear] ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
     Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
                   uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+  } else if (cmd == "quickbar") {
+    bool set = !strncmp(arg, "set", 3) && (arg[3] == ' ' || !arg[3]);
+    String err;
+    if (set) {
+      const char *j = arg + 3;
+      while (*j == ' ') j++;
+      if (uiQuickbarSet(j, err)) uiQuickbarPrint(); else Con.printf("ERR quickbar: %s\n", err.c_str());
+    } else if (!strcmp(arg, "clear")) { uiQuickbarSet("[null,null,null,null]", err); uiQuickbarPrint(); }
+    else uiQuickbarPrint();
   } else if (cmd == "ls") {
     listFiles(*arg ? arg : "/");
   } else if (cmd == "cat") {
@@ -273,7 +283,11 @@ static bool runCommand(char *s) {
     normPath(arg, p, sizeof p);
     if (!*arg || strstr(p, "..")) Con.println("rm <file>");
     else if (!LittleFS.exists(p) || LittleFS.open(p).isDirectory()) Con.printf("ERR no such file: %s\n", p);
-    else { LittleFS.remove(p); storageCommits++; Con.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
+    else {
+      int id = 0;
+      LittleFS.remove(p); storageCommits++; Con.printf("removed %s\n", p);
+      if (isProfilePath(p, &id)) { gcTiles(); uiProfilesChanged(id); }
+    }
   } else if (cmd == "fsinfo") {
     Con.printf("FS_INFO:%u,%u\n", (unsigned)LittleFS.totalBytes(), (unsigned)LittleFS.usedBytes());
   } else if (cmd == "reboot") {

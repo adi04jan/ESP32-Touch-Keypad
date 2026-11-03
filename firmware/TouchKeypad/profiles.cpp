@@ -86,6 +86,10 @@ void profilesInstallDefaults() {
     if (!first && LittleFS.exists(path) && fileCrc(path) != p.getUInt(key.c_str(), 0)) continue;
     if (writeDefault(id)) { p.putUInt(key.c_str(), fileCrc(path)); Con.printf("Installed default profile %d\n", id); }
   }
+  // A fresh keypad gets a quick bar for the shipped profiles: Daily page 2 is the player, Code page 2 git.
+  // A keypad that already ran this firmware family keeps whatever it has (none: four empty buttons).
+  if (first) p.putString("qbar", "[{\"profile\":1,\"page\":2,\"icon\":\"music\",\"label\":\"Media\"},null,"
+                                 "{\"profile\":2,\"page\":2,\"icon\":\"git-branch\",\"label\":\"Git\"},null]");
   if (changed) p.putUInt("defv", DEFAULTS_VERSION);
   p.end();
 }

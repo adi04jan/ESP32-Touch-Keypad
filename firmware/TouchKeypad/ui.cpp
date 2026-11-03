@@ -123,6 +123,18 @@ static uint32_t ban0 = 0, shade0 = 0, menu0 = 0;
 static bool banOn = false, shadeClosing = false;
 static int shadeBotDrawn = STATUS_H;
 
+// The quick bar: a suggestion slot on top, then four buttons, each a page of a profile.
+#define BAR_X KEYS_W
+#define SUG_Y STATUS_H
+#define SUG_H 58
+#define QB_Y0 (SUG_Y + SUG_H + 2)
+#define QB_H 57
+#define QB_BUTTONS 4
+struct QbBtn { int8_t prof, page; char icon[24], label[13]; bool ok; };   // prof 0: empty; page 1-based; ok: that page exists
+static QbBtn qb[QB_BUTTONS];
+static bool qbParse(const char *json, QbBtn out[QB_BUTTONS], String &err);
+static void qbCheck();
+
 static uint32_t pairKey = 0;
 static uint32_t wipe0 = 0;           // keys <-> player, or a new theme: the new screen wipes in from the top
 static bool wiping = false;
@@ -1356,6 +1368,94 @@ static void drawBanner(uint32_t now) {
   gfxUnclip();
 }
 
+// ---------------------------------------------------------------- quick bar
+static void markBar() { mark(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H); }
+
+static bool qbParse(const char *json, QbBtn out[QB_BUTTONS], String &err) {
+  JsonDocument d;
+  if (deserializeJson(d, json) || !d.is<JsonArray>()) { err = "not a JSON array"; return false; }
+  JsonArray a = d.as<JsonArray>();
+  if (a.size() != QB_BUTTONS) { err = "want 4 entries, null for an empty button"; return false; }
+  QbBtn tmp[QB_BUTTONS] = {};
+  for (int i = 0; i < QB_BUTTONS; i++) {
+    JsonVariant v = a[i];
+    if (v.isNull()) continue;
+    String at = "button " + String(i + 1) + " ";
+    if (!v.is<JsonObject>()) { err = at + "is not an object or null"; return false; }
+    int prof = v["profile"] | 0, page = v["page"] | 0;
+    const char *icon = v["icon"] | (const char *)nullptr, *label = v["label"] | (const char *)nullptr;
+    if (!v["profile"].is<int>() || prof < 1 || prof > NUM_PROFILES) { err = at + "profile (1-16)"; return false; }
+    if (!v["page"].is<int>() || page < 1 || page > MAX_PAGES) { err = at + "page (1-16)"; return false; }
+    if (!icon || strlen(icon) >= sizeof tmp[i].icon) { err = at + "icon (a key icon name)"; return false; }
+    if (!label || strlen(label) >= sizeof tmp[i].label) { err = at + "label (12 characters at most)"; return false; }
+    tmp[i].prof = prof;
+    tmp[i].page = page;
+    strlcpy(tmp[i].icon, icon, sizeof tmp[i].icon);
+    strlcpy(tmp[i].label, label, sizeof tmp[i].label);
+  }
+  memcpy(out, tmp, sizeof tmp);
+  return true;
+}
+
+static String qbJson() {
+  JsonDocument d;
+  JsonArray a = d.to<JsonArray>();
+  for (const QbBtn &b : qb) {
+    if (!b.prof) { a.add(nullptr); continue; }
+    JsonObject o = a.add<JsonObject>();
+    o["profile"] = b.prof;
+    o["page"] = b.page;
+    o["icon"] = b.icon;
+    o["label"] = b.label;
+  }
+  String s;
+  serializeJson(d, s);
+  return s;
+}
+
+// A button works when its profile file reads and has its page (a file read each: never in a render).
+static void qbCheck() {
+  for (QbBtn &b : qb) {
+    char name[24];
+    int pages = 0;
+    uint8_t col[3];
+    b.ok = b.prof && profileMeta(b.prof, name, sizeof name, &pages, col) && b.page <= pages;
+  }
+}
+
+static void drawBar(uint32_t now) {
+  if (!gfxHits(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H)) return;
+  fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, PLY);
+  fillRect(BAR_X, STATUS_H, T->crisp ? 2 : 1, SCR_H - STATUS_H, HAIR, T->hairA);
+  fillRect(BAR_X + 8, QB_Y0 - 1, BAR_W - 16, 1, HAIR, T->hairA);
+  const int cx = BAR_X + BAR_W / 2;
+  for (int i = 0; i < QB_BUTTONS; i++) {
+    const QbBtn &b = qb[i];
+    if (!b.prof || !b.ok) continue;
+    int top = QB_Y0 + i * QB_H;
+    if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, TXT);
+    text(fLabelS, cx, top + 46, ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), TXT2, 255, AL_C);
+  }
+}
+
+bool uiQuickbarSet(const char *json, String &err) {
+  if (!qbParse(json, qb, err)) return false;
+  Preferences p;
+  p.begin("kp", false);
+  p.putString("qbar", qbJson());
+  p.end();
+  qbCheck();
+  markBar();
+  return true;
+}
+
+void uiQuickbarPrint() { Con.printf("quickbar %s\n", qbJson().c_str()); }
+
+void uiProfilesChanged(int id) {
+  qbCheck();
+  markBar();
+}
+
 // ---------------------------------------------------------------- frame
 static void renderChunk(uint32_t now) {
   if (mode == M_CAL) { gfxFill(CAL_BG); drawCal(); return; }
@@ -1369,6 +1469,7 @@ static void renderChunk(uint32_t now) {
     if (playerPage()) drawPlayer(now);
     else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
     drawStations();
+    drawBar(now);
     gfxUnclip();
   }
   drawSheet(top);
@@ -1650,7 +1751,11 @@ void uiBegin() {
   dimAfterS = p.getUShort("dim", DIM_DEFAULT_S);
   themeIdx = constrain(p.getUChar("theme", THEME_DEFAULT), 0, THEME_COUNT - 1);
   iconMotion = p.getBool("ianim", true);
+  String bar = p.getString("qbar", "");
   p.end();
+  String err;
+  if (bar.length() && !qbParse(bar.c_str(), qb, err)) Con.printf("quick bar: %s\n", err.c_str());
+  qbCheck();
   applyTheme(themeIdx);
   fontsBegin();
   lastAct = millis();
