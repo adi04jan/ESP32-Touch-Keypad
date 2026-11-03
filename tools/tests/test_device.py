@@ -134,6 +134,8 @@ def d(dev):
         dev.cmd("calibrate cancel")
         dev.cmd("sheet close")
         dev.cmd("shade close")
+    if " sug:" in st and " sug:0 " not in st:     # a suggestion left in the bar
+        dev.cmd("suggest 0")
     if "panel:" in st and " panel:0" not in st:   # a quick-bar panel left open
         dev.cmd("panel 0")
     if "theme:glass" not in st:   # pixel checks below are written against Glass
@@ -451,6 +453,43 @@ def test_panel_costs_little_heap_and_keeps_50_fps(d):
     assert rate >= FPS_FLOOR
     d.cmd("panel 0"); time.sleep(0.4)
     assert abs(free() - before) < 1024
+
+
+SUG = (450, 30 + 29)                                         # the bar's suggestion slot
+
+
+def test_manual_switch_says_how(d):
+    since = len(d.events)
+    d.touch(30, 14); d.wait_event(r"^EVT:UI sheet$", 3, since); time.sleep(0.5)
+    d.touch(128 + 40, 96 + 23)                              # card 1
+    d.wait_event(r"^EVT:SWITCH 1 touch$", 3, since)
+    d.ok("sheet close"); mark = len(d.events); d.ok(f"setprofile {SLOT}")
+    assert not evts(d, mark, "EVT:SWITCH")                  # the host's switch says nothing
+
+
+def test_suggestion_tap_switches_and_go_back_returns(d):
+    d.ok("page 3"); d.ok("suggest 1"); since = len(d.events)
+    d.touch(*SUG)
+    d.wait_event(r"^EVT:PROFILE 1$", 3, since); d.wait_event(r"^EVT:SWITCH 1 suggest$", 3, since)
+    d.touch(*SUG)                                           # now the way back to Test
+    d.wait_event(rf"^EVT:SWITCH {SLOT} back$", 3, since)
+    assert "page:3 " in d.cmd("status")[0]
+
+
+def test_other_switch_clears_go_back_and_slot_hides_the_active_profile(d):
+    d.ok("suggest 1"); d.touch(*SUG); time.sleep(0.5)
+    d.ok(f"setprofile {SLOT}"); since = len(d.events)
+    d.touch(*SUG)                                           # go-back gone: the slot suggests 1 again
+    d.wait_event(r"^EVT:SWITCH 1 suggest$", 3, since)
+    d.ok(f"setprofile {SLOT}"); d.ok(f"suggest {SLOT}"); since = len(d.events)
+    d.touch(*SUG); time.sleep(0.4)                          # the suggestion is the active profile: nothing
+    assert not evts(d, since, "EVT:SWITCH")
+
+
+def test_suggestion_tap_closes_a_panel(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); d.ok("suggest 1"); since = len(d.events)
+    d.touch(*SUG)
+    d.wait_event(r"^EVT:PANEL 0$", 3, since); d.wait_event(r"^EVT:SWITCH 1 suggest$", 3, since)
 
 
 # ---------------------------------------------------------------- screen

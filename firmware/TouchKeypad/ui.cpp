@@ -137,6 +137,9 @@ static void qbCheck();
 // The open panel (btn 0: none): its own page document, page line, back stack and toggles.
 static JsonDocument panelDoc;
 static struct { int8_t btn, prof, page, pages, back[8], depth; uint16_t toggles; uint8_t col[3]; } panel;
+// The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
+static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
+static struct { int8_t prof, page; char name[24]; uint8_t col[3]; } backTo;   // prof 0: no way back
 static int viewPage() { return panel.btn ? panel.page : currentPage; }      // the page the grid shows
 static int viewPages() { return panel.btn ? panel.pages : pageCount; }
 static void startWave();
@@ -1443,6 +1446,17 @@ static void drawBar(uint32_t now) {
   fillRect(BAR_X, STATUS_H, T->crisp ? 2 : 1, SCR_H - STATUS_H, HAIR, T->hairA);
   fillRect(BAR_X + 8, QB_Y0 - 1, BAR_W - 16, 1, HAIR, T->hairA);
   const int cx = BAR_X + BAR_W / 2;
+  if (backTo.prof) {   // the way back to the profile the suggestion left
+    if (const IconDef *ic = iconFind("undo-2", false)) glyph(ic, false, cx, SUG_Y + 21, 20, TXT);
+    text(fLabelS, cx, SUG_Y + 45, ellipsize(fLabelS, backTo.name, BAR_W - 6).c_str(), TXT2, 255, AL_C);
+  } else if (sug.slot && sug.slot != currentProfile) {   // the suggestion: its name on a pill ringed in its colour
+    C3 lc = lineOf(sug.col);
+    float r = T->crisp ? 4 : 12;
+    rrFill(BAR_X + 5, SUG_Y + 4, BAR_W - 10, SUG_H - 8, r, pillFill());
+    rrRing(BAR_X + 5.5f, SUG_Y + 4.5f, BAR_W - 11, SUG_H - 9, r - 0.5f, 2, lc);
+    circle(cx, SUG_Y + 21, 5, lc);
+    text(fLabelS, cx, SUG_Y + 43, ellipsize(fLabelS, sug.name, BAR_W - 14).c_str(), TXT, 255, AL_C);
+  }
   for (int i = 0; i < QB_BUTTONS; i++) {
     const QbBtn &b = qb[i];
     if (!b.prof || !b.ok) continue;
@@ -1471,6 +1485,8 @@ void uiQuickbarPrint() { Con.printf("quickbar %s\n", qbJson().c_str()); }
 void uiProfilesChanged(int id) {
   qbCheck();
   markBar();
+  if (sug.slot == id) uiSuggest(id);   // re-reads it; gone: no suggestion (a tap must never make a default)
+  if (backTo.prof == id && !LittleFS.exists("/profile" + String(id) + ".json")) backTo.prof = 0;
   if (!panel.btn || panel.prof != id) return;   // Studio saved the profile behind the open panel: show it
   char name[24];
   int pages = 0;
@@ -1992,10 +2008,7 @@ void uiKeyBack() {
   else uiPanel(0);   // back on the page the button opens: the panel goes
 }
 
-void uiKeyProfile(int n) {
-  uiPanel(0);
-  uiSetProfile(n);
-}
+void uiKeyProfile(int n) { uiSetProfile(n, "touch"); }
 
 static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 1-4 a button
   if (x < BAR_X || x >= SCR_W || y < STATUS_H || y >= SCR_H) return -1;
@@ -2005,7 +2018,19 @@ static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 1-
 }
 
 static void barTap(int i) {
-  if (i < 1) return;   // the suggestion slot: below
+  if (i == 0) {   // the suggestion slot: the way back first, else the suggestion
+    if (backTo.prof) {
+      int p = backTo.prof, pg = backTo.page;
+      feedbackClick();
+      uiSetProfile(p, "back");
+      if (pg > 0 && pg < pageCount) uiGoPage(pg, false);
+    } else if (sug.slot && sug.slot != currentProfile) {
+      feedbackClick();
+      uiSetProfile(sug.slot, "suggest");
+    }
+    return;
+  }
+  if (i < 1) return;
   feedbackClick();
   uiPanel(panel.btn == i ? 0 : i);
 }
@@ -2025,7 +2050,9 @@ void uiAutogen(int state, const char *text) {
   else uiNotify("Generate", toastText, "", "sparkles", "autogen", false);   // the toast told it; the shade keeps it
 }
 
-void uiSetProfile(int n) {
+void uiSetProfile(int n, const char *how) {
+  int from = currentProfile, fromPage = currentPage;
+  if (how) uiPanel(0);   // the owner picked a profile: show it, not a panel over it
   macroEngine.abort();
   backDepth = 0;
   memset(toggles, 0, sizeof toggles);
@@ -2036,8 +2063,25 @@ void uiSetProfile(int n) {
   char t[48];
   snprintf(t, sizeof t, "Profile %d \xc2\xb7 %s", currentProfile, profileName);
   uiToast(t);
+  if (currentProfile != from) {   // a new profile: the way back exists only right after a suggestion
+    backTo.prof = 0;
+    if (how && !strcmp(how, "suggest")) {
+      int pages;
+      if (profileMeta(from, backTo.name, sizeof backTo.name, &pages, backTo.col)) { backTo.prof = from; backTo.page = fromPage; }
+    }
+  }
+  if (how && currentProfile == n) Con.printf("EVT:SWITCH %d %s\n", n, how);
+  markBar();
   startWave();   // old keys stay until their turn in the wave replaces them
 }
+
+void uiSuggest(int slot) {
+  int pages;
+  sug.slot = slot >= 1 && slot <= NUM_PROFILES && profileMeta(slot, sug.name, sizeof sug.name, &pages, sug.col) ? slot : 0;
+  markBar();
+}
+
+int uiSuggested() { return sug.slot; }
 
 void uiFlash(int c, bool ok) {
   if (c < 0 || c >= NUM_CELLS) return;
@@ -2318,7 +2362,7 @@ static void stepProfile(int dir) {   // the next saved profile that way, round t
   for (int k = 1; k < NUM_PROFILES; k++) {
     int n = (currentProfile - 1 + dir * k + 2 * NUM_PROFILES) % NUM_PROFILES + 1;
     snprintf(path, sizeof path, "/profile%d.json", n);
-    if (LittleFS.exists(path)) { uiSetProfile(n); return; }
+    if (LittleFS.exists(path)) { uiSetProfile(n, "touch"); return; }
   }
 }
 static void shadeTap(int x, int y, int b) {
@@ -2393,7 +2437,7 @@ static void sheetTap(int x, int y) {
       if (y >= CARD_Y && x >= PANE_X) {
         int col = (x - PANE_X) / (CARD_W + CARD_GAP), row = (y - CARD_Y) / (CARD_H + CARD_GAP);
         int n = row * 4 + col + 1;
-        if (col < 4 && row < 4 && n <= NUM_PROFILES && slots[n - 1].ok) uiSetProfile(n);
+        if (col < 4 && row < 4 && n <= NUM_PROFILES && slots[n - 1].ok) uiSetProfile(n, "touch");
       }
       break;
     case 3:

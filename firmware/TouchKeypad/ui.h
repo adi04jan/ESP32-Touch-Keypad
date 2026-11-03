@@ -23,7 +23,10 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1);
 
 void uiGoPage(int idx, bool push);   // emits EVT:PAGE
 void uiBack();
-void uiSetProfile(int n);            // emits EVT:PROFILE, shows a toast
+// Emits EVT:PROFILE, shows a toast. how: nullptr = the host chose it (`setprofile`, an upload
+// reload): a panel stays open. "touch" | "suggest" | "back" = chosen on the keypad: a panel closes,
+// and EVT:SWITCH <n> <how> follows EVT:PROFILE, so Studio can tell the owner's switches from its own.
+void uiSetProfile(int n, const char *how = nullptr);
 void uiFlash(int cell, bool ok);     // ok / alert ring on a key
 void uiToast(const char *text);
 // Autogenerate a profile for the PC's current app (Studio asks Claude). The sheet's
@@ -84,3 +87,5 @@ int  uiPanelOpen();                     // 0 or 1-4
 void uiKeyGoPage(int idx);              // a key's page action: moves an open panel, else uiGoPage(idx, true)
 void uiKeyBack();                       // a key's back: the panel's (closing it on its first page), else uiBack()
 void uiKeyProfile(int n);               // a key's profile action: closes a panel, switches
+void uiSuggest(int slot);               // the bar's suggested profile (Studio's, RAM only); 0 none
+int  uiSuggested();
