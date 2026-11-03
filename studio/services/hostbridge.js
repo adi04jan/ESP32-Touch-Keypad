@@ -1,7 +1,7 @@
 /* Host bridge (PLAN.md §9): a `host` action makes the keypad send a reserved
  * F13–F24 combo; Studio registers those combos with Electron's globalShortcut
  * and runs the mapped command: `open <url|file|app>`, `run <command line>`,
- * `obs.scene <name>` (OBS WebSocket v5, optional). */
+ * `obs.scene <name>` (OBS WebSocket v5, optional), `mic toggle|mute|unmute` (every mic on the PC). */
 "use strict";
 
 const crypto = require("crypto");
@@ -61,7 +61,7 @@ function findActionConflicts(profile) {
 
 function parseCommand(cmd) {
   const s = String(cmd || "").trim();
-  const m = s.match(/^(open|run|obs\.scene)\s+(.+)$/i);
+  const m = s.match(/^(open|run|obs\.scene|mic)\s+(.+)$/i);
   if (!m) return { kind: "invalid", arg: s };
   return { kind: m[1].toLowerCase(), arg: m[2].trim() };
 }
@@ -95,7 +95,7 @@ function obsRequest({ url = "ws://127.0.0.1:4455", password = "" }, requestType,
 }
 
 class HostBridge {
-  /* deps: { globalShortcut, open(target), run(cmdline), settings() -> {obs_*}, log(text) } */
+  /* deps: { globalShortcut, open(target), run(cmdline), mic(toggle|mute|unmute), settings() -> {obs_*}, log(text) } */
   constructor(deps) {
     this.d = deps;
     this.registered = new Map();     // accelerator -> slot
@@ -132,11 +132,16 @@ class HostBridge {
     try {
       if (kind === "open") await this.d.open(arg);
       else if (kind === "run") await this.d.run(arg);
+      else if (kind === "mic") {   // every mic on the PC, the way a laptop's or Logitech's mic key does it
+        if (!/^(toggle|mute|unmute)$/i.test(arg)) throw new Error("use mic toggle, mic mute or mic unmute");
+        if (!this.d.mic) throw new Error("mic mute is not available here");
+        await this.d.mic(arg.toLowerCase());
+      }
       else if (kind === "obs.scene") {
         const s = this.d.settings ? this.d.settings() : {};
         if (!s.obs_enabled) throw new Error("OBS is off (Settings > Host bridge)");
         await (this.d.obsRequest || obsRequest)({ url: s.obs_url, password: s.obs_password }, "SetCurrentProgramScene", { sceneName: arg });
-      } else throw new Error(`unknown host command '${cmd}' (use open, run or obs.scene)`);
+      } else throw new Error(`unknown host command '${cmd}' (use open, run, obs.scene or mic)`);
       log(`host: ${cmd}\n`);
       return { ok: true };
     } catch (e) {

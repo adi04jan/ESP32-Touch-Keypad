@@ -29,6 +29,7 @@ const { Autogen, appKey } = require("./services/autogen");
 const chat = require("./services/chat");
 const { WinNotify } = require("./services/winnotify");
 const { Suggest } = require("./services/suggest");
+const { MicMute } = require("./services/micmute");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
@@ -37,6 +38,7 @@ const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: test
 const ICON = path.join(__dirname, "assets", "icon.ico");
 
 let win = null, tray = null, link = null, device = null, bridge = null, autogen = null, winNotify = null;
+let micmute = null;   // the `mic toggle` host key: every mic on the PC (services/micmute.js)
 let suggest = null, suggestFile = "", suggestSaveTimer = null;   // the quick bar's suggested profile (services/suggest.js)
 let manualDisconnect = false, connecting = false, pollTimer = null, currentContext = "global";
 
@@ -62,7 +64,10 @@ function initServices() {
   backup.configure({ dataDir });
 
   link = new SerialLink({ SerialPort: SIM ? simPort() : NO_SERIAL ? offlinePort() : withBluetooth(BLE_ONLY ? { list: async () => [] } : require("serialport").SerialPort) });
-  bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log });
+  micmute = new MicMute({ log });
+  bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log,
+    mic: (arg) => micmute.run(arg).then((muted) => log(`mic: ${muted ? "muted" : "on"}\n`)) });
+  if (process.platform === "win32" && !SMOKE) micmute.run("get").catch(() => {});   // warm the helper: the first press is instant too
   device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname() });
 
   for (const ev of ["log", "fs-info", "key", "page", "profile", "ble", "idle", "switch", "panel"]) link.on(ev, (d) => send(ev, d));
@@ -223,6 +228,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
 // Child processes (media helper, window watcher) must go first or Electron won't exit.
 function cleanup() {
   clearInterval(pollTimer);
+  if (micmute) micmute.stop();
   if (suggest) {
     clearTimeout(suggestSaveTimer);
     suggest.save(suggestFile);

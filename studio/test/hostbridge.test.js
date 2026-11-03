@@ -93,3 +93,13 @@ test("OBS v5 auth string matches the obs-websocket protocol docs example", () =>
   assert.equal(hb.obsAuth("supersecretpassword", "lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI=", "+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY="),
     "1Ct943GAT+6YQUUX47Ia/ncufilbe6+oD6lY+5kaCu4=");
 });
+
+test("mic: parseCommand and execute call the mic helper", async () => {
+  assert.deepEqual(hb.parseCommand("mic toggle"), { kind: "mic", arg: "toggle" });
+  const calls = [];
+  const bridge = new hb.HostBridge({ globalShortcut: { register: () => true, unregister: () => {} }, mic: async (a) => { calls.push(a); return true; } });
+  assert.deepEqual(await bridge.execute("mic toggle"), { ok: true });
+  assert.deepEqual(await bridge.execute("mic mute"), { ok: true });
+  assert.equal((await bridge.execute("mic loud")).ok, false);
+  assert.deepEqual(calls, ["toggle", "mute"]);
+});
