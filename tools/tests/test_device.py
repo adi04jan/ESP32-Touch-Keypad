@@ -828,7 +828,7 @@ def test_theme_default_is_daylight(d):
     assert "theme:daylight" in d.cmd("status")[0]
 
 
-@pytest.mark.parametrize("name", THEMES)
+@pytest.mark.parametrize("name", THEMES[:6])   # the hand-tuned six; the handoff four: test_the_handoff_themes_load_and_paint_their_tokens
 def test_each_theme_paints_its_ground_and_keys(d, name):
     d.ok(f"theme {name}")
     time.sleep(0.6)                                      # the wipe takes 320 ms
