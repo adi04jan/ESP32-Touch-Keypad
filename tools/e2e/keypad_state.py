@@ -6,8 +6,9 @@
 save records the active profile, theme, LED pattern, colour and brightness,
 screen brightness, key click, battery sleep time and the HID dry-run state. --free-slot N makes slot N available for the
 run: an untouched blank (the file the keypad writes when an empty slot is
-visited) is removed; a real profile there stops the run instead of being
-overwritten. restore puts every recorded value back and removes slot N again.
+visited) is removed; a real profile there is borrowed: kept in the state file
+(written before the slot is cleared) and uploaded back by restore. restore puts
+every recorded value back and clears slot N again, or returns what it borrowed.
 Talks over USB with tools/kp.py, so it works whatever state Studio is in.
 """
 import json
@@ -44,10 +45,11 @@ def save(path, free):
     if free:
         if state["profile"] == free:
             raise SystemExit(f"slot {free} is the active profile; pick another free slot")
-        text = "\n".join(d.cmd(f"cat /profile{free}.json"))
+        text = "\n".join(d.cmd(f"cat /profile{free}.json", 15))
         if not text.startswith("ERR"):
             if not blank(text, free):
-                raise SystemExit(f"slot {free} holds a real profile; not touching it")
+                state["borrowed"] = text   # every slot holds a real profile now: keep it, restore puts it back
+            Path(path).write_text(json.dumps(state, indent=1))   # on disk before the slot is cleared
             d.cmd(f"rm /profile{free}.json")
     d.close()
     Path(path).write_text(json.dumps(state, indent=1))
@@ -60,6 +62,10 @@ def restore(path):
     d.ready(20)
     if s.get("free_slot"):
         d.cmd(f"rm /profile{s['free_slot']}.json")
+        if s.get("borrowed"):   # the owner's profile goes back exactly as it was
+            r = d.upload_text(f"profile{s['free_slot']}.json", s["borrowed"], 30)
+            if not any(l.startswith("SAVED") for l in r):
+                raise SystemExit(f"could not put slot {s['free_slot']} back; it is in {path}: {r}")
     for c in (f"setprofile {s['profile']}", f"theme {s['theme']}", f"led {s['led']} {s['led_color']}",
               f"ledbright {s['led_bright']}", f"setbrightness {s['bright']}", f"click {'on' if s['click'] else 'off'}",
               *([f"power sleep {s['sleep']}", "power sim off"] if s.get("sleep") is not None else []),

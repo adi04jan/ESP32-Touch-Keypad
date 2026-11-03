@@ -38,7 +38,7 @@ STATE = ROOT / "build" / "e2e-keypad-before.json"
 HELPER = ROOT / "tools" / "e2e" / "bin" / "KpHelper.exe"
 OUT = ROOT / "build" / "e2e-keys.txt"
 NAME = "Touch Keypad"
-SLOT = 15                                      # scratch slot (1-13 hold the owner's profiles)
+SLOT = 15                                      # borrowed for the run: keypad_state keeps its profile and puts it back
 TEXT = "kp-e2e: Hello, Paper Theatre 123!"
 # 120 characters in one go: a dropped or merged HID report shows up as a missing letter
 LONG = " Sphinx of black quartz, judge my vow. The quick brown fox jumps over the lazy dog! 0123456789 Pack my box, end."
@@ -212,7 +212,7 @@ def hid_media_check(d):
 
 def main():
     OUT.parent.mkdir(exist_ok=True)
-    keypad_state.save(STATE, SLOT)          # also frees slot 15 (or stops if it holds a real profile)
+    keypad_state.save(STATE, SLOT)          # also frees slot 15, keeping a real profile there to put back
     d = kp.Device()
     d.ready()
     window = studio = None
