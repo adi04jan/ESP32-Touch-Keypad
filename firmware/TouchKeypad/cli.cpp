@@ -273,7 +273,7 @@ static bool runCommand(char *s) {
     normPath(arg, p, sizeof p);
     if (!*arg || strstr(p, "..")) Con.println("rm <file>");
     else if (!LittleFS.exists(p) || LittleFS.open(p).isDirectory()) Con.printf("ERR no such file: %s\n", p);
-    else { LittleFS.remove(p); Con.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
+    else { LittleFS.remove(p); storageCommits++; Con.printf("removed %s\n", p); if (isProfilePath(p)) gcTiles(); }
   } else if (cmd == "fsinfo") {
     Con.printf("FS_INFO:%u,%u\n", (unsigned)LittleFS.totalBytes(), (unsigned)LittleFS.usedBytes());
   } else if (cmd == "reboot") {

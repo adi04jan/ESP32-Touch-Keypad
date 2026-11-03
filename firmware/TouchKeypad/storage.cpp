@@ -64,7 +64,10 @@ static void backupFile(const char *path) {
     LittleFS.remove("/backups/" + names[i]);
 }
 
+uint32_t storageCommits = 0;
+
 bool commitTmp(const char *path, bool backup) {
+  storageCommits++;
   String tmp = String(path) + ".tmp";
   if (backup && LittleFS.exists(path)) backupFile(path);
   LittleFS.remove(path);

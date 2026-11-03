@@ -12,6 +12,7 @@
 #include "leds.h"
 #include "power.h"
 #include "hid_maps.h"
+#include "storage.h"
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <NimBLEDevice.h>
@@ -869,15 +870,23 @@ static bool refreshHosts() {
   return false;
 }
 static void refreshInfo() {
-  info.used = LittleFS.usedBytes();   // walks the file system: ~0.2 s with many tiles
-  info.total = LittleFS.totalBytes();
+  // usedBytes and totalBytes each walk the file system (~95 ms with many tiles): the total once,
+  // the used only for the Device tab, the one that shows it.
+  if (!info.total) info.total = LittleFS.totalBytes();
+  if (sheetTab == 4) info.used = LittleFS.usedBytes();
   info.heap = ESP.getFreeHeap();
   strlcpy(info.mac, NimBLEDevice::getAddress().toString().c_str(), sizeof info.mac);
   refreshHosts();
 }
 
+// What the open tab shows. The Profiles tab's 16 slots are a file each (~20 ms: three lookups to
+// open one), read again only once a file has changed since.
 static void loadSlots() {
-  for (int i = 0; i < NUM_PROFILES; i++) slots[i].ok = profileMeta(i + 1, slots[i].name, sizeof slots[i].name, &slots[i].pages, slots[i].col);
+  static uint32_t readAt = UINT32_MAX;   // storageCommits when the slots were read
+  if (sheetTab == 1 && readAt != storageCommits) {
+    for (int i = 0; i < NUM_PROFILES; i++) slots[i].ok = profileMeta(i + 1, slots[i].name, sizeof slots[i].name, &slots[i].pages, slots[i].col);
+    readAt = storageCommits;
+  }
   refreshInfo();
 }
 
@@ -1975,7 +1984,7 @@ void uiCloseShade() {   // and the host menu
 
 static void openHostMenu() {
   if (mode != M_HOME) return;
-  refreshInfo();
+  refreshHosts();   // all the menu shows
   mode = M_MENU;
   menu0 = millis();
   pressed = pressedBtn = -1;
@@ -2127,8 +2136,8 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
 static void sheetTap(int x, int y) {
   for (int i = 0; i < 5; i++)
     if (inRect(x, y, 8, 40 + i * 52, 108, 48)) {
-      if (i == 1) loadSlots(); else refreshInfo();
       sheetTab = i;
+      loadSlots();
       mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H);
       return;
     }

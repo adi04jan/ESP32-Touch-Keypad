@@ -21,6 +21,29 @@ uint8_t profileColor[3] = { 79, 140, 255 };
 
 static const auto NEST = DeserializationOption::NestingLimit(24);
 
+// ArduinoJson pulls a byte at a time, and straight from a File each byte is an fread through the
+// VFS (and an available() an ftell): ~11 us a byte, 2.8 s for Settings to read 16 profiles. This
+// hands it the file 512 bytes per read. Every JSON read of a profile goes through one.
+struct FileReader {
+  File &f;
+  uint8_t buf[512];
+  int n = 0, i = 0;
+  explicit FileReader(File &file) : f(file) {}
+  int read() {
+    if (i == n) {
+      n = f.read(buf, sizeof buf);
+      i = 0;
+      if (n <= 0) { n = 0; return -1; }
+    }
+    return buf[i++];
+  }
+  size_t readBytes(char *s, size_t len) {
+    size_t k = 0;
+    for (int c; k < len && (c = read()) >= 0;) s[k++] = c;
+    return k;
+  }
+};
+
 static String profilePath(int id) { return "/profile" + String(id) + ".json"; }
 
 bool isProfilePath(const char *path, int *id) {
@@ -103,8 +126,8 @@ bool loadProfile(int id) {
   filter["keys"] = true;   // v1 files only (small)
   File f = LittleFS.open(path, "r");
   if (!f) return false;
-  f.setTimeout(0);
-  DeserializationError err = deserializeJson(meta, f, DeserializationOption::Filter(filter), NEST);
+  FileReader r(f);
+  DeserializationError err = deserializeJson(meta, r, DeserializationOption::Filter(filter), NEST);
   f.close();
   if (err) {
     Con.printf("Profile %d parse error: %s\n", id, err.c_str());
@@ -148,14 +171,14 @@ bool loadProfileSafe(int id) {
   return false;
 }
 
-// Leave `f` just past the '[' of the top-level "pages" array. Tracks strings
+// Leave `r` just past the '[' of the top-level "pages" array. Tracks strings
 // and depth so "pages" inside a string or a nested object can't fool it.
-static bool seekPages(File &f) {
+static bool seekPages(FileReader &r) {
   int depth = 0, klen = 0;
   bool inStr = false, esc = false, keyIsPages = false, afterColon = false;
   char key[6];
-  while (f.available()) {
-    char c = f.read();
+  for (int ch; (ch = r.read()) >= 0;) {
+    char c = ch;
     if (inStr) {
       if (esc) esc = false;
       else if (c == '\\') esc = true;
@@ -179,14 +202,16 @@ bool loadPage(int idx) {
   if (idx < 0 || idx >= pageCount) return false;
   File f = LittleFS.open(profilePath(currentProfile), "r");
   if (!f) return false;
-  f.setTimeout(0);
-  bool ok = seekPages(f);
+  FileReader r(f);
+  bool ok = seekPages(r);
   JsonDocument skip;
   skip.set(false);
   for (int i = 0; ok && i <= idx; i++) {
-    DeserializationError e = i == idx ? deserializeJson(pageDoc, f, NEST)
-                                      : deserializeJson(pageDoc, f, DeserializationOption::Filter(skip), NEST);
-    ok = !e && (i == idx || f.findUntil((char *)",", (char *)"]"));
+    DeserializationError e = i == idx ? deserializeJson(pageDoc, r, NEST)
+                                      : deserializeJson(pageDoc, r, DeserializationOption::Filter(skip), NEST);
+    int c = 0;
+    if (!e && i < idx) while ((c = r.read()) >= 0 && c != ',' && c != ']') {}   // to the next page; ']': none
+    ok = !e && (i == idx || c == ',');
   }
   f.close();
   if (!ok || !pageDoc.is<JsonObject>()) {
@@ -208,8 +233,8 @@ bool validateProfile(const char *path, String &err) {
   filter["keys"][0]["id"] = true;
   File f = LittleFS.open(path, "r");
   if (!f) { err = "cannot open"; return false; }
-  f.setTimeout(0);
-  DeserializationError e = deserializeJson(doc, f, DeserializationOption::Filter(filter), NEST);
+  FileReader r(f);
+  DeserializationError e = deserializeJson(doc, r, DeserializationOption::Filter(filter), NEST);
   f.close();
   if (e) { err = String("invalid JSON (") + e.c_str() + ")"; return false; }
   if (!doc.is<JsonObject>()) { err = "invalid profile (not an object)"; return false; }
@@ -236,9 +261,9 @@ void gcTiles() {
   for (int n = 1; n <= NUM_PROFILES; n++) {
     File f = LittleFS.open(profilePath(n), "r");
     if (!f) continue;
-    f.setTimeout(0);
+    FileReader r(f);
     JsonDocument doc;
-    DeserializationError e = deserializeJson(doc, f, DeserializationOption::Filter(filter), NEST);
+    DeserializationError e = deserializeJson(doc, r, DeserializationOption::Filter(filter), NEST);
     f.close();
     if (e) return;   // can't tell what is referenced: delete nothing
     for (JsonObject pg : doc["pages"].as<JsonArray>())
@@ -263,12 +288,12 @@ void gcTiles() {
 bool profileMeta(int id, char *name, size_t len, int *pages, uint8_t col[3]) {
   File f = LittleFS.open(profilePath(id), "r");
   if (!f) return false;
-  f.setTimeout(0);
+  FileReader r(f);
   JsonDocument filter, doc;
   filter["profile_name"] = true;
   filter["color"] = true;
   filter["pages"][0]["name"] = true;
-  DeserializationError e = deserializeJson(doc, f, DeserializationOption::Filter(filter), NEST);
+  DeserializationError e = deserializeJson(doc, r, DeserializationOption::Filter(filter), NEST);
   f.close();
   if (e) return false;
   strlcpy(name, doc["profile_name"] | "Profile", len);

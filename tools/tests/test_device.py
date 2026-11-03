@@ -688,6 +688,30 @@ def test_profile_chip_opens_profiles_and_a_card_switches(d):
     d.ok(f"setprofile {SLOT}")
 
 
+def test_profiles_tab_reads_a_saved_profile_again(d):
+    """The Profiles tab keeps its 16 slots between opens and reads them again once a profile is
+    saved: slot 16's colour bar follows the uploaded colour."""
+    theme = re.search(r"theme:(\w+)", d.cmd("status")[0]).group(1)
+    d.ok("theme daylight")                               # Retro draws the bars in ink
+    bar = (128 + 3 * 86 + 17, 96 + 3 * 52 + 9)           # slot 16: the last card of the 4 x 4 grid
+    try:
+        for rgb in ([255, 0, 0], [0, 0, 255]):
+            r = d.upload_text(f"profile{SLOT}.json", json.dumps({**PROFILE, "color": rgb}))
+            assert any(l.startswith("SAVED") for l in r), r
+            time.sleep(0.6)
+            d.ok("sheet profiles")
+            time.sleep(0.5)
+            px = d.shot().getpixel(bar)
+            d.ok("sheet close")
+            time.sleep(0.4)
+            want, other = (0, 2) if rgb[0] else (2, 0)
+            assert px[want] > 200 and px[other] < 60, (rgb, px)
+    finally:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+        d.ok(f"theme {theme}")
+        d.ok(f"setprofile {SLOT}")
+
+
 # ---------------------------------------------------------------- notifications, the shade, the host menu
 NOTE = '{"app":"Slack","title":"Sam","body":"Lunch at one?","icon":"message-square"}'
 
