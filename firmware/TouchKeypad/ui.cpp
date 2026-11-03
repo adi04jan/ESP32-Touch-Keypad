@@ -336,9 +336,14 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
     }
     case KS_FLAT: {    // matte key on its darker side; a press sinks it; the tint is a dot
       float lip = max(2.0f, roundf(w * 0.045f)), sink = down ? lip * (0.55f + 0.45f * p) : 0;
-      rrFill(x, y + lip, w, h, r, solidFill(mix(th.ctlBot, BLACK, 77)), A);
-      Fill f = solidFill(down ? mix(th.ctlBot, BLACK, 9) : th.ctlBot); f.top = down ? mix(th.ctlTop, BLACK, 11) : th.ctlTop;
-      f.edge = mix(th.ctlBot, BLACK, 87); f.edgeA = 255;
+      // Synth keeps its hand-tuned warm greys; a dark Flat theme (Focus Slate) derives them from its control roles.
+      // ponytail: a second light Flat theme would take Synth's greys; give Theme lip/edge roles then.
+      bool s = th.light;
+      C3 face = s ? HEXC(0xe8e6e1) : th.ctlBot, top = s ? HEXC(0xf7f6f3) : th.ctlTop;
+      rrFill(x, y + lip, w, h, r, solidFill(s ? HEXC(0xa39e95) : mix(face, BLACK, 77)), A);
+      Fill f = solidFill(down ? (s ? HEXC(0xe0ded8) : mix(face, BLACK, 9)) : face);
+      f.top = down ? (s ? HEXC(0xebe9e5) : mix(top, BLACK, 11)) : top;
+      f.edge = s ? HEXC(0x99948b) : mix(face, BLACK, 87); f.edgeA = 255;
       rrFill(x, y + sink, w, h, r, f, A);
       if (r < w * 0.4f) {
         float dr = max(2.5f, w * 0.055f), dx = x + w * 0.19f, dy = y + sink + h * 0.19f;
@@ -1094,7 +1099,7 @@ static void drawSheet(int top) {
   for (int i = 0; i < 5; i++) {
     int ty = 40 + i * 52;
     bool cur = i == sheetTab;
-    bool inked = T->crisp && T->light;   // Synth, Retro: an ink fill
+    bool inked = T->crisp && T->light;   // Retro: an ink fill
     C3 ti = cur ? (inked ? T->g1 : ACCENT) : TXT2;
     if (cur) rrFill(8, ty, 108, 48, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(PLY, ACCENT, T->light ? 34 : 41)));
     glyph(iconFind(TAB_ICON[i], true), true, 28, ty + 24, 20, ti);
@@ -1480,7 +1485,7 @@ static void drawBar(uint32_t now) {
     if (!b.prof || !b.ok) continue;
     int top = QB_Y0 + i * QB_H;
     bool lit = panel.btn == i + 1;   // the open panel's button: like the sheet's current tab
-    bool inked = T->crisp && T->light;   // Synth, Retro: an ink fill
+    bool inked = T->crisp && T->light;   // Retro: an ink fill
     C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
     if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
     if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, ink);
@@ -1698,10 +1703,11 @@ static bool animate(uint32_t now) {
 // The JPEG cover: decoded when a player page shows, the 32 KB image freed when none does.
 static void artSync() {
   if (!artJpgLen) return;   // a raw cover (or none) is kept as it is
+  static bool dropped;   // the tile cache, given up once per player visit: not every loop pass if RAM stays short
   bool want = playerPage();
   if (want && !artOk) {
     if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
-    if (!art) { uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }   // the tiles are a cache
+    if (!art && !dropped) { dropped = true; uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }
     if (!art) return;   // no room: the player shows its placeholder
     uint32_t t = millis();
     artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 128);
@@ -1712,6 +1718,7 @@ static void artSync() {
     art = nullptr;
     artOk = false;
   }
+  if (!want) dropped = false;
 }
 
 void uiTick() {
