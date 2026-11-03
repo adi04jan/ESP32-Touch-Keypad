@@ -139,3 +139,31 @@ test("a dropped port releases the in-flight command", async () => {
   assert.equal(await p, "");
   assert.equal(disc, true);
 });
+
+test("SWITCH, PANEL and PKEY events", async () => {
+  const { sim, link } = await rig(); await link.connect("SIM1");
+  const got = [];
+  for (const ev of ["switch", "panel", "pkey"]) link.on(ev, (e) => got.push([ev, e]));
+  sim.event("SWITCH 13 suggest"); sim.event("PANEL 3 8 2"); sim.event("PKEY 8 2 15 1"); sim.event("PANEL 0");
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(got, [["switch", { slot: 13, how: "suggest" }], ["panel", { btn: 3, profile: 8, page: 2 }],
+    ["pkey", { profile: 8, page: 2, id: 15, state: "1" }], ["panel", { btn: 0, profile: 0, page: 0 }]]);
+});
+
+test("Device quickbar round trip and suggest against the sim", async () => {
+  const fs = require("fs"), os = require("os"), path = require("path");
+  const { Device } = require("../services/device");
+  const backup = require("../services/backup");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qb-"));
+  backup.configure({ dataDir: dir });
+  const { sim, link } = await rig(); await link.connect("SIM1");
+  const store = { load: () => ({ baud: 921600, settime_enabled: false, host_slots: {}, context_profiles: {} }), save: () => {} };
+  const device = new Device({ link, backup, settings: store, tileDir: path.join(dir, "tiles") });
+  assert.deepEqual(await device.getQuickbar(), [null, null, null, null]);
+  const qb = [{ profile: 8, page: 2, icon: "git-branch", label: "Git" }, null, null, null];
+  assert.deepEqual(await device.setQuickbar(qb), { ok: true });
+  assert.deepEqual(await device.getQuickbar(), qb);
+  assert.equal((await device.setQuickbar([1, 2])).ok, false);
+  await device.suggest(13);
+  assert.equal(sim.suggested, 13);
+});

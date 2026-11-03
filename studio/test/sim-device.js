@@ -206,6 +206,19 @@ class SimDevice extends EventEmitter {
         return this.println("time set");
       }
       case "setled": case "setidle": return this.println(`${cmd} ok`);
+      case "quickbar": {
+        this.quickbar = this.quickbar || [null, null, null, null];
+        if (arg === "clear") this.quickbar = [null, null, null, null];
+        else if (arg.startsWith("set")) {
+          let v = null;
+          try { v = JSON.parse(arg.slice(3).trim()); } catch (_) {}
+          if (!Array.isArray(v) || v.length !== 4) return this.println("ERR quickbar: want 4 entries, null for an empty button");
+          this.quickbar = v;
+        }
+        return this.println(`quickbar ${JSON.stringify(this.quickbar)}`);
+      }
+      case "suggest": if (arg) this.suggested = +arg; return this.println(`suggest ${this.suggested || 0}`);
+      case "panel": if (arg) this.panel = +arg; return this.println(`panel ${this.panel || 0}`);
       case "setbrightness": if (arg) this.bright = +arg; return this.println(`brightness ${this.bright ?? 200}`);
       case "ledbright": if (arg) this.ledBright = +arg; return this.println(`ledbright ${this.ledBright ?? 153}`);
       case "click": if (arg) this.click = arg === "on"; return this.println(`click ${this.click === false ? "off" : "on"}`);

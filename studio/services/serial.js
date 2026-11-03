@@ -239,6 +239,9 @@ class SerialLink extends EventEmitter {
       case "KEY": this.emit("key", { page: +t[1], id: +t[2], state: t[3] }); break;
       case "PROFILE": this.emit("profile", +t[1]); break;
       case "PAGE": this.emit("page", +t[1]); break;
+      case "SWITCH": this.emit("switch", { slot: +t[1], how: t[2] }); break;   // the owner switched on the keypad
+      case "PANEL": this.emit("panel", { btn: +t[1], profile: +t[2] || 0, page: +t[3] || 0 }); break;
+      case "PKEY": this.emit("pkey", { profile: +t[1], page: +t[2], id: +t[3], state: t[4] }); break;   // a key in a quick-bar panel
       case "BLE": if (/^(up|down)$/.test(t[2])) this.emit("ble", { slot: +t[1], up: t[2] === "up" }); break;   // not pair/params lines
       case "IDLE": this.emit("idle", t[1] || "none"); break;
       case "SEEK": this.emit("seek", +t[1]); break;

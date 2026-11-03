@@ -294,6 +294,22 @@ class Device extends EventEmitter {
     return m ? { total: +m[1], used: +m[2] } : null;
   }
 
+  // The quick bar: four buttons, each {profile, page, icon, label} or null.
+  async getQuickbar() {
+    const m = (await this.link.command("quickbar", undefined, true)).match(/^quickbar (\[.*\])\s*$/m);
+    try { return m ? JSON.parse(m[1]) : null; } catch (_) { return null; }
+  }
+
+  async setQuickbar(arr) {
+    const r = await this.link.command(`quickbar set ${JSON.stringify(arr)}`, undefined, true);
+    const e = r.match(/^ERR quickbar: (.*)$/m);
+    if (e) return { ok: false, error: e[1].trim() };
+    return /^quickbar \[/m.test(r) ? { ok: true } : { ok: false, error: r.trim() || "no reply" };
+  }
+
+  // The profile the bar's top slot offers for the app in front (0: none).
+  async suggest(slot) { await this.link.command(`suggest ${slot | 0}`, undefined, true); }
+
   async setActiveProfile(n) {
     if (!this.link.isOpen() || n === this.activeSlot) return;
     await this.link.command(`setprofile ${n}`);
