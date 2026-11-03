@@ -28,6 +28,7 @@ FONTS = [
     ("FONT_TITLE", "B612-Bold.ttf", 19, TEXT),           # clock, sheet titles
     ("FONT_HEAD", "B612-Bold.ttf", 25, TEXT),            # media title
     ("FONT_READOUT", "B612Mono-Regular.ttf", 13, TEXT),  # times, values, readouts
+    ("FONT_READOUT_S", "B612Mono-Regular.ttf", 11, TEXT),  # Synth's mono key labels too wide for 84 px at 13
     ("FONT_DIGITS", "B612Mono-Bold.ttf", 46, DIGITS),    # passkey, volume level
 ]
 

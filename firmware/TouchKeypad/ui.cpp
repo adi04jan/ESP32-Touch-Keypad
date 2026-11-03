@@ -667,8 +667,9 @@ static void drawCell(int c, uint32_t now) {
     char up[24];
     strlcpy(up, k["name"] | "", sizeof up);
     for (char *p = up; *p; p++) *p = toupper((uint8_t)*p);
-    String lbl = ellipsize(fRead, up, CELL_W);
-    text(fRead, cx + CELL_W / 2, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
+    Font &lf = textW(fRead, up) <= CELL_W ? fRead : fReadS;   // steps down like the other themes' labels
+    String lbl = ellipsize(lf, up, CELL_W);
+    text(lf, cx + CELL_W / 2, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
   } else {
     // A label that fit the old 96 px cell (92 px) still fits whole: too wide for 84 px at 13 px, it
     // steps down to 11 px (92 x 11/13 = 78) before anything is cut.
