@@ -37,6 +37,8 @@ static const C3 WHITE = HEXC(0xffffff), BLACK = HEXC(0x000000);
 #define LBL (T->lbl)
 #define CYAN (T->cyan)
 #define MAG (T->mag)
+#define ACCENT (T->accent)   // selected / active (handoff: accents.primary); magenta in the first six themes
+#define BARC (T->bar)
 #define GREEN (T->green)
 #define AMBER (T->amber)
 #define RED (T->red)
@@ -295,7 +297,7 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
     }
     case KS_PAPER: {   // a card on a darker card: pressing slides it onto the one behind
       float o = max(2.0f, roundf(w * 0.05f)), d = down ? o * (0.55f + 0.45f * p) : 0;
-      C3 card = mix(tint, th.g1, 46), back = mix(tint, th.txt, 125);
+      C3 card = mix(tint, th.g1, 46), back = mix(tint, th.light ? th.txt : BLACK, 125);
       // Only an o-wide strip of the card behind shows, right of and below the front card:
       // draw just those two (disjoint) strips, not the whole card under it.
       int clip[4];
@@ -308,14 +310,14 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
       gfxClipSet(clip);
       Fill f = solidFill(card); f.top = mix(card, WHITE, 30);
       rrFill(x + d, y + d, w, h, r, f, A);
-      rrRing(x + d + 0.5f, y + d + 0.5f, w - 1, h - 1, r - 0.5f, 1.4f, th.txt, A * 200 / 255);
+      rrRing(x + d + 0.5f, y + d + 0.5f, w - 1, h - 1, r - 0.5f, 1.4f, th.light ? th.txt : mix(tint, BLACK, 150), A * 200 / 255);
       break;
     }
     case KS_FROST: {   // white tile; on fills it with the tint, a press tints it
       softShadow(x, y, w, h, down ? A / 2 : A);
       Fill f;
       if (on) { f = solidFill(tint); f.top = mix(tint, WHITE, 60); f.edge = mix(tint, BLACK, 70); f.edgeA = 150; }
-      else { f = solidFill(HEXC(0xedf2f7)); f.top = WHITE; f.edge = th.wellEdge; f.edgeA = 230; }
+      else { f = solidFill(th.ctlBot); f.top = th.ctlTop; f.edge = th.wellEdge; f.edgeA = 230; }
       if (down) { f.top = mix(f.top, tint, (int)(26 + 50 * p)); f.bot = mix(f.bot, tint, (int)(36 + 60 * p)); }
       f.hiA = 0;   // one even border all round, as on iOS tiles
       rrFill(x, y, w, h, r, f, A);
@@ -334,9 +336,9 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
     }
     case KS_FLAT: {    // matte key on its darker side; a press sinks it; the tint is a dot
       float lip = max(2.0f, roundf(w * 0.045f)), sink = down ? lip * (0.55f + 0.45f * p) : 0;
-      rrFill(x, y + lip, w, h, r, solidFill(HEXC(0xa39e95)), A);
-      Fill f = solidFill(down ? HEXC(0xe0ded8) : HEXC(0xe8e6e1)); f.top = down ? HEXC(0xebe9e5) : HEXC(0xf7f6f3);
-      f.edge = HEXC(0x99948b); f.edgeA = 255;
+      rrFill(x, y + lip, w, h, r, solidFill(mix(th.ctlBot, BLACK, 77)), A);
+      Fill f = solidFill(down ? mix(th.ctlBot, BLACK, 9) : th.ctlBot); f.top = down ? mix(th.ctlTop, BLACK, 11) : th.ctlTop;
+      f.edge = mix(th.ctlBot, BLACK, 87); f.edgeA = 255;
       rrFill(x, y + sink, w, h, r, f, A);
       if (r < w * 0.4f) {
         float dr = max(2.5f, w * 0.055f), dx = x + w * 0.19f, dy = y + sink + h * 0.19f;
@@ -359,7 +361,7 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
 // Glyph ink on a key, and whether the glyph gets a one-pixel drop.
 static C3 keyInk(const Theme &th, C3 tint, bool down, bool on) {
   switch (th.ks) {
-    case KS_PAPER: return luma(mix(tint, th.g1, 46)) > 165 ? th.txt : th.ink;
+    case KS_PAPER: { C3 card = mix(tint, th.g1, 46); return luma(card) > 165 ? (th.light ? th.txt : mix(card, BLACK, 190)) : th.ink; }
     case KS_FROST: {
       if (on) return luma(tint) > 175 ? th.txt : WHITE;
       C3 c = tint;
@@ -667,7 +669,7 @@ static void drawCell(int c, uint32_t now) {
   else if (host) tag(tagR, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
   else if (hasHold && !holding) tag(tagR, cy, "HOLD", TAG_BG, true, mix(TAG_BG, HAIR, th.light ? 120 : 38), TXT2, A);
 
-  if (th.ks == KS_FLAT) {   // OP-1 labels: small mono capitals
+  if (th.caps) {   // OP-1 labels: small mono capitals (Synth)
     char up[24];
     strlcpy(up, k["name"] | "", sizeof up);
     for (char *p = up; *p; p++) *p = toupper((uint8_t)*p);
@@ -879,7 +881,7 @@ static void drawPlayer(uint32_t now) {
     bool fill = i == 3 && T->ks != KS_FLAT;   // the play key is the filled one
     float pr = dn ? 0.6f : -1, sink = keySink(*T, 2 * r, pr);
     keyBody(*T, bx, by, 2 * r, 2 * r, r, T->ks == KS_PIXEL ? T->track : t, pr, fill, 255);
-    C3 ink = i == 3 && T->ks == KS_FLAT ? MAG : keyInk(*T, t, dn, fill);
+    C3 ink = i == 3 && T->ks == KS_FLAT ? ACCENT : keyInk(*T, t, dn, fill);
     float gx = BTN_X[i] + (T->ks == KS_PAPER || T->ks == KS_PIXEL ? sink : 0), gy = BTN_Y + sink;
     if (keyInkDrop(*T)) glyphLit(ic, false, gx, gy, gs, ink, mix(t, BLACK, 150));
     else glyph(iconFind(ic, false), false, gx, gy, gs, ink);
@@ -930,21 +932,25 @@ static void loadSlots() {
 }
 
 // Settings → Display: one chip per theme, each a small live sample of that theme.
-#define THEME_Y 254
-#define THEME_H 36
+#define THEME_Y 184
+#define THEME_H 26
+#define THEME_COLS 5
+#define THEME_GAP 6
+#define THEME_ROW (THEME_H + 6)
+static float themeChipW() { return (PANE_W - (THEME_COLS - 1) * THEME_GAP) / (float)THEME_COLS; }
 static void themeChips() {
-  float w = (PANE_W - (THEME_COUNT - 1) * 6) / (float)THEME_COUNT;
+  float w = themeChipW();
   for (int i = 0; i < THEME_COUNT; i++) {
     const Theme &th = THEMES[i];
-    float x = PANE_X + i * (w + 6);
+    float x = PANE_X + (i % THEME_COLS) * (w + THEME_GAP);
+    int cy = THEME_Y + (i / THEME_COLS) * THEME_ROW;
     bool cur = i == themeIdx;
     Fill g = solidFill(th.g1); g.top = th.g0; g.bot = th.g2;
     g.edge = th.light ? th.hair : WHITE; g.edgeA = th.light ? 50 : 30;
-    rrFill(x, THEME_Y, w, THEME_H, T->crisp ? 4 : 10, g);
-    float ks = 24, kx = x + (w - ks) / 2 - 1, ky = THEME_Y + 5;
+    rrFill(x, cy, w, THEME_H, T->crisp ? 4 : 10, g);
+    float ks = 18, kx = x + (w - ks) / 2 - 1, ky = cy + 4;
     keyBody(th, kx, ky, ks, ks, th.keyR * ks / KEY, th.ks == KS_PIXEL ? th.track : HEXC(0x4f8cff), -1, false, 255);
-    if (cur) rrRing(x - 2, THEME_Y - 2, w + 4, THEME_H + 4, T->crisp ? 5 : 12, 2, MAG);
-    text(fLabel, (int)(x + w / 2), THEME_Y + THEME_H + 15, th.title, cur ? MAG : TXT2, 255, AL_C);
+    if (cur) rrRing(x - 2, cy - 2, w + 4, THEME_H + 4, T->crisp ? 5 : 12, 2, ACCENT);
   }
 }
 
@@ -956,12 +962,13 @@ static void drawPane() {
       text(fBody, PANE_X, 106, "Brightness", TXT);
       text(fRead, PANE_X + PANE_W, 106, v, TXT2, 255, AL_R);
       slider(PANE_X, 110, PANE_W, brightness / 255.0f);
-      text(fBody, PANE_X, 180, "On USB the screen stays on", TXT);
-      text(fRead, PANE_X, 203, "On battery: dim 20 s, off 1 min,", TXT2);
-      snprintf(v, sizeof v, "deep sleep after %d min", powerSleepMin());
-      text(fRead, PANE_X, 222, powerSleepMin() ? v : "no deep sleep", TXT2);
-      text(fBody, PANE_X, 246, "Theme", TXT);
+      text(fBody, PANE_X, 176, "Theme", TXT);
+      text(fRead, PANE_X + PANE_W, 176, T->title, ACCENT, 255, AL_R);
       themeChips();
+      text(fBody, PANE_X, 268, "On USB the screen stays on", TXT);
+      text(fRead, PANE_X, 289, "On battery: dim 20 s, off 1 min,", TXT2);
+      snprintf(v, sizeof v, "deep sleep after %d min", powerSleepMin());
+      text(fRead, PANE_X, 308, powerSleepMin() ? v : "no deep sleep", TXT2);
       break;
     }
     case 1: {   // all slots, 4 x 4: tap one to switch
@@ -973,13 +980,13 @@ static void drawPane() {
         if (slots[i].ok) {
           rrFill(x, y, CARD_W, CARD_H, T->crisp ? 4 : 10, cardFill());
           rrFill(x + 8, y + 7, 18, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
-          text(fBodyB, (int)x + 8, y + 34, ellipsize(fBodyB, slots[i].name, CARD_W - 14).c_str(), cur ? MAG : TXT);
+          text(fBodyB, (int)x + 8, y + 34, ellipsize(fBodyB, slots[i].name, CARD_W - 14).c_str(), cur ? ACCENT : TXT);
         } else {
           rrRing(x + 0.5f, y + 0.5f, CARD_W - 1, CARD_H - 1, 9.5f, 1, mix(PLY, HAIR, 20));
           sprintf(v, "%d", i + 1);
           text(fRead, (int)x + 8, y + 32, v, TXT3);
         }
-        if (cur) rrRing(x + 1, y + 1, CARD_W - 2, CARD_H - 2, 9, 2, MAG);
+        if (cur) rrRing(x + 1, y + 1, CARD_W - 2, CARD_H - 2, 9, 2, ACCENT);
       }
       break;
     }
@@ -1013,7 +1020,7 @@ static void drawPane() {
         float x = PANE_X + i * (w + 6), cx = x + w / 2;
         bool cur = ledsPattern() == i;
         rrFill(x, 92, w, 76, T->crisp ? 4 : 12, cardFill());
-        if (cur) rrRing(x + 1, 93, w - 2, 74, 11, 2, MAG);
+        if (cur) rrRing(x + 1, 93, w - 2, 74, 11, 2, ACCENT);
         if (i == 0) {
           static const C3 RB[6] = { HEXC(0xff5f57), HEXC(0xf2b746), HEXC(0x52d68f), HEXC(0x4cc9ea), HEXC(0x9b7bff), HEXC(0xff6fae) };
           for (int k = 5; k >= 0; k--) rrRing(cx - 7, 115, 14, 14, 7, 14, RB[k], 255, (k + 1) / 6.0f);
@@ -1021,7 +1028,7 @@ static void drawPane() {
         else if (i == 2) circle(cx, 122, 14, lc);
         else if (i == 3) { circle(cx, 122, 14, T->light ? SEG_OFF : HEXC(0x0b1a20)); circle(cx, 122, 5, CYAN); }
         else circle(cx, 122, 14, SEG_OFF);
-        text(fBodyB, (int)cx, 158, PAT[i], cur ? MAG : TXT2, 255, AL_C);
+        text(fBodyB, (int)cx, 158, PAT[i], cur ? ACCENT : TXT2, 255, AL_C);
       }
       sprintf(v, "%d%%", (ledsBrightness() * 100 + 127) / 255);
       text(fBody, PANE_X, 192, "LED brightness", TXT);
@@ -1082,8 +1089,9 @@ static void drawSheet(int top) {
   for (int i = 0; i < 5; i++) {
     int ty = 40 + i * 52;
     bool cur = i == sheetTab;
-    C3 ti = cur ? (T->crisp ? T->g1 : MAG) : TXT2;
-    if (cur) rrFill(8, ty, 108, 48, T->crisp ? 4 : 12, solidFill(T->crisp ? TXT : mix(PLY, MAG, T->light ? 34 : 41)));
+    bool inked = T->crisp && T->light;   // Synth, Retro: an ink fill
+    C3 ti = cur ? (inked ? T->g1 : ACCENT) : TXT2;
+    if (cur) rrFill(8, ty, 108, 48, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(PLY, ACCENT, T->light ? 34 : 41)));
     glyph(iconFind(TAB_ICON[i], true), true, 28, ty + 24, 20, ti);
     text(fBodyB, 47, ty + 29, TAB_NAME[i], ti);
   }
@@ -1447,7 +1455,7 @@ static void qbCheck() {
 
 static void drawBar(uint32_t now) {
   if (!gfxHits(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H)) return;
-  fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, PLY);
+  fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, BARC);
   fillRect(BAR_X, STATUS_H, T->crisp ? 2 : 1, SCR_H - STATUS_H, HAIR, T->hairA);
   fillRect(BAR_X + 8, QB_Y0 - 1, BAR_W - 16, 1, HAIR, T->hairA);
   const int cx = BAR_X + BAR_W / 2;
@@ -1467,8 +1475,9 @@ static void drawBar(uint32_t now) {
     if (!b.prof || !b.ok) continue;
     int top = QB_Y0 + i * QB_H;
     bool lit = panel.btn == i + 1;   // the open panel's button: like the sheet's current tab
-    C3 ink = lit ? (T->crisp ? T->g1 : MAG) : TXT;
-    if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(T->crisp ? TXT : mix(PLY, MAG, T->light ? 34 : 41)));
+    bool inked = T->crisp && T->light;   // Synth, Retro: an ink fill
+    C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
+    if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
     if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, ink);
     text(fLabelS, cx, top + 46, ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
   }
@@ -2471,8 +2480,9 @@ static void sheetTap(int x, int y) {
   }
   switch (sheetTab) {
     case 0:
-      if (inRect(x, y, PANE_X - 4, THEME_Y - 6, PANE_W + 8, THEME_H + 26)) {
-        uiSetTheme(constrain((x - PANE_X) * THEME_COUNT / PANE_W, 0, THEME_COUNT - 1));
+      if (inRect(x, y, PANE_X - 3, THEME_Y - 3, PANE_W + 6, 2 * THEME_ROW)) {
+        int col = constrain((int)((x - PANE_X) / (themeChipW() + THEME_GAP)), 0, THEME_COLS - 1), row = (y - THEME_Y + 3) / THEME_ROW;
+        if (row * THEME_COLS + col < THEME_COUNT) uiSetTheme(row * THEME_COLS + col);
       }
       break;
     case 1:

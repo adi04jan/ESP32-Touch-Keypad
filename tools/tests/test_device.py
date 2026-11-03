@@ -745,7 +745,7 @@ def test_profile_and_theme_survive_reboot(dev):
 
 
 # ---------------------------------------------------------------- themes
-THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro"]
+THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"]
 # The bottom stop of each theme's ground (themes.h): the corner below the grid shows it.
 GROUND_BOTTOM = {"glass": (10, 17, 25), "paper": (229, 214, 182), "daylight": (233, 240, 248),
                  "aurora": (12, 91, 98), "synth": (207, 204, 196), "retro": (147, 180, 14)}
@@ -763,6 +763,34 @@ def test_theme_command_lists_switches_and_reports(d):
     d.wait_event(r"^EVT:THEME aurora$", 3, since)
     assert "theme:aurora" in d.cmd("status")[0]
     assert d.cmd("theme 5") == ["theme synth"]          # and 1-based numbers
+
+
+def test_second_row_chip_picks_a_new_theme(d):
+    d.ok("sheet"); d.wait_event(r"^EVT:UI sheet$"); time.sleep(0.5)
+    d.touch(60, 64); time.sleep(0.3)                     # Display tab
+    w = (338 - 4 * 6) / 5
+    since = len(d.events)
+    d.touch(int(128 + 2 * (w + 6) + w / 2), 184 + 32 + 13)   # row 2, column 3: Focus Slate
+    d.wait_event(r"^EVT:THEME focus_slate$", 3, since)
+    d.ok("sheet close")
+
+
+def token_ground(tid, y):
+    import json as _j
+    t = {x["id"]: x for x in _j.load(open(Path(__file__).resolve().parents[1] / "themes" / "theme_tokens.json", encoding="utf-8"))["themes"]}[tid]
+    g = [tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in t["ground"]]
+    k = int(y * 255 / 319)
+    a, b, f = (g[0], g[1], k * 2) if k < 128 else (g[1], g[2], (k - 128) * 2)
+    return tuple(round(p + (q - p) * f / 255) for p, q in zip(a, b))
+
+
+def test_the_handoff_themes_load_and_paint_their_tokens(d):
+    for tid in ("nordic_calm", "focus_slate", "forest_field", "ember_atelier"):
+        assert d.cmd(f"theme {tid}") == [f"theme {tid}"]
+        time.sleep(0.6)
+        assert f"theme:{tid}" in d.cmd("status")[0]
+        px = d.shot().getpixel((5, 250))                  # the ground beside key 11
+        assert close(px, token_ground(tid, 250), 16), (tid, px, token_ground(tid, 250))
 
 
 def test_theme_default_is_daylight(d):
@@ -819,9 +847,9 @@ def test_sheet_theme_chip_switches_the_theme(d):
     time.sleep(0.5)
     d.touch(60, 64)                                      # Display tab
     time.sleep(0.3)
-    w = (338 - 5 * 6) / 6
+    w = (338 - 4 * 6) / 5                                # two rows of five chips from y 184, 26 px high
     since = len(d.events)
-    d.touch(int(128 + 4 * (w + 6) + w / 2), 272)          # the Synth chip
+    d.touch(int(128 + 4 * (w + 6) + w / 2), 184 + 13)      # the Synth chip: row 1, column 5
     d.wait_event(r"^EVT:THEME synth$", 3, since)
     time.sleep(0.6)
     img = d.shot()

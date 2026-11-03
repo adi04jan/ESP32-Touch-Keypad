@@ -36,6 +36,9 @@ struct Theme {
   C3 ink;                      // glyph ink on keys where the style does not use white
   C3 art;                      // the placeholder cover's tint
   float keyR;                  // key corner radius at 66 px
+  C3 accent;                   // the selected / active state: the open panel, the current tab, chip, card
+  C3 bar;                      // the quick bar's ground
+  bool caps;                   // key labels in mono capitals (Synth)
 };
 
 static const Theme THEMES[] = {
@@ -51,7 +54,8 @@ static const Theme THEMES[] = {
     HEXC(0x0a141a), HEXC(0x19222b), HEXC(0x1a222b), HEXC(0x252e38), HEXC(0x2b3540), HEXC(0xffffff), HEXC(0xd5dde5),
     HEXC(0x0a1018), HEXC(0x2f3a46),
     HEXC(0x000000), 255,
-    HEXC(0xffffff), HEXC(0x6b4fd8), 19 },
+    HEXC(0xffffff), HEXC(0x6b4fd8), 19 ,
+    HEXC(0xe56fd6), HEXC(0x151d27), false },
 
   { "paper", "Paper", KS_PAPER, true, false, 1,
     HEXC(0xf4ecda), HEXC(0xefe4cc), HEXC(0xe5d6b6),
@@ -65,7 +69,8 @@ static const Theme THEMES[] = {
     HEXC(0xfbf7ee), HEXC(0xfbf7ee), HEXC(0xf3ead6), HEXC(0xd8c9a8), HEXC(0xdccfb2), HEXC(0xfffdf6), HEXC(0xe6d9bd),
     HEXC(0xf2ead8), HEXC(0xcdbd9c),
     HEXC(0x3b2c18), 150,
-    HEXC(0xfffaf0), HEXC(0x2d5f6e), 11 },
+    HEXC(0xfffaf0), HEXC(0x2d5f6e), 11 ,
+    HEXC(0xa52f3d), HEXC(0xfbf6ea), false },
 
   { "daylight", "Daylight", KS_FROST, true, false, 0,
     HEXC(0xc7daf1), HEXC(0xdbe7f5), HEXC(0xe9f0f8),
@@ -79,7 +84,8 @@ static const Theme THEMES[] = {
     HEXC(0xffffff), HEXC(0xffffff), HEXC(0xedf1f6), HEXC(0xccd6e1), HEXC(0xd3dce6), HEXC(0xffffff), HEXC(0xe1e8ef),
     HEXC(0xeef3f9), HEXC(0xc2cedb),
     HEXC(0x1e3a5c), 120,
-    HEXC(0x26303c), HEXC(0x5d7fe0), 19 },
+    HEXC(0x26303c), HEXC(0x5d7fe0), 19 ,
+    HEXC(0xc23a8c), HEXC(0xfafcfe), false },
 
   { "aurora", "Aurora", KS_PANE, false, false, 0,
     HEXC(0x1e1450), HEXC(0x1c2d6e), HEXC(0x0c5b62),
@@ -93,7 +99,8 @@ static const Theme THEMES[] = {
     HEXC(0x1d1d58), HEXC(0x302c72), HEXC(0x2e2a6e), HEXC(0x3a4088), HEXC(0x3a4088), HEXC(0xffffff), HEXC(0xd9defa),
     HEXC(0x1a1348), HEXC(0x45498e),
     HEXC(0x07051c), 220,
-    HEXC(0xffffff), HEXC(0xff7cd8), 19 },
+    HEXC(0xffffff), HEXC(0xff7cd8), 19 ,
+    HEXC(0xff7cd8), HEXC(0x26205e), false },
 
   { "synth", "Synth", KS_FLAT, true, false, 0,
     HEXC(0xdedbd5), HEXC(0xd8d5ce), HEXC(0xcfccc4),
@@ -107,7 +114,8 @@ static const Theme THEMES[] = {
     HEXC(0xf3f2ee), HEXC(0xf3f2ee), HEXC(0xe9e7e2), HEXC(0xc5c1b9), HEXC(0xc5c1b9), HEXC(0x2a2a2a), HEXC(0x151515),
     HEXC(0xdedbd5), HEXC(0xbab6ae),
     HEXC(0x3a3530), 90,
-    HEXC(0x1b1b1b), HEXC(0xff5a1f), 8 },
+    HEXC(0x1b1b1b), HEXC(0xff5a1f), 8 ,
+    HEXC(0xff5a1f), HEXC(0xebe9e4), true },
 
   { "retro", "Retro", KS_PIXEL, true, true, 2,
     HEXC(0x9fbf12), HEXC(0x9bbc0f), HEXC(0x93b40e),
@@ -121,7 +129,9 @@ static const Theme THEMES[] = {
     HEXC(0x9bbc0f), HEXC(0x9bbc0f), HEXC(0x9bbc0f), HEXC(0x8bac0f), HEXC(0x8bac0f), HEXC(0x0f380f), HEXC(0x0f380f),
     HEXC(0x9bbc0f), HEXC(0x8bac0f),
     HEXC(0x306230), 255,
-    HEXC(0x0f380f), HEXC(0x306230), 4 },
+    HEXC(0x0f380f), HEXC(0x306230), 4 ,
+    HEXC(0x0f380f), HEXC(0x9bbc0f), false },
+#include "themes_gen.h"   // the handoff's themes (tools/themes/gen_themes.py), appended: NVS stores the index
 };
 static const int THEME_COUNT = sizeof THEMES / sizeof THEMES[0];
 static const int THEME_DEFAULT = 2;   // Daylight, out of the box (indices are stored in NVS: append, don't reorder)

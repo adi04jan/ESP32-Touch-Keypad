@@ -36,7 +36,7 @@ const TINTS = [[79, 140, 255], [63, 198, 224], [47, 191, 154], [82, 214, 143], [
 const ANIMS = [["", "None"], ["eq", "Equalizer while playing"], ["pulse", "Pulse while off"], ["rec", "Blink red while on"]];
 const LED_PATTERNS = ["rainbow", "breathe", "solid", "status", "off"];
 // The keypad's themes (firmware/TouchKeypad/themes.h); the preview draws the chosen one.
-const THEMES = [["glass", "Glass"], ["paper", "Paper"], ["daylight", "Daylight"], ["aurora", "Aurora"], ["synth", "Synth"], ["retro", "Retro"]];
+const THEMES = [["glass", "Glass"], ["paper", "Paper"], ["daylight", "Daylight"], ["aurora", "Aurora"], ["synth", "Synth"], ["retro", "Retro"], ["nordic_calm", "Nordic Calm"], ["focus_slate", "Focus Slate"], ["forest_field", "Forest Field"], ["ember_atelier", "Ember Atelier"]];
 const NUM_PROFILES = 16;
 
 /* ============ helpers ============ */

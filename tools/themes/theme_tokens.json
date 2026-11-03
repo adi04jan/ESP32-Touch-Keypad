@@ -1,0 +1,403 @@
+{
+  "schema_version": 1,
+  "canvas": {
+    "width": 480,
+    "height": 320,
+    "display_type": "TFT LCD",
+    "notes": [
+      "Do not target OLED black levels.",
+      "Avoid large near-black regions because this panel visibly leaks/lifts white in dark areas.",
+      "All dark palettes use lifted mid-dark surfaces; validate on the physical display at intended brightness."
+    ]
+  },
+  "semantic_accents": {
+    "cyan": "#35AFC3",
+    "magenta": "#C94F9F",
+    "green": "#329B6C",
+    "amber": "#C98726",
+    "red": "#C94B4B",
+    "slate": "#75899B"
+  },
+  "themes": [
+    {
+      "id": "daylight",
+      "name": "Daylight",
+      "role": "default_general_purpose",
+      "description": "Clean blue-white surfaces with gentle depth and coloured icons. Bright, readable and forgiving on the TFT.",
+      "ground": [
+        "#DCEAF2",
+        "#EAF3F8",
+        "#E1EDF5"
+      ],
+      "sheet": "#F0F6FA",
+      "shade": "#D9E7F0",
+      "panel": "#EAF3F8",
+      "bar": "#D7E6F0",
+      "well": "#CFDDE8",
+      "control": "#F6FAFC",
+      "track": "#BDCEDC",
+      "hairline": "#C2D2DE",
+      "text": {
+        "primary": "#253746",
+        "secondary": "#526675",
+        "muted": "#526371"
+      },
+      "accents": {
+        "primary": "#347EB8",
+        "cyan": "#168FA9",
+        "magenta": "#B64B94",
+        "green": "#23885C",
+        "amber": "#B8791F",
+        "red": "#C84E4E",
+        "slate": "#667C8E"
+      },
+      "key_style": "frost",
+      "key_radius": 12,
+      "light": true,
+      "crisp": false,
+      "texture": "none"
+    },
+    {
+      "id": "glass",
+      "name": "Glass",
+      "role": "expressive_dark_lifted",
+      "description": "Layered navy-blue glass-like keys, but intentionally lifted for TFT viewing; no black glass or large glow effects.",
+      "ground": [
+        "#26364D",
+        "#314966",
+        "#385A70"
+      ],
+      "sheet": "#2E4056",
+      "shade": "#334A61",
+      "panel": "#3A5067",
+      "bar": "#29394D",
+      "well": "#304358",
+      "control": "#425B75",
+      "track": "#687F94",
+      "hairline": "#60748A",
+      "text": {
+        "primary": "#F7FAFD",
+        "secondary": "#D0DBE6",
+        "muted": "#C5D3DF"
+      },
+      "accents": {
+        "primary": "#69D9E8",
+        "cyan": "#69D9E8",
+        "magenta": "#E28AC6",
+        "green": "#71D6A1",
+        "amber": "#F1C16E",
+        "red": "#F18480",
+        "slate": "#B7C7D5"
+      },
+      "key_style": "glass",
+      "key_radius": 13,
+      "light": false,
+      "crisp": false,
+      "texture": "subtle_surface_highlight"
+    },
+    {
+      "id": "paper",
+      "name": "Paper",
+      "role": "warm_tactile",
+      "description": "Warm laid-paper surface and raised paper keys. Press feedback should feel like a small physical depression.",
+      "ground": [
+        "#F0E5D0",
+        "#E9DDC7",
+        "#DED0B9"
+      ],
+      "sheet": "#F6EDD9",
+      "shade": "#E8DBC5",
+      "panel": "#F2E6D3",
+      "bar": "#DCCDB4",
+      "well": "#D8C8AF",
+      "control": "#F5EAD8",
+      "track": "#BAAA92",
+      "hairline": "#C4B59E",
+      "text": {
+        "primary": "#332C27",
+        "secondary": "#5B4E43",
+        "muted": "#605348"
+      },
+      "accents": {
+        "primary": "#9A6336",
+        "cyan": "#267F8D",
+        "magenta": "#A94F7E",
+        "green": "#397B50",
+        "amber": "#B57A24",
+        "red": "#B94C43",
+        "slate": "#68747A"
+      },
+      "key_style": "paper",
+      "key_radius": 11,
+      "light": true,
+      "crisp": false,
+      "texture": "laid_paper"
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "role": "expressive_gradient",
+      "description": "Indigo-to-teal colour movement with pane-like keys. Keep the gradient mid-dark and the surfaces opaque enough for stable TFT contrast.",
+      "ground": [
+        "#2B4962",
+        "#365A70",
+        "#3B6F72"
+      ],
+      "sheet": "#334A61",
+      "shade": "#3A536C",
+      "panel": "#3C5B70",
+      "bar": "#2F485C",
+      "well": "#30485A",
+      "control": "#506A7C",
+      "track": "#718A99",
+      "hairline": "#688A97",
+      "text": {
+        "primary": "#F5F8F7",
+        "secondary": "#DCE8E6",
+        "muted": "#DDE9E6"
+      },
+      "accents": {
+        "primary": "#62D4C8",
+        "cyan": "#62D4C8",
+        "magenta": "#D58ADF",
+        "green": "#79D7A4",
+        "amber": "#E7BC75",
+        "red": "#E98782",
+        "slate": "#B6C8D1"
+      },
+      "key_style": "pane",
+      "key_radius": 13,
+      "light": false,
+      "crisp": false,
+      "texture": "none"
+    },
+    {
+      "id": "synth",
+      "name": "Synth",
+      "role": "minimal_creative",
+      "description": "Warm grey hardware-instrument look: flat pale keys, small colour markers and compact uppercase mono labels.",
+      "ground": [
+        "#DBD8D4",
+        "#E7E4E0",
+        "#D8D7D3"
+      ],
+      "sheet": "#F0EFEC",
+      "shade": "#E1DFDB",
+      "panel": "#E9E6E2",
+      "bar": "#D8D6D2",
+      "well": "#CBC8C3",
+      "control": "#F8F7F4",
+      "track": "#B8B4AE",
+      "hairline": "#BCB8B2",
+      "text": {
+        "primary": "#282D31",
+        "secondary": "#50565B",
+        "muted": "#555D62"
+      },
+      "accents": {
+        "primary": "#313D4A",
+        "cyan": "#238A9D",
+        "magenta": "#B94C92",
+        "green": "#25885D",
+        "amber": "#B57D22",
+        "red": "#C34F4A",
+        "slate": "#66747F"
+      },
+      "key_style": "flat",
+      "key_radius": 8,
+      "light": true,
+      "crisp": true,
+      "texture": "none"
+    },
+    {
+      "id": "retro",
+      "name": "Retro",
+      "role": "pixel_utility",
+      "description": "Four-green LCD-inspired palette with crisp pixel geometry. This is a stylistic treatment, not a black-on-OLED mode.",
+      "ground": [
+        "#79A479",
+        "#8DB78B",
+        "#7FAE80"
+      ],
+      "sheet": "#9FC39B",
+      "shade": "#91B88F",
+      "panel": "#A1C49C",
+      "bar": "#A2C69C",
+      "well": "#8AB18A",
+      "control": "#B0D0A8",
+      "track": "#547D58",
+      "hairline": "#47714D",
+      "text": {
+        "primary": "#102A17",
+        "secondary": "#17371E",
+        "muted": "#17371E"
+      },
+      "accents": {
+        "primary": "#183D22",
+        "cyan": "#255E34",
+        "magenta": "#315E38",
+        "green": "#204D2A",
+        "amber": "#557C3B",
+        "red": "#315E38",
+        "slate": "#426E49"
+      },
+      "key_style": "pixel",
+      "key_radius": 4,
+      "light": true,
+      "crisp": true,
+      "texture": "lcd_rows_subtle"
+    },
+    {
+      "id": "focus_slate",
+      "name": "Focus Slate",
+      "role": "recommended_workstation",
+      "description": "Professional graphite/slate work surface with quiet neutral keys and cyan interaction cues. Lifted dark values make it safer for this TFT than OLED-black themes.",
+      "ground": [
+        "#344352",
+        "#3F5060",
+        "#435767"
+      ],
+      "sheet": "#3B4B5A",
+      "shade": "#3A4B5A",
+      "panel": "#45596A",
+      "bar": "#314150",
+      "well": "#303F4D",
+      "control": "#506475",
+      "track": "#738595",
+      "hairline": "#647786",
+      "text": {
+        "primary": "#F4F7FA",
+        "secondary": "#DDE6EC",
+        "muted": "#D4E0E7"
+      },
+      "accents": {
+        "primary": "#69C2CE",
+        "cyan": "#69C2CE",
+        "magenta": "#D279B2",
+        "green": "#70C99A",
+        "amber": "#E0B66C",
+        "red": "#E17A78",
+        "slate": "#B7C5D0"
+      },
+      "key_style": "flat",
+      "key_radius": 11,
+      "light": false,
+      "crisp": true,
+      "texture": "none"
+    },
+    {
+      "id": "nordic_calm",
+      "name": "Nordic Calm",
+      "role": "recommended_soft_light",
+      "description": "Soft cool whites and muted teal; an easy-on-the-eyes light theme with less glare than pure white.",
+      "ground": [
+        "#DCE5E8",
+        "#E9EFF0",
+        "#DDE7E8"
+      ],
+      "sheet": "#F1F5F5",
+      "shade": "#D9E3E5",
+      "panel": "#E7EEEE",
+      "bar": "#CFDADD",
+      "well": "#D0DADD",
+      "control": "#F8FAF9",
+      "track": "#B5C5C9",
+      "hairline": "#BBC9CC",
+      "text": {
+        "primary": "#25363B",
+        "secondary": "#4B5D62",
+        "muted": "#4D6166"
+      },
+      "accents": {
+        "primary": "#387E83",
+        "cyan": "#247F91",
+        "magenta": "#A94F86",
+        "green": "#347C5B",
+        "amber": "#A96F24",
+        "red": "#B94C4A",
+        "slate": "#657A80"
+      },
+      "key_style": "frost",
+      "key_radius": 12,
+      "light": true,
+      "crisp": false,
+      "texture": "none"
+    },
+    {
+      "id": "forest_field",
+      "name": "Forest Field",
+      "role": "recommended_natural",
+      "description": "Muted botanical greens with lime and amber accents. Use medium-value green surfaces rather than near-black forest backgrounds.",
+      "ground": [
+        "#3E5948",
+        "#4E6956",
+        "#5D7864"
+      ],
+      "sheet": "#4C6855",
+      "shade": "#526E5B",
+      "panel": "#5A7562",
+      "bar": "#455F4E",
+      "well": "#3F5A49",
+      "control": "#5E7966",
+      "track": "#829A82",
+      "hairline": "#90A88F",
+      "text": {
+        "primary": "#FCFFF5",
+        "secondary": "#F8FCF0",
+        "muted": "#F7FAF1"
+      },
+      "accents": {
+        "primary": "#D1E58E",
+        "cyan": "#8BD3C2",
+        "magenta": "#D694B8",
+        "green": "#B8D77D",
+        "amber": "#E7BE76",
+        "red": "#E58C80",
+        "slate": "#C1D0C5"
+      },
+      "key_style": "pane",
+      "key_radius": 12,
+      "light": false,
+      "crisp": true,
+      "texture": "none"
+    },
+    {
+      "id": "ember_atelier",
+      "name": "Ember Atelier",
+      "role": "recommended_creative",
+      "description": "Warm plum-charcoal, clay and copper surfaces for creative and media profiles; warm midtones rather than deep black.",
+      "ground": [
+        "#5C4849",
+        "#6E5654",
+        "#805F57"
+      ],
+      "sheet": "#654E4D",
+      "shade": "#705652",
+      "panel": "#765956",
+      "bar": "#554444",
+      "well": "#503F40",
+      "control": "#81645D",
+      "track": "#A38476",
+      "hairline": "#9B7C72",
+      "text": {
+        "primary": "#FFF3E8",
+        "secondary": "#F7EAE1",
+        "muted": "#F8ECE4"
+      },
+      "accents": {
+        "primary": "#F28B73",
+        "cyan": "#78BFC4",
+        "magenta": "#E28BB7",
+        "green": "#8FC49A",
+        "amber": "#E9B86C",
+        "red": "#F28B73",
+        "slate": "#C5B5AD"
+      },
+      "key_style": "paper",
+      "key_radius": 11,
+      "light": false,
+      "crisp": false,
+      "texture": "none"
+    }
+  ]
+}
