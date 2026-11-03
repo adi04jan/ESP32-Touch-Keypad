@@ -890,7 +890,9 @@ api.onEvent(({ type, data }) => {
     state.slot = state.conn.activeSlot || 1;   // open what the keypad shows (and let peekSlots read slot 1)
     await loadSlot(state.slot);
     const look = await api.lookState();
-    if (look && look.theme) { state.theme = look.theme; renderStudio(); }
+    if (look && look.theme) state.theme = look.theme;
+    state.quickbar = parseQuickbar(await api.command("quickbar"));
+    renderStudio();
     peekSlots();
   }
   // Self-check for the smoke test: the shared icon map loaded and the preview drew the screen.
