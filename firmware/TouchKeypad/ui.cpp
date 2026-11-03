@@ -92,6 +92,9 @@ static int tzMin = 0, lastMinute = -1;
 static struct { char title[65], album[65], artist[65], app[33]; int pos, len; bool playing; uint32_t at; bool have; } np;
 static uint16_t *art = nullptr;
 static bool artOk = false;
+static uint8_t *artJpg = nullptr;   // the cover as a JPEG: the 32 KB image is made from it only while a player shows
+static size_t artJpgLen = 0;
+static uint32_t artMs = 0;          // the last decode, for `art`
 
 static char toastText[48];
 static uint32_t toast0 = 0;
@@ -1678,7 +1681,26 @@ static bool animate(uint32_t now) {
   return live;
 }
 
+// The JPEG cover: decoded when a player page shows, the 32 KB image freed when none does.
+static void artSync() {
+  if (!artJpgLen) return;   // a raw cover (or none) is kept as it is
+  bool want = playerPage();
+  if (want && !artOk) {
+    if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
+    if (!art) return;   // no room: the player shows its placeholder
+    uint32_t t = millis();
+    artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 128);
+    artMs = millis() - t;
+    mark(0, STATUS_H, 160, 160);
+  } else if (!want && art) {
+    free(art);
+    art = nullptr;
+    artOk = false;
+  }
+}
+
 void uiTick() {
+  artSync();
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
   if (offArmedAt && (int32_t)(now - offArmedAt) > 3000) { offArmedAt = 0; mark(GEN_X, 42, GEN_W, 44); }   // signed: armed is now | 1
@@ -2142,12 +2164,29 @@ void uiMediaKey(const char *v) {
   mark(HUD_X - 6, HUD_Y - 4, HUD_W + 12, HUD_H + 22);
 }
 
-uint8_t *uiArtBuffer(size_t size) {
+uint8_t *uiArtBuffer(size_t size) {   // a raw cover: held as it is, whatever page shows
   if (size != 128 * 128 * 2) return nullptr;
+  free(artJpg);
+  artJpg = nullptr;
+  artJpgLen = 0;
   if (!art) art = (uint16_t *)malloc(size);
   artOk = false;
   return (uint8_t *)art;
 }
+uint8_t *uiArtJpgBuffer(size_t size) {
+  if (!size || size > 16384) return nullptr;
+  free(artJpg);
+  artJpgLen = 0;
+  artJpg = (uint8_t *)malloc(size);
+  return artJpg;
+}
+void uiArtJpgDone(bool ok, size_t len) {
+  artJpgLen = ok && artJpg ? len : 0;
+  if (!artJpgLen) { free(artJpg); artJpg = nullptr; }
+  artOk = false;   // decoded on the next frame if a player shows
+  if (playerPage()) mark(0, STATUS_H, 160, 160);
+}
+void uiArtPrint() { Con.printf("art jpg:%u decoded:%d ms:%u\n", (unsigned)artJpgLen, artJpgLen && artOk ? 1 : 0, (unsigned)artMs); }
 void uiArtDone(bool ok) {
   artOk = ok && art;
   if (playerPage()) mark(0, STATUS_H, 160, 160);

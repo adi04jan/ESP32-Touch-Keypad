@@ -177,3 +177,12 @@ void displayShot() {
   }
   Serial.println("###END###");
 }
+
+// A JPEG (baseline) into a w x h big-endian RGB565 buffer: a sprite wrapped round it, no allocation.
+bool displayDecodeJpg(const uint8_t *jpg, size_t len, uint16_t *out, int w, int h) {
+  LGFX_Sprite s;
+  s.setColorDepth(16);
+  s.setBuffer(out, w, h, lgfx::rgb565_2Byte);
+  s.fillScreen(0);
+  return s.drawJpg(jpg, len, 0, 0, w, h);
+}

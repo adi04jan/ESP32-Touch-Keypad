@@ -39,6 +39,11 @@ void uiVolume(JsonObjectConst o);       // {level 0-100, muted}: the volume pane
 void uiMediaKey(const char *value);     // a media action ran (volume panel, play state)
 uint8_t *uiArtBuffer(size_t size);      // album art upload target: 128x128 big-endian RGB565
 void uiArtDone(bool ok);
+// The cover as a JPEG (`ram:artj`, a few KB): kept in RAM, decoded into the 32 KB image only while a
+// player page is on screen, which is freed again when it is not.
+uint8_t *uiArtJpgBuffer(size_t size);   // up to 16 KB
+void uiArtJpgDone(bool ok, size_t len);
+void uiArtPrint();                      // `art`: jpg:<bytes> decoded:<0|1> ms:<last decode>
 void uiPairShow(uint32_t passkey);
 void uiPairClose();
 void uiOpenSheet(int tab = -1);         // tab 1 = Profiles (the status band's profile button)

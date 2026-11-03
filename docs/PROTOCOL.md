@@ -114,20 +114,24 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 84×90 o
 ```
 > ###BEGIN### profile1.json
 < RECV /profile1.json
-> {"schema_version":2, …}          (any number of lines)
+> {"schema_version":2, …}          (lines; after every 4096 bytes:)
+> ###SYNC###
+< ACK 4103
+> …                                (the rest)
 > ###END###
-< SAVED profile1.json 6214
+< SAVED profile1.json 6214         (or SAVED profile1.json 6214 unchanged)
 < macropad:$
 
 > ###BEGINB### /t/3fa9c2d1.565 10368 crc=9c1e07aa
 < RECV /t/3fa9c2d1.565
-> (base64, 76 chars per line)
+> (base64, 76 chars per line, ###SYNC### after every 4096 bytes of lines)
 > ###END###
 < SAVED /t/3fa9c2d1.565
 < macropad:$
 ```
 
-- The device collects an upload in RAM, up to **65536 bytes**, and writes flash only after `###END###`. In this core the UART interrupt is not in IRAM, so a flash erase during a stream overflows the 128-byte RX FIFO and drops bytes. Nothing may arrive during the write, so the host must wait for the reply before it sends anything else. The screen holds still while an upload streams.
+- Uploads stream to flash in chunks (3.12.1); no file is held whole in RAM, up to **65536 bytes**. In this core the UART interrupt is not in IRAM, so flash work during a stream overflows the 128-byte RX FIFO and drops bytes: the host sends `###SYNC###` after every 4096 bytes of lines and **waits for `ACK <bytes>`** before it sends more, and the device touches flash only then and at `###END###`. Without the syncs the chunk overflows: `ERR send ###SYNC### after every 4096 bytes and wait for ACK`. The screen holds still while a USB upload streams.
+- Each chunk is first compared with the file it replaces; while they match nothing is written. A file sent again unchanged writes no flash at all: the reply ends `unchanged` (and a profile is not reloaded). At the first difference a temp file starts with the matching part copied over, the rest streams into it, and it is checked and swapped in at the end.
 - `RECV` acknowledges the header. Hosts can stream right after it (Studio paces at 30 kB/s; `kp.py` sends unpaced).
 - If no line arrives for 5 s, the device prints `Upload timed out; discarded.` and the prompt.
 - Profile files (`/profile1.json` … `/profile8.json`) are validated before they replace the old file: valid JSON, schema 1 or 2, 1–16 pages, at most 15 cells each. On failure the device prints `Upload rejected: <why>` and keeps the old file. On success it keeps 3 backups, deletes `/t` tiles no profile references, and reloads the profile if it is active (staying on the same page).
@@ -136,7 +140,9 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 84×90 o
 
 ### Album art
 
-`###BEGINB### ram:art 32768 crc=…` goes straight to the player's RAM buffer (nothing is written to flash): 128×128 px, **big-endian** RGB565. Reply `SAVED ram:art`. Studio sends it after the `now_playing` that names the track, and again when a cover arrives late.
+`###BEGINB### ram:artj <bytes> crc=…` (3.12.1, what Studio sends): the cover as a baseline JPEG of 128×128 px, at most 16 KB, kept in RAM. The device decodes it into the 32 KB RGB565 image only while a player page (the active page or a quick-bar panel) is on screen, and frees that image when none is, so the cover costs a few KB the rest of the time. Reply `SAVED ram:artj`. `art` reports `art jpg:<bytes> decoded:<0|1> ms:<the last decode>`.
+
+`###BEGINB### ram:art 32768 crc=…` (raw, for tools) goes straight to the player's RAM buffer: 128×128 px, **big-endian** RGB565, held whatever page shows. Reply `SAVED ram:art`. Nothing is written to flash either way; Studio sends the cover after the `now_playing` that names the track, and again when a cover arrives late.
 
 ### Tiles
 

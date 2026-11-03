@@ -40,6 +40,7 @@ function stripCatEcho(text) {
   return lines.join("\n").trim();
 }
 
+const SYNC_EVERY = 4096;   // upload bytes between ###SYNC### lines (the keypad's chunk)
 const uploadOk = (reply) => /^\s*SAVED\b/m.test(reply) || /->\s*OK/.test(reply);
 
 class SerialLink extends EventEmitter {
@@ -179,7 +180,9 @@ class SerialLink extends EventEmitter {
     return false;
   }
 
-  // Stream lines paced to uploadRate bytes/s; resolve { ok, reply } on the closing prompt.
+  // Stream lines paced to uploadRate bytes/s; resolve { ok, reply } on the closing prompt. After every
+  // SYNC_EVERY bytes it sends ###SYNC### and waits for the keypad's ACK: the keypad compares or writes
+  // that chunk to flash then, and can't take bytes while it does.
   _upload(label, lines) {
     return this._runExclusive(() => new Promise((resolve) => {
       if (!this.isOpen()) return resolve({ ok: false, reply: "not connected" });
@@ -190,11 +193,22 @@ class SerialLink extends EventEmitter {
         () => this.emit("log", `Upload of ${label} timed out; device did not acknowledge.\n`));
       this.emit("tx", `${lines[0]}  (${lines.length - 2} lines, ${bytes} B)`);
       const t0 = Date.now();
-      let i = 0, sent = 0;
+      let i = 0, sent = 0, sinceSync = 0;
       const pump = () => {
-        if (!this.isOpen()) { this._finishRead(); return; }
+        if (!this.isOpen()) { this._ackWait = null; this._finishRead(); return; }
         const budget = Number.isFinite(rate) ? 256 + ((Date.now() - t0) * rate) / 1000 : Infinity;
-        while (i < lines.length && sent < budget) { const l = lines[i++]; this.send(l); sent += l.length + 1; }
+        while (i < lines.length && sent < budget) {
+          const l = lines[i++];
+          this.send(l);
+          sent += l.length + 1;
+          sinceSync += l.length + 1;
+          if (sinceSync >= SYNC_EVERY && i < lines.length - 1) {   // the last line (###END###) syncs by itself
+            sinceSync = 0;
+            this._ackWait = pump;
+            this.send("###SYNC###");
+            return;
+          }
+        }
         if (i < lines.length) setTimeout(pump, 4);
       };
       pump();
@@ -282,6 +296,7 @@ class SerialLink extends EventEmitter {
     if (clean.startsWith("EVT:")) { this.emit("rx", clean); this._handleEvent(clean.slice(4).trim()); return; }
     const fs = parseFsInfo(clean);
     if (fs) this.emit("fs-info", fs);
+    if (this._ackWait && /^ACK\b/.test(clean)) { const w = this._ackWait; this._ackWait = null; w(); return; }   // an upload's sync
     if (this._reading) this._readLines.push(clean);   // replies go to the awaiting caller
     else if (clean.trim() !== "") this.emit("rx", clean);
   }

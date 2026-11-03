@@ -265,7 +265,7 @@ class Device:
         payload = text.replace("\r\n", "\n")
         if not payload.endswith("\n"):
             payload += "\n"
-        self._send_chunked(payload.encode())
+        self._send_synced(payload.encode())
         self.write_line("###END###")
         return self.wait_prompt(timeout)
 
@@ -275,7 +275,7 @@ class Device:
         self.write_line(f"###BEGINB### {devpath} {len(data)} crc={crc:08x}")
         self._expect_recv()
         b64 = base64.b64encode(data).decode()
-        self._send_chunked("".join(b64[i:i + 76] + "\n" for i in range(0, len(b64), 76)).encode())
+        self._send_synced("".join(b64[i:i + 76] + "\n" for i in range(0, len(b64), 76)).encode())
         self.write_line("###END###")
         return self.wait_prompt(timeout)
 
@@ -289,6 +289,25 @@ class Device:
                     self.wait_prompt(2)
                     raise DeviceError(l)
         raise DeviceError("no RECV after ###BEGIN###")
+
+    SYNC_EVERY = 4096
+
+    def _send_synced(self, data, timeout=5):
+        """An upload's lines with ###SYNC### after every 4 KB: the keypad compares or writes that
+        chunk to flash while we wait for its ACK (it can't take bytes during flash work)."""
+        lines = data.split(b"\n")[:-1] if data.endswith(b"\n") else data.split(b"\n")
+        part = b""
+        for i, l in enumerate(lines):
+            part += l + b"\n"
+            if len(part) >= self.SYNC_EVERY and i + 1 < len(lines):
+                self._send_chunked(part + b"###SYNC###\n")
+                part = b""
+                deadline = time.time() + timeout
+                while not any(x.startswith("ACK") for x in self._pump()):
+                    if time.time() > deadline:
+                        raise DeviceError("no ACK after ###SYNC###")
+        if part:
+            self._send_chunked(part)
 
     def _send_chunked(self, data, chunk=1024):
         for i in range(0, len(data), chunk):

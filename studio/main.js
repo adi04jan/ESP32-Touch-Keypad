@@ -68,7 +68,12 @@ function initServices() {
   bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log,
     mic: (arg) => micmute.run(arg).then((muted) => log(`mic: ${muted ? "muted" : "on"}\n`)) });
   if (process.platform === "win32" && !SMOKE) micmute.run("get").catch(() => {});   // warm the helper: the first press is instant too
-  device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname() });
+  device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname(),
+    jpeg: (bgra) => {   // the cover as a few KB of JPEG (the keypad takes up to 16 KB)
+      const img = nativeImage.createFromBitmap(bgra, { width: 128, height: 128 });
+      const j = img.toJPEG(85);
+      return j.length <= 16000 ? j : img.toJPEG(60);
+    } });
 
   for (const ev of ["log", "fs-info", "key", "page", "profile", "ble", "idle", "switch", "panel"]) link.on(ev, (d) => send(ev, d));
   link.on("tx", (t) => send("tx", t));

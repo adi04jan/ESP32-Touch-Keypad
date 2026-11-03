@@ -509,6 +509,67 @@ def test_suggestion_tap_closes_a_panel(d):
     d.wait_event(r"^EVT:PANEL 0$", 3, since); d.wait_event(r"^EVT:SWITCH 1 suggest$", 3, since)
 
 
+
+# ---------------------------------------------------------------- streamed uploads, the JPEG cover
+def heap_free(d):
+    return int(re.search(r"free:(\d+)", d.cmd("heap")[0]).group(1))
+
+
+def big_profile():
+    p = json.loads(json.dumps(PROFILE))
+    for i in range(13):
+        keys = [None] * 15
+        keys[0] = key(1, f"Big {i}", [{"type": "text", "value": "x" * 3000}])
+        p["pages"].append({"name": f"Big {i}", "keys": keys})
+    return p
+
+
+def test_identical_upload_writes_nothing(d):
+    d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+    r = d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))      # the same bytes again
+    assert any(l.startswith("SAVED") and l.endswith("unchanged") for l in r), r
+
+
+def test_big_upload_streams_with_a_cover_loaded(d):
+    assert "SAVED ram:art" in d.upload_bin("ram:art", (0x07E0).to_bytes(2, "big") * (128 * 128))   # holds 32 KB
+    big = json.dumps(big_profile(), indent=1)
+    assert len(big) > 40000
+    try:
+        r = d.upload_text(f"profile{SLOT}.json", big, timeout=30)
+        assert any(l.startswith("SAVED") and not l.endswith("unchanged") for l in r), r
+        assert json.loads("\n".join(d.cmd(f"cat /profile{SLOT}.json", 15))) == big_profile()
+    finally:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+
+
+def make_jpg(rgb=(255, 0, 255)):
+    import io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (128, 128), rgb).save(b, "JPEG", quality=85)
+    return b.getvalue()
+
+
+def art_state(d):
+    return dict(kv.split(":", 1) for kv in d.cmd("art")[0].split()[1:])
+
+
+def test_jpeg_cover_decodes_when_the_player_opens_and_frees_after(d):
+    jpg = make_jpg()
+    r = d.upload_bin("ram:artj", jpg)
+    assert any(l.startswith("SAVED ram:artj") for l in r), r
+    time.sleep(0.3)
+    assert art_state(d)["decoded"] == "0"                    # page 1 is keys: no 32 KB image held
+    free0 = heap_free(d)
+    d.ok("page 2"); time.sleep(0.6)
+    st = art_state(d)
+    assert st["decoded"] == "1" and int(st["ms"]) < 100, st
+    assert close(d.shot().getpixel((16 + 64, 44 + 64)), (255, 0, 255), 40)
+    assert free0 - heap_free(d) > 30000
+    d.ok("page 1"); time.sleep(0.4)
+    assert art_state(d)["decoded"] == "0" and heap_free(d) >= free0 - 1024
+
+
 # ---------------------------------------------------------------- screen
 def test_screen_layout(d):
     img = d.shot()

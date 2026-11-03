@@ -23,6 +23,7 @@ class Device extends EventEmitter {
     this.link = deps.link;
     this.backup = deps.backup;
     this.settings = deps.settings;
+    this.jpeg = deps.jpeg || null;   // (bgra 128x128) -> JPEG Buffer: Electron's encoder, from main.js
     this.bridge = deps.bridge || null;
     this.tileDir = deps.tileDir || null;
     this.hostName = deps.hostName || null;   // names this PC on the keypad's status bar and host list
@@ -318,15 +319,19 @@ class Device extends EventEmitter {
     this.emit("state", this.state());
   }
 
-  // Album art: the helper's 128x128 BMP -> RGB565 straight into the player's RAM buffer.
+  // Album art: the helper's 128x128 BMP as a JPEG (a few KB: `ram:artj`, decoded on the keypad when its
+  // player shows), or raw RGB565 (`ram:art`) when no encoder was given (tests).
   // key = "title|artist|album" of the track it belongs to.
   art(bmp, key = "") {
-    try { this._art = { buf: feeds.bmpToRgb565(bmp), key }; } catch (e) { this.emit("log", `Album art skipped: ${e.message}\n`); return Promise.resolve(false); }
+    try {
+      const jpg = this.jpeg ? this.jpeg(feeds.bmpToBgra(bmp)) : null;
+      this._art = jpg ? { buf: jpg, path: "ram:artj", key } : { buf: feeds.bmpToRgb565(bmp), path: "ram:art", key };
+    } catch (e) { this.emit("log", `Album art skipped: ${e.message}\n`); return Promise.resolve(false); }
     return this._sendArt();
   }
   async _sendArt() {
     if (!this._art || !this.link.isOpen() || this.settings.load().art_enabled === false) return false;
-    return (await this.link.uploadBinary("ram:art", this._art.buf)).ok;
+    return (await this.link.uploadBinary(this._art.path, this._art.buf)).ok;
   }
 
   // Now Playing: push to the widget when something the device can't extrapolate changed.

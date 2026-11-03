@@ -49,6 +49,23 @@ function bmpToRgb565(bmp) {
   return out;
 }
 
+// The same cover as raw BGRA (top-down), for Electron's JPEG encoder.
+function bmpToBgra(bmp) {
+  if (bmp.length < 54 || bmp.toString("latin1", 0, 2) !== "BM") throw new Error("not a BMP");
+  const off = bmp.readUInt32LE(10), w = bmp.readInt32LE(18), h0 = bmp.readInt32LE(22), bpp = bmp.readUInt16LE(28);
+  const h = Math.abs(h0), stride = Math.ceil((w * 3) / 4) * 4;
+  if (w !== ART || h !== ART || bpp !== 24 || bmp.length < off + stride * h) throw new Error(`cover must be ${ART}x${ART} 24-bit, got ${w}x${h} ${bpp}-bit`);
+  const out = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const row = off + (h0 > 0 ? h - 1 - y : y) * stride;
+    for (let x = 0; x < w; x++) {
+      const i = row + x * 3, o = (y * w + x) * 4;
+      out[o] = bmp[i]; out[o + 1] = bmp[i + 1]; out[o + 2] = bmp[i + 2]; out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
 const NP_PS = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -147,4 +164,4 @@ function seekNowPlaying(sec) {
 }
 function stopNowPlaying() { if (child) { try { child.stdin.end(); child.kill(); } catch (_) {} child = null; } }
 
-module.exports = { timeCommand, nowPlayingCommand, shouldSend, bmpToRgb565, startNowPlaying, seekNowPlaying, stopNowPlaying, NP_PS };
+module.exports = { timeCommand, nowPlayingCommand, shouldSend, bmpToRgb565, bmpToBgra, startNowPlaying, seekNowPlaying, stopNowPlaying, NP_PS };

@@ -104,6 +104,16 @@ class SimDevice extends EventEmitter {
 
   _uploadLine(s) {
     const up = this._up;
+    if (s === "###SYNC###") {   // like the keypad: ACK once the chunk is in flash; nothing may arrive meanwhile
+      this.syncs = (this.syncs || 0) + 1;
+      this.maxUnsynced = Math.max(this.maxUnsynced || 0, up.unsynced || 0);
+      up.unsynced = 0;
+      up.waiting = true;
+      setTimeout(() => { up.waiting = false; this.println("ACK " + this.syncs); }, 10);
+      return;
+    }
+    if (up.waiting) this.linesWhileWaiting = (this.linesWhileWaiting || 0) + 1;
+    up.unsynced = (up.unsynced || 0) + s.length + 1;
     if (s !== "###END###") {
       if (up.kind === "json") up.lines.push(s); else up.b64.push(s);
       return;

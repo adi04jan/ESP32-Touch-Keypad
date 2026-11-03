@@ -167,3 +167,34 @@ test("Device quickbar round trip and suggest against the sim", async () => {
   await device.suggest(13);
   assert.equal(sim.suggested, 13);
 });
+
+
+test("uploads send ###SYNC### every 4 KB and wait for the ACK", async () => {
+  const { sim, link } = await rig(); await link.connect("SIM1");
+  const big = { pages: Array.from({ length: 12 }, (_, i) => ({ name: `p${i}`, text: "x".repeat(1500) })) };
+  const r = await link.uploadJson("big.json", big);
+  assert.equal(r.ok, true, r.reply);
+  assert.ok(sim.syncs >= 3, `syncs ${sim.syncs}`);
+  assert.ok(sim.maxUnsynced <= 4096 + 1600, `unsynced ${sim.maxUnsynced}`);
+  assert.equal(sim.linesWhileWaiting || 0, 0);
+  assert.deepEqual(JSON.parse(sim.files.get("/big.json").toString()), big);
+});
+
+test("the cover goes as a JPEG to ram:artj when Studio has an encoder", async () => {
+  const fs = require("fs"), os = require("os"), path = require("path");
+  const { Device } = require("../services/device");
+  const backup = require("../services/backup");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "art-"));
+  backup.configure({ dataDir: dir });
+  const { sim, link } = await rig(); await link.connect("SIM1");
+  const store = { load: () => ({ baud: 921600, settime_enabled: false, host_slots: {}, context_profiles: {}, art_enabled: true }), save: () => {} };
+  let got = null;
+  const device = new Device({ link, backup, settings: store, tileDir: path.join(dir, "tiles"), jpeg: (bgra) => { got = bgra; return Buffer.from("JPEG!"); } });
+  const bmp = Buffer.alloc(54 + 128 * 384);
+  bmp.write("BM", 0, "latin1"); bmp.writeUInt32LE(54, 10); bmp.writeInt32LE(128, 18); bmp.writeInt32LE(128, 22); bmp.writeUInt16LE(24, 28);
+  bmp[54] = 10; bmp[55] = 20; bmp[56] = 30;                      // bottom-left pixel: B G R
+  assert.equal(await device.art(bmp, "t|a|b"), true);
+  assert.equal((sim.files.get("ram:artj") || sim.files.get("/ram:artj")).toString(), "JPEG!");   // the sim keeps binary paths as sent
+  assert.equal(got.length, 128 * 128 * 4);
+  assert.deepEqual([...got.subarray(127 * 512, 127 * 512 + 4)], [10, 20, 30, 255]);   // top-down: the last row
+});

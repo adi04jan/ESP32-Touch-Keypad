@@ -19,16 +19,22 @@ struct LineIn { char buf[CLI_LINE_MAX]; size_t len; bool tooLong; };
 static LineIn inUsb, inBle;
 static uint8_t curSrc = 0;   // 0 USB, 1 Bluetooth: the source of the line being handled
 
-// Uploads collect in RAM and touch flash only after ###END###: this core's UART
-// ISR is not in IRAM, so a flash erase mid-stream overflows the 128-byte RX FIFO
-// and drops bytes. The host waits for the reply, so nothing arrives during the write.
+// Uploads stream to flash a chunk at a time; no file is held whole in RAM. This core's UART ISR is
+// not in IRAM, so flash work while bytes arrive would overflow the 128-byte RX FIFO and drop bytes:
+// the host sends ###SYNC### after every UP_CHUNK bytes and waits for "ACK <n>", and flash is
+// touched only then (and at ###END###), while it waits. Each chunk is first compared with the file
+// it replaces: while they match nothing is written, so sending an unchanged file again costs no
+// flash wear. At the first difference a temp file starts, the matching part copied over, and the
+// rest streams into it; it is checked and swapped in at the end. Album art stays in RAM.
+#define UP_CHUNK 4096
 static struct {
-  bool on, bin;
+  bool on, bin, art, jpg, failed, tooBig, lineLong, noSync, diff;
   char path[64];
-  uint8_t *buf;
-  size_t size, cap, want;
+  uint8_t *buf;            // album art: the whole payload; a file: what arrived since the last sync
+  size_t size, cap, want;  // bytes in buf, its room, the size a binary upload announced
+  size_t total;            // a file: bytes already compared with the old file or written
   uint32_t crc, wantCrc, last;
-  bool failed, tooBig, art, lineLong;
+  File old, tmp;           // the file being replaced, and its new version once they differ
   uint8_t src;
 } up;
 
@@ -43,53 +49,89 @@ static void normPath(const char *in, char *out, size_t n) {
 }
 
 // ---------------------------------------------------------------- uploads
+static String tmpPath() { return String(up.path) + ".tmp"; }
+
 static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   normPath(path, up.path, sizeof up.path);
   if (strstr(up.path, "..") || strlen(path) > 56) { Con.println("ERR bad path"); return false; }
-  up.cap = bin ? want : 8192;
-  up.art = bin && !strcmp(up.path, "/ram:art");   // album art goes straight to the player's buffer
-  up.buf = up.art ? uiArtBuffer(want) : (uint8_t *)malloc(up.cap);
+  up.art = bin && !strcmp(up.path, "/ram:art");     // album art goes straight to the player's RAM
+  up.jpg = bin && !strcmp(up.path, "/ram:artj");    // the cover as a JPEG, decoded when the player shows
+  up.cap = up.art || up.jpg ? want : UP_CHUNK + CLI_LINE_MAX;
+  up.buf = up.art ? uiArtBuffer(want) : up.jpg ? uiArtJpgBuffer(want) : (uint8_t *)malloc(up.cap);
   if (!up.buf) { Con.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
+  if (!up.art && !up.jpg) {   // before RECV: the host sends nothing until then
+    LittleFS.remove(tmpPath());
+    up.old = LittleFS.open(up.path, "r");
+    if (up.old && up.old.isDirectory()) up.old.close();
+  }
   up.on = true;
   up.src = curSrc;
   up.bin = bin;
-  up.size = 0;
+  up.size = up.total = 0;
   up.want = want;
   up.crc = 0;
   up.wantCrc = crc;
-  up.failed = up.tooBig = up.lineLong = false;
+  up.failed = up.tooBig = up.lineLong = up.noSync = up.diff = false;
   up.last = millis();
   Con.printf("RECV %s\n", up.path);
   return true;
 }
 
 static void uploadEnd() {
-  if (!up.art) free(up.buf);
+  if (!up.art && !up.jpg) free(up.buf);
   up.buf = nullptr;
+  if (up.old) up.old.close();
+  if (up.tmp) { up.tmp.close(); LittleFS.remove(tmpPath()); }   // not committed
   up.on = false;
 }
 
 static bool append(const uint8_t *d, size_t n) {
-  if (up.size + n > up.cap) {
-    size_t cap = up.cap;
-    while (cap < up.size + n) cap *= 2;
-    if (cap > UPLOAD_MAX) cap = UPLOAD_MAX;
-    uint8_t *nb = up.size + n <= cap ? (uint8_t *)realloc(up.buf, cap) : nullptr;
-    if (!nb) return false;
-    up.buf = nb;
-    up.cap = cap;
-  }
+  if (up.size + n > up.cap) { up.noSync = !up.art && !up.jpg; return false; }
   memcpy(up.buf + up.size, d, n);
   up.size += n;
   return true;
 }
 
-static bool writeTmp(const String &tmp) {
-  File f = LittleFS.open(tmp, "w", true);
-  bool ok = f && f.write(up.buf, up.size) == up.size;
-  f.close();
-  if (!ok) LittleFS.remove(tmp);
-  return ok;
+// The first difference: the temp file starts with the part that matched, copied from the old file.
+static bool startTmp() {
+  up.tmp = LittleFS.open(tmpPath(), "w", true);
+  if (!up.tmp) return false;
+  if (up.old && up.total) {
+    up.old.seek(0);
+    uint8_t b[512];
+    for (size_t left = up.total; left;) {
+      size_t k = up.old.read(b, min(left, sizeof b));
+      if (!k || up.tmp.write(b, k) != k) return false;
+      left -= k;
+    }
+  }
+  if (up.old) up.old.close();
+  up.diff = true;
+  return true;
+}
+
+// The chunk since the last sync: compared with the old file while they match, else written.
+static bool flushChunk() {
+  if (up.art || up.jpg || !up.size) return true;
+  if (!up.diff) {
+    bool same = up.old;
+    uint8_t b[256];
+    for (size_t at = 0; same && at < up.size; at += sizeof b) {
+      size_t k = min(sizeof b, up.size - at);
+      same = up.old.read(b, k) == k && !memcmp(b, up.buf + at, k);
+    }
+    if (!same && !startTmp()) return false;
+  }
+  if (up.diff && up.tmp.write(up.buf, up.size) != up.size) return false;
+  up.total += up.size;
+  up.size = 0;
+  return true;
+}
+
+static void uploadSync() {   // the host waits for the ACK: flash work is safe now
+  up.last = millis();
+  if (!up.failed && !flushChunk()) up.failed = true;
+  Con.printf("ACK %u\n", (unsigned)(up.total + up.size));
 }
 
 static void uploadAbort(const char *why) {
@@ -105,47 +147,57 @@ static void uploadLine(char *s, size_t n) {
     while (n && s[n - 1] == ' ') s[--n] = 0;
     static uint8_t out[CLI_LINE_MAX / 4 * 3 + 3];
     size_t got = 0;
-    if (mbedtls_base64_decode(out, sizeof out, &got, (const uint8_t *)s, n) != 0 || !append(out, got)) { up.failed = true; return; }
+    if (mbedtls_base64_decode(out, sizeof out, &got, (const uint8_t *)s, n) != 0 || up.total + up.size + got > up.want || !append(out, got)) { up.failed = true; return; }
     up.crc = esp_rom_crc32_le(up.crc, out, got);
   } else {
     s[n] = '\n';   // the line buffer always has room for it
-    up.tooBig = up.size + n + 1 > UPLOAD_MAX;
+    up.tooBig = up.total + up.size + n + 1 > UPLOAD_MAX;
     if (up.tooBig || !append((const uint8_t *)s, n + 1)) up.failed = true;
   }
 }
 
 static void uploadFinish() {
-  String tmp = String(up.path) + ".tmp";
-  if (up.art) {
+  if (up.art || up.jpg) {
     bool ok = !up.failed && up.size == up.want && up.crc == up.wantCrc;
-    uiArtDone(ok);
-    if (ok) Con.println("SAVED ram:art");
+    if (up.art) uiArtDone(ok); else uiArtJpgDone(ok, up.size);
+    if (ok) Con.printf("SAVED %s\n", up.path + 1);
     else Con.printf("ERR art %u of %u bytes, crc %08lx\n", (unsigned)up.size, (unsigned)up.want, (unsigned long)up.crc);
     uploadEnd();
     prompt();
     return;
   }
-  if (up.bin) {
-    if (up.failed || up.size != up.want) Con.printf("ERR size mismatch %u != %u\n", (unsigned)up.size, (unsigned)up.want);
-    else if (up.crc != up.wantCrc) Con.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc);
-    else if (!writeTmp(tmp) || !commitTmp(up.path, false)) Con.printf("ERR cannot save %s\n", up.path);
-    else { Con.printf("SAVED %s\n", up.path); uiMarkAll(); }
-    uploadEnd();
-    prompt();
-    return;
-  }
+  if (!up.failed && !flushChunk()) up.failed = true;
+  size_t size = up.total;
   if (up.failed) {
     if (up.tooBig) Con.println("Upload too large; discarded.");
     else if (up.lineLong) Con.printf("ERR a line longer than %d bytes; send the JSON on several lines\n", CLI_LINE_MAX - 1);
-    else Con.println("ERR out of RAM");
+    else if (up.noSync) Con.printf("ERR send ###SYNC### after every %d bytes and wait for ACK\n", UP_CHUNK);
+    else if (up.bin && size != up.want) Con.printf("ERR size mismatch %u != %u\n", (unsigned)size, (unsigned)up.want);
+    else Con.printf("ERR cannot write %s\n", tmpPath().c_str());
     uploadEnd();
     prompt();
     return;
   }
-  size_t size = up.size;
-  bool written = writeTmp(tmp);
+  if (up.bin && size != up.want) { Con.printf("ERR size mismatch %u != %u\n", (unsigned)size, (unsigned)up.want); uploadEnd(); prompt(); return; }
+  if (up.bin && up.crc != up.wantCrc) { Con.printf("ERR crc mismatch %08lx != %08lx\n", (unsigned long)up.crc, (unsigned long)up.wantCrc); uploadEnd(); prompt(); return; }
+  if (!up.diff && up.old && up.old.size() == size) {   // every byte the same: nothing to write
+    uploadEnd();
+    if (up.bin) Con.printf("SAVED %s unchanged\n", up.path);
+    else Con.printf("SAVED %s %u unchanged\n", up.path + 1, (unsigned)size);
+    prompt();
+    return;
+  }
+  if (!up.diff && !startTmp()) { Con.printf("ERR cannot write %s\n", tmpPath().c_str()); uploadEnd(); prompt(); return; }   // the old file and more: copy it all
+  up.tmp.close();
+  bool bin = up.bin;
   uploadEnd();
-  if (!written) { Con.printf("ERR cannot write %s\n", tmp.c_str()); prompt(); return; }
+  String tmp = tmpPath();
+  if (bin) {
+    if (!commitTmp(up.path, false)) Con.printf("ERR cannot save %s\n", up.path);
+    else { Con.printf("SAVED %s\n", up.path); uiMarkAll(); }
+    prompt();
+    return;
+  }
 
   int id = 0;
   String err;
@@ -263,6 +315,8 @@ static bool runCommand(char *s) {
     Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d sug:%d cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
                   uiModeName(), uiPanelOpen(), uiSuggested(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+  } else if (cmd == "art") {
+    uiArtPrint();
   } else if (cmd == "suggest") {
     if (*arg) { a = atoi(arg); if (a < 0 || a > NUM_PROFILES) Con.println("suggest 0-16"); else uiSuggest(a); }
     Con.printf("suggest %d\n", uiSuggested());
@@ -480,6 +534,7 @@ static bool runCommand(char *s) {
 static void handleLine(char *s, size_t n) {
   if (up.on) {
     if (!strcmp(s, "###END###")) uploadFinish();
+    else if (!strcmp(s, "###SYNC###")) uploadSync();
     else uploadLine(s, n);
     return;
   }
