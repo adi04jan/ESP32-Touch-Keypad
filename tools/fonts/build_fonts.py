@@ -22,6 +22,7 @@ DIGITS = " 0123456789:%-+."
 # name, file, pixel size, glyph set
 FONTS = [
     ("FONT_LABEL", "B612-Regular.ttf", 13, TEXT),        # key labels, secondary text
+    ("FONT_LABEL_S", "B612-Regular.ttf", 11, TEXT),      # key labels too wide for 84 px at 13, the quick bar
     ("FONT_BODY", "B612-Regular.ttf", 15, TEXT),         # sheet rows, toasts
     ("FONT_BODY_B", "B612-Bold.ttf", 15, TEXT),          # tabs, buttons, status
     ("FONT_TITLE", "B612-Bold.ttf", 19, TEXT),           # clock, sheet titles

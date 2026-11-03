@@ -564,7 +564,7 @@ static void drawCell(int c, uint32_t now) {
     if (t < 1) { float e = easeOut(t); a = clamp01(e * 2.2f); s = 0.82f + 0.18f * e; }
   }
   int A = (int)(a * 255);
-  float kx = cx + 15, ky = cy + 4;
+  float kx = cx + (CELL_W - KEY) / 2, ky = cy + 4;
   JsonVariant k = keyAt(c);
   if (k.isNull()) {
     float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2;
@@ -630,19 +630,24 @@ static void drawCell(int c, uint32_t now) {
   bool host = false;
   for (JsonVariant act : k["actions"].as<JsonArray>()) host |= !strcmp(act["type"] | "", "host");
   bool hasHold = k["hold_actions"].size() > 0, holding = down && hasHold && !holdFired;
-  if (on) tag(cx + 87, cy, "ON", GREEN, false, GREEN, ON_INK, A);
-  else if (host) tag(cx + 87, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
-  else if (hasHold && !holding) tag(cx + 87, cy, "HOLD", TAG_BG, true, mix(TAG_BG, HAIR, th.light ? 120 : 38), TXT2, A);
+  int tagR = (int)kx + KEY + 6;   // tags sit on the key's top-right corner
+  if (on) tag(tagR, cy, "ON", GREEN, false, GREEN, ON_INK, A);
+  else if (host) tag(tagR, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
+  else if (hasHold && !holding) tag(tagR, cy, "HOLD", TAG_BG, true, mix(TAG_BG, HAIR, th.light ? 120 : 38), TXT2, A);
 
   if (th.ks == KS_FLAT) {   // OP-1 labels: small mono capitals
     char up[24];
     strlcpy(up, k["name"] | "", sizeof up);
     for (char *p = up; *p; p++) *p = toupper((uint8_t)*p);
-    String lbl = ellipsize(fRead, up, 92);
-    text(fRead, cx + 48, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
+    String lbl = ellipsize(fRead, up, CELL_W);
+    text(fRead, cx + CELL_W / 2, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
   } else {
-    String lbl = ellipsize(fLabel, k["name"] | "", 92);
-    text(fLabel, cx + 48, (int)(ky + KEY + 5 + fLabel.asc), lbl.c_str(), LBL, A, AL_C);
+    // A label that fit the old 96 px cell (92 px) still fits whole: too wide for 84 px at 13 px, it
+    // steps down to 11 px (92 x 11/13 = 78) before anything is cut.
+    const char *name = k["name"] | "";
+    Font &lf = textW(fLabel, name) <= CELL_W ? fLabel : fLabelS;
+    String lbl = ellipsize(lf, name, CELL_W);
+    text(lf, cx + CELL_W / 2, (int)(ky + KEY + 5 + fLabel.asc), lbl.c_str(), LBL, A, AL_C);
   }
 
   if (ca[c].ring && now - ca[c].ring0 < 700) {
@@ -744,7 +749,7 @@ static void drawStatus() {
 static void drawStations() {
   if (pageCount < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
   C3 line = lineC(), gnd = gfxGroundAt(310);
-  int total = (pageCount - 1) * 30, x0 = 240 - total / 2;
+  int total = (pageCount - 1) * 30, x0 = KEYS_W / 2 - total / 2;
   fillRect(x0, 309, total, 2, T->crisp ? line : mix(line, BLACK, 77));
   for (int i = 0; i < pageCount; i++) {
     int x = x0 + i * 30;
@@ -754,12 +759,12 @@ static void drawStations() {
 }
 
 // ---------------------------------------------------------------- media player
-static const int16_t BTN_X[6] = { 40, 112, 188, 274, 360, 436 }, BTN_R[6] = { 28, 32, 32, 42, 32, 32 };
+static const int16_t BTN_X[6] = { 35, 98, 165, 240, 315, 382 }, BTN_R[6] = { 26, 29, 29, 38, 29, 29 };   // left of the quick bar
 static const char *const BTN_ICON[6] = { "volume-x", "volume-1", "skip-back", "", "skip-forward", "volume-2" };
 static const char *const BTN_MEDIA[6] = { "MUTE", "VOLUME_DOWN", "PREVIOUS", "PLAY_PAUSE", "NEXT", "VOLUME_UP" };
 #define BTN_Y 248
 #define SEEK_X 160
-#define SEEK_W 304
+#define SEEK_W 244
 
 static void drawPlayer(uint32_t now) {
   if (!gfxHits(0, STATUS_H, SCR_W, LINE_Y - STATUS_H)) return;
@@ -1374,14 +1379,15 @@ static void renderChunk(uint32_t now) {
   drawHud(now);
 }
 
-static uint16_t chunkBuf[2][CELL_W * CELL_H];
+#define CHUNK_PX (96 * 90)   // pixels a DMA chunk holds (the old cell): fewer, larger chunks redraw faster
+static uint16_t chunkBuf[2][CHUNK_PX];
 
 static void renderDamage(uint32_t now) {
   int bi = 0;
   lcd.startWrite();
   for (int i = 0; i < dmgN; i++) {
     Rect r = dmg[i];
-    int rows = max(1, (CELL_W * CELL_H) / r.w);
+    int rows = max(1, CHUNK_PX / r.w);
     for (int y = r.y; y < r.y + r.h; y += rows) {
       int h = min(rows, r.y + r.h - y);
       gfxChunk(chunkBuf[bi], r.x, y, r.w, h);
@@ -2283,7 +2289,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       else if (onHostChip(x0, y0)) openHostMenu();
       else if (onProfChip(x0, y0)) uiOpenSheet(1);
       else if (y0 >= LINE_Y) {
-        int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
+        int total = (pageCount - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
         if (best >= 0 && bd <= 16 && best != currentPage) uiGoPage(best, false);
       }
@@ -2295,7 +2301,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
   }
 
   auto hit = [](int x, int y) -> int {
-    if (y < STATUS_H || y >= LINE_Y || x < 0 || x >= SCR_W) return -1;
+    if (y < STATUS_H || y >= LINE_Y || x < 0 || x >= KEYS_W) return -1;
     return (y - STATUS_H) / CELL_H * GRID_COLS + x / CELL_W;
   };
   auto release = [&](int c) {
@@ -2338,7 +2344,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       else if (c < 0 && onHostChip(x0, y0)) openHostMenu();
       else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
       else if (c < 0 && y0 >= LINE_Y && pageCount > 1) {
-        int total = (pageCount - 1) * 30, xs = 240 - total / 2, best = -1, bd = 99;
+        int total = (pageCount - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
         if (best >= 0 && bd <= 16 && best != currentPage) uiGoPage(best, false);
       }

@@ -468,7 +468,7 @@ IRAM_ATTR void blitImage(const uint16_t *img, int iw, int ih, float x, float y, 
 }
 
 // ---------------------------------------------------------------- text
-Font fLabel, fBody, fBodyB, fTitle, fHead, fRead, fDigits;
+Font fLabel, fLabelS, fBody, fBodyB, fTitle, fHead, fRead, fDigits;
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 
@@ -495,6 +495,7 @@ static void fontLoad(Font &f, const uint8_t *d) {
 
 void fontsBegin() {
   fontLoad(fLabel, FONT_LABEL);
+  fontLoad(fLabelS, FONT_LABEL_S);
   fontLoad(fBody, FONT_BODY);
   fontLoad(fBodyB, FONT_BODY_B);
   fontLoad(fTitle, FONT_TITLE);

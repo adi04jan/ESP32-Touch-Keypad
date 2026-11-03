@@ -80,7 +80,7 @@ void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, f
 // ---- text
 struct VGlyph { uint16_t u; uint8_t w, h, adv; int8_t dy, dx; uint32_t off; };
 struct Font { const uint8_t *d; uint16_t n; int16_t asc, desc; VGlyph *g; };
-extern Font fLabel, fBody, fBodyB, fTitle, fHead, fRead, fDigits;
+extern Font fLabel, fLabelS, fBody, fBodyB, fTitle, fHead, fRead, fDigits;
 void fontsBegin();
 enum : uint8_t { AL_L, AL_C, AL_R };
 int textW(const Font &f, const char *s);

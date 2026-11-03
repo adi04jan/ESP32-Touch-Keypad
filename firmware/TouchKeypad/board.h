@@ -33,7 +33,9 @@
 #define GRID_COLS       5
 #define GRID_ROWS       3
 #define NUM_CELLS       15
-#define CELL_W          96
+#define BAR_W           60      // the quick bar, right of the keys
+#define KEYS_W          (SCR_W - BAR_W)   // 420: the key area
+#define CELL_W          84
 #define CELL_H          90
 #define DOTS_Y          (STATUS_H + GRID_ROWS * CELL_H)   // 300
 #define TILE_PX         72

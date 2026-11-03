@@ -164,7 +164,7 @@ It replaced a papercraft screen the owner judged too playful. It is drawn by an 
 
 ## Layout
 
-A fixed 480×320 landscape canvas. Status band 28 px with a hairline under it: the clock and the profile chip on the left; the bell (an unread badge in magenta), the host chip, the battery and settings on the right, each chip with a caret when it opens a list; a 5×3 grid of 96×90 cells from y 30; a 66 px key 4 px from the cell top with its label 5 px below; the page line in the bottom 20 px. The whole cell is the touch target. The player and the sheet replace the grid area and keep the status band. Sheet controls are at least 44 px tall.
+A fixed 480×320 landscape canvas. Status band 28 px with a hairline under it: the clock and the profile chip on the left; the bell (an unread badge in magenta), the host chip, the battery and settings on the right, each chip with a caret when it opens a list; a 5×3 grid of 84×90 cells over the left 420 px from y 30; a 66 px key 4 px from the cell top with its label 5 px below (B612 13, or 11 when 13 would not fit the 84 px cell); the page line in the bottom 20 px, centred on the key area; the 60 px quick bar at x 420–480 from y 30 to the foot. The whole cell is the touch target. The player and the sheet replace the grid area and keep the status band. Sheet controls are at least 44 px tall.
 
 ## Elevation & Depth
 

@@ -27,15 +27,15 @@ FPS_FLOOR = 50                    # every animation, measured by the firmware's 
 
 
 def cell_xy(cell):
-    """Centre of 1-based cell (5x3 grid of 96x90 under the 30 px status band)."""
+    """Centre of 1-based cell (5x3 grid of 84x90 under the 30 px status band, left of the 60 px quick bar)."""
     i = cell - 1
-    return (i % 5) * 96 + 48, 30 + (i // 5) * 90 + 40
+    return (i % 5) * 84 + 42, 30 + (i // 5) * 90 + 40
 
 
 def key_box(cell):
     """Top-left of the 66 px glass key inside a cell."""
     i = cell - 1
-    return (i % 5) * 96 + 15, 30 + (i // 5) * 90 + 4
+    return (i % 5) * 84 + 9, 30 + (i // 5) * 90 + 4
 
 
 def key(i, name, actions, **kw):
@@ -306,8 +306,25 @@ def test_swipes_change_page(d):
 
 
 def test_station_tap_changes_page(d):
-    d.touch(240, G_LINE)   # three stations at 210, 240, 270
+    d.touch(210, G_LINE)   # three stations at 180, 210, 240 (centred on the 420 px key area)
     d.wait_event(r"^EVT:PAGE 2$")
+
+
+def test_bar_column_presses_no_key(d):
+    since = len(d.events)
+    d.touch(450, 75)                       # the bar, beside key 5
+    time.sleep(0.3)
+    assert not [l for _, l in d.events[since:] if l.startswith("EVT:KEY")]
+    tap(d, 5)                              # key 5 still answers at its new place
+    d.wait_event(r"^EVT:KEY 1 5 1$", 2, since)
+
+
+def test_player_controls_fit_left_of_the_bar(d):
+    d.ok("page 2")                         # the test profile's player page
+    time.sleep(0.5)
+    d.touch(382, 248)                      # volume up, the rightmost control
+    assert any(r.startswith("e9") for r in hid_reports(d, 2, 1))   # consumer usage 0x00E9, little-endian
+    d.ok("page 1")
 
 
 # ---------------------------------------------------------------- screen
@@ -329,10 +346,10 @@ def test_media_player_page(d):
     d.ok("page 2")
     time.sleep(0.6)
     img = d.shot()
-    play = img.getpixel((274, 248 - 30))                           # upper part of the cyan play key
+    play = img.getpixel((240, 248 - 30))                           # upper part of the cyan play key
     assert play[2] > play[0] + 30, play
     d.clear_events()
-    d.touch(160 + 152, 156)                                        # middle of the seek bar
+    d.touch(160 + 122, 156)                                        # middle of the seek bar
     m = d.wait_event(r"^EVT:SEEK (\d+)$")
     assert 90 <= int(m.group(1)) <= 110
 
