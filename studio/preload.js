@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("api", {
   backupRead: call("backup:read"),
   backupAll: call("backup:all"),
   getSettings: call("settings:get"),
+  suggestRows: call("suggest:rows"),           // -> [{app, slot, weight, presses, last}] what the quick bar learned
+  suggestClear: call("suggest:clear"),         // (app, slot) -> rows after clearing that one
   setSettings: call("settings:set"),
   bridgeState: call("bridge:state"),
   bridgeTest: call("bridge:test"),

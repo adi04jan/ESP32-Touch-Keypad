@@ -23,6 +23,8 @@ const DEFAULTS = {
   preview_theme: "daylight",
   console_open: false,           // the device console starts folded away     // the editor preview's theme while no keypad is connected
   settime_enabled: true,
+  suggest_half_life_days: 7,     // the quick bar's suggestion: a press counts half after this many days
+  suggest_min_weight: 3,         // ... and a profile needs this much weight to be suggested
 };
 
 function load() {

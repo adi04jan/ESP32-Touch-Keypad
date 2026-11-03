@@ -28,6 +28,7 @@ const { Device } = require("./services/device");
 const { Autogen, appKey } = require("./services/autogen");
 const chat = require("./services/chat");
 const { WinNotify } = require("./services/winnotify");
+const { Suggest } = require("./services/suggest");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
@@ -36,6 +37,7 @@ const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: test
 const ICON = path.join(__dirname, "assets", "icon.ico");
 
 let win = null, tray = null, link = null, device = null, bridge = null, autogen = null, winNotify = null;
+let suggest = null, suggestFile = "", suggestSaveTimer = null;   // the quick bar's suggested profile (services/suggest.js)
 let manualDisconnect = false, connecting = false, pollTimer = null, currentContext = "global";
 
 function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send("evt", { type, data }); }
@@ -63,12 +65,12 @@ function initServices() {
   bridge = new hostbridge.HostBridge({ globalShortcut, open: openTarget, run: runCommand, settings: () => store.load(), log });
   device = new Device({ link, backup, settings: store, bridge, tileDir: path.join(dataDir, "data", "tiles"), hostName: os.hostname() });
 
-  for (const ev of ["log", "fs-info", "key", "page", "profile", "ble", "idle"]) link.on(ev, (d) => send(ev, d));
+  for (const ev of ["log", "fs-info", "key", "page", "profile", "ble", "idle", "switch", "panel"]) link.on(ev, (d) => send(ev, d));
   link.on("tx", (t) => send("tx", t));
   link.on("seek", (sec) => feeds.seekNowPlaying(sec));     // tap-to-seek on the keypad's player
   link.on("rx", (t) => send("rx", t));
-  link.on("disconnect", () => { send("state", device.state()); schedulePoll(); });
-  device.on("state", (s) => send("state", s));
+  link.on("disconnect", () => { suggest.reset(); send("state", device.state()); schedulePoll(); });
+  device.on("state", (s) => { send("state", s); pushSuggest(); });   // a connect, a profile change
   device.on("save-state", (s) => send("save-state", s));
   device.on("log", log);
   device.on("bridge", (r) => send("bridge", r));
@@ -78,6 +80,19 @@ function initServices() {
   link.on("event", (body) => { if (body === "AUTOGEN") autogen.run(); });
 
   const s = store.load();
+  // Learning: EVT:PROFILE stops counting (auto-switch's picks never count), EVT:SWITCH (the owner,
+  // on the keypad) starts it, and each press after it weighs that profile for the app in front.
+  suggestFile = path.join(dataDir, "data", "suggest.json");
+  suggest = Suggest.load(suggestFile, { halfLifeDays: s.suggest_half_life_days, minWeight: s.suggest_min_weight });
+  link.on("profile", (n) => { suggest.profile(n); pushSuggest(); });
+  link.on("switch", (e) => suggest.manual(e.slot));
+  link.on("key", (e) => {
+    if (e.state !== "1") return;
+    suggest.key();
+    clearTimeout(suggestSaveTimer);
+    suggestSaveTimer = setTimeout(() => suggest.save(suggestFile), 2000);
+    pushSuggest();
+  });
   send("bridge", bridge.apply(s.host_slots));
   startFocusWatch();
   if (s.nowplaying_enabled) startNowPlaying();
@@ -118,9 +133,18 @@ function schedulePoll() {
 }
 
 // The app in front, always: Autogenerate needs it; auto-switch (when on) acts on it.
+// The keypad's suggestion slot, for the app in front: sent only when it changes.
+function pushSuggest() {
+  if (!suggest || !link || !link.isOpen()) return;
+  const n = suggest.update(device.activeSlot);
+  if (n !== null) device.suggest(n).catch(() => {});
+}
+
 function startFocusWatch() {
   activewin.start((proc, title) => {
     autogen.usage.focus(proc, title);
+    suggest.focus(appKey(proc));   // learns with auto-switch on or off
+    pushSuggest();
     if (!store.load().auto_switch_enabled) return;
     const ctx = appKey(proc);   // a known context (chrome, vscode...) or the process name (generated profiles)
     if (ctx === currentContext) return;
@@ -199,6 +223,12 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
 // Child processes (media helper, window watcher) must go first or Electron won't exit.
 function cleanup() {
   clearInterval(pollTimer);
+  if (suggest) {
+    clearTimeout(suggestSaveTimer);
+    suggest.save(suggestFile);
+    // ponytail: best effort, the quit may beat it; the keypad forgets suggestions on a reboot anyway
+    if (link && link.isOpen()) device.suggest(0).catch(() => {});
+  }
   activewin.stop(); feeds.stopNowPlaying();
   if (bridge) bridge.dispose();
   globalShortcut.unregisterAll();
@@ -255,6 +285,8 @@ ipcMain.handle("backup:all", async () => {
 });
 
 ipcMain.handle("settings:get", () => store.load());
+ipcMain.handle("suggest:rows", () => suggest.rows());
+ipcMain.handle("suggest:clear", (_e, appId, slot) => { suggest.clear(appId, slot); suggest.save(suggestFile); pushSuggest(); return suggest.rows(); });
 ipcMain.handle("settings:set", (_e, patch) => {
   const before = store.load(), s = store.save(patch || {});
   if (before.auto_switch_enabled !== s.auto_switch_enabled) currentContext = "global";   // the next focus change applies
