@@ -22,6 +22,7 @@ extern uint8_t profileColor[3]; // the profile's line colour (pages are its stat
 bool loadProfile(int id);      // emits EVT:PROFILE
 bool loadProfileSafe(int id);  // on failure restore the default and retry
 bool loadPage(int idx);
+bool loadPageInto(int profile, int idx, JsonDocument &doc);   // any profile's page (0-based), no globals touched
 bool validateProfile(const char *path, String &err);   // syntax + shape, low RAM
 void gcTiles();                // delete /t files no profile references
 bool isProfilePath(const char *path, int *id = nullptr);

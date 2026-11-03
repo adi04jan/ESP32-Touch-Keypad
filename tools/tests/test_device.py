@@ -71,6 +71,7 @@ def make_profile():
     p2[0] = {"id": 1, "name": "Now Playing", "widget": "media", "span": [5, 3], "actions": [{"type": "media", "value": "PLAY_PAUSE"}]}
     p3 = [None] * 15
     p3[0] = key(1, "Back", [{"type": "back"}], icon="arrow-left")
+    p3[1] = key(2, "Prof", [{"type": "profile", "value": SLOT}], icon="layers")
     p3[14] = key(15, "Last", [{"type": "key", "value": "Z"}], icon="flag")
     return {"schema_version": 2, "profile_name": "Test", "color": [242, 183, 70], "default_delay": 5,
             "pages": [{"name": "One", "keys": p1}, {"name": "Two", "keys": p2}, {"name": "Three", "keys": p3}]}
@@ -133,6 +134,8 @@ def d(dev):
         dev.cmd("calibrate cancel")
         dev.cmd("sheet close")
         dev.cmd("shade close")
+    if "panel:" in st and " panel:0" not in st:   # a quick-bar panel left open
+        dev.cmd("panel 0")
     if "theme:glass" not in st:   # pixel checks below are written against Glass
         dev.cmd("theme glass")
         time.sleep(0.4)
@@ -356,6 +359,98 @@ def test_bar_draws_a_set_button_and_leaves_an_empty_one_blank(d):
     img = d.shot()
     assert any(img.getpixel((450, y)) != img.getpixel((432, y)) for y in range(96, 140))   # button 1: icon and label
     assert all(img.getpixel((450, y)) == img.getpixel((432, y)) for y in range(150, 200))  # button 2: blank
+
+
+BAR = {1: (450, 90 + 28), 3: (450, 90 + 2 * 57 + 28)}       # quick-bar button centres
+
+
+def evts(d, since, pre):
+    return [l for _, l in d.events[since:] if l.startswith(pre)]
+
+
+def test_bar_tap_opens_and_closes_a_panel(d):
+    set_qb(d); since = len(d.events)
+    d.touch(*BAR[3])
+    d.wait_event(rf"^EVT:PANEL 3 {SLOT} 3$", 2, since)
+    st = d.cmd("status")[0]
+    assert f"Profile:{SLOT} " in st and "page:1 " in st and "panel:3" in st
+    d.touch(*BAR[3]); d.wait_event(r"^EVT:PANEL 0$", 2, since)
+
+
+def test_panel_key_fires_from_the_panel_profile(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); since = len(d.events)
+    tap(d, 15)                                             # "Last" on page 3 types Z
+    d.wait_event(rf"^EVT:PKEY {SLOT} 3 15 1$", 2, since)
+    assert not evts(d, since, "EVT:KEY")
+    hid_reports(d, 1, 1)
+    assert "page:1 " in d.cmd("status")[0]
+
+
+def test_panel_folder_back_and_swipe_stay_in_the_panel(d):
+    set_qb(d); d.touch(*BAR[1]); time.sleep(0.4); since = len(d.events)
+    tap(d, 3)                                              # Folder -> page 2 of the panel (the player)
+    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 2$", 2, since)
+    d.swipe(100, 160, 400, 160)                            # back to the panel's page 1
+    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, since)
+    assert "page:1 " in d.cmd("status")[0]
+
+
+def test_back_on_the_panels_first_page_closes_it(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); since = len(d.events)
+    tap(d, 1)                                              # Back, on the page the button opens
+    d.wait_event(r"^EVT:PANEL 0$", 2, since)
+
+
+def test_profile_key_in_a_panel_closes_it(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); since = len(d.events)
+    tap(d, 2)
+    d.wait_event(r"^EVT:PANEL 0$", 2, since); d.wait_event(rf"^EVT:PROFILE {SLOT}$", 2, since)
+
+
+def test_host_setprofile_keeps_the_panel(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4)
+    d.ok(f"setprofile {SLOT}")
+    assert "panel:3" in d.cmd("status")[0]
+
+
+def test_upload_of_active_profile_keeps_the_panel(d):            # Review Focus 1
+    set_qb(d); d.ok("page 3"); d.touch(*BAR[1]); time.sleep(0.4)
+    d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+    st = d.cmd("status")[0]
+    assert "panel:1" in st and "page:3 " in st
+
+
+def test_saving_the_panels_profile_reloads_the_panel(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4)
+    p = json.loads(json.dumps(PROFILE)); p["pages"][2]["keys"][14]["actions"] = [{"type": "key", "value": "Y"}]
+    d.upload_text(f"profile{SLOT}.json", json.dumps(p)); time.sleep(0.4); since = len(d.events)
+    tap(d, 15)
+    d.wait_event(rf"^EVT:PKEY {SLOT} 3 15 1$", 2, since)
+    assert hid_reports(d, 1, 1)[0][4:6] == "1c"                   # Y (0x1C), not the old Z (0x1D)
+    d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+
+
+def test_button_to_a_missing_page_does_nothing(d):               # Review Focus 2
+    set_qb(d, [{"profile": SLOT, "page": 9, "icon": "music", "label": "Gone"}, None, None, None]); since = len(d.events)
+    d.touch(*BAR[1]); time.sleep(0.4)
+    assert not evts(d, since, "EVT:PANEL")
+
+
+def test_theme_change_keeps_the_panel(d):                        # Review Focus 3
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4)
+    d.ok("theme daylight"); time.sleep(0.5)
+    assert "panel:3" in d.cmd("status")[0]
+
+
+def test_panel_costs_little_heap_and_keeps_50_fps(d):
+    free = lambda: int(re.search(r"free:(\d+)", d.cmd("heap")[0]).group(1))
+    set_qb(d); before = free()
+    d.touch(*BAR[3]); time.sleep(0.4)
+    assert before - free() < 12000
+    frames, rate, _ = fps(d, lambda: tap(d, 15, 700))
+    assert rate >= FPS_FLOOR
+    d.cmd("panel 0"); time.sleep(0.4)
+    assert abs(free() - before) < 1024
 
 
 # ---------------------------------------------------------------- screen

@@ -134,6 +134,13 @@ struct QbBtn { int8_t prof, page; char icon[24], label[13]; bool ok; };   // pro
 static QbBtn qb[QB_BUTTONS];
 static bool qbParse(const char *json, QbBtn out[QB_BUTTONS], String &err);
 static void qbCheck();
+// The open panel (btn 0: none): its own page document, page line, back stack and toggles.
+static JsonDocument panelDoc;
+static struct { int8_t btn, prof, page, pages, back[8], depth; uint16_t toggles; uint8_t col[3]; } panel;
+static int viewPage() { return panel.btn ? panel.page : currentPage; }      // the page the grid shows
+static int viewPages() { return panel.btn ? panel.pages : pageCount; }
+static void startWave();
+static void startWipe();
 
 static uint32_t pairKey = 0;
 static uint32_t wipe0 = 0;           // keys <-> player, or a new theme: the new screen wipes in from the top
@@ -179,17 +186,23 @@ static uint32_t dmgPx() { uint32_t px = 0; for (int i = 0; i < dmgN; i++) px += 
 #define FRAME_PX 30000   // dirty pixels a frame takes icon frames up to (~0.45 us a pixel: inside 16 ms)
 
 // ---------------------------------------------------------------- helpers
-static JsonVariant keyAt(int c) { return pageDoc["keys"][c]; }
+static JsonVariant keyAt(int c) { return (panel.btn ? panelDoc : pageDoc)["keys"][c]; }
 static bool playerPage() { JsonVariant k = keyAt(0); return !k.isNull() && k["widget"].is<const char *>(); }
-static bool toggled(int c) { return currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
+static bool toggled(int c) { return panel.btn ? (panel.toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
+static C3 groundAt(int y) { return panel.btn && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
 static C3 tintOf(JsonVariant k) { return { (uint8_t)(k["led_color"][0] | 138), (uint8_t)(k["led_color"][1] | 152), (uint8_t)(k["led_color"][2] | 171) }; }
-static C3 lineC() {   // the profile's line colour, made to read on this theme's ground
-  C3 c = { profileColor[0], profileColor[1], profileColor[2] };
+static C3 lineOf(const uint8_t col[3]) {   // a profile's line colour, made to read on this theme's ground
+  C3 c = { col[0], col[1], col[2] };
   if (T->ks == KS_PIXEL) return T->txt2;   // four greens only
   for (int i = 0; T->light && i < 4 && ((c.r * 77 + c.g * 150 + c.b * 29) >> 8) > 140; i++) c = mix(c, BLACK, 50);
   return c;
 }
-static void emitKey(int c, char st) { Con.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st); }
+static C3 lineC() { return lineOf(profileColor); }
+static void emitKey(int c, char st) {
+  if (panel.btn) Con.printf("EVT:PKEY %d %d %d %c\n", panel.prof, panel.page + 1, c + 1, st);
+  else Con.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st);
+}
+static void emitPanel() { if (panel.btn) Con.printf("EVT:PANEL %d %d %d\n", panel.btn, panel.prof, panel.page + 1); else Con.println("EVT:PANEL 0"); }
 static void emitMode() { Con.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
 static int npPos() {
   int p = np.pos + (np.playing ? (int)((millis() - np.at) / 1000) : 0);
@@ -596,7 +609,7 @@ static void drawCell(int c, uint32_t now) {
   float sz = KEY * s, x = kx + (KEY - sz) / 2, y = ky + (KEY - sz) / 2;
   float sink = keySink(th, sz, pr), mx = kx + KEY / 2 + (th.ks == KS_PAPER || th.ks == KS_PIXEL ? sink : 0), my = ky + KEY / 2 + sink;
   if (isFolder(k)) {   // the next card of the stack, up and to the right; solid, so it stays on the fast path
-    C3 back = mix(tint, gfxGroundAt((int)y), 90);
+    C3 back = mix(tint, groundAt((int)y), 90);
     rrFill(x + 6 * s, y - 5 * s, sz, sz, th.crisp ? 3 : KEY_R * s, solidFill(back), A);
     rrRing(x + 6 * s + 0.5f, y - 5 * s + 0.5f, sz - 1, sz - 1, th.crisp ? 3 : KEY_R * s - 0.5f, th.crisp ? 2 : 1, mix(back, th.light ? BLACK : WHITE, 60), A);
   }
@@ -759,13 +772,14 @@ static void drawStatus() {
 }
 
 static void drawStations() {
-  if (pageCount < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
-  C3 line = lineC(), gnd = gfxGroundAt(310);
-  int total = (pageCount - 1) * 30, x0 = KEYS_W / 2 - total / 2;
+  int pages = viewPages(), cur = viewPage();
+  if (pages < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
+  C3 line = panel.btn ? lineOf(panel.col) : lineC(), gnd = groundAt(310);
+  int total = (pages - 1) * 30, x0 = KEYS_W / 2 - total / 2;
   fillRect(x0, 309, total, 2, T->crisp ? line : mix(line, BLACK, 77));
-  for (int i = 0; i < pageCount; i++) {
+  for (int i = 0; i < pages; i++) {
     int x = x0 + i * 30;
-    if (i == currentPage) { circle(x, 310, 8, gnd); circle(x, 310, 6, line); circle(x, 310, 3, litHi()); }
+    if (i == cur) { circle(x, 310, 8, gnd); circle(x, 310, 6, line); circle(x, 310, 3, litHi()); }
     else { circle(x, 310, 4, gnd); ringC(x, 310, 3, 2, line); }
   }
 }
@@ -1433,8 +1447,11 @@ static void drawBar(uint32_t now) {
     const QbBtn &b = qb[i];
     if (!b.prof || !b.ok) continue;
     int top = QB_Y0 + i * QB_H;
-    if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, TXT);
-    text(fLabelS, cx, top + 46, ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), TXT2, 255, AL_C);
+    bool lit = panel.btn == i + 1;   // the open panel's button: like the sheet's current tab
+    C3 ink = lit ? (T->crisp ? T->g1 : MAG) : TXT;
+    if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(T->crisp ? TXT : mix(PLY, MAG, T->light ? 34 : 41)));
+    if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, ink);
+    text(fLabelS, cx, top + 46, ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
   }
 }
 
@@ -1454,6 +1471,14 @@ void uiQuickbarPrint() { Con.printf("quickbar %s\n", qbJson().c_str()); }
 void uiProfilesChanged(int id) {
   qbCheck();
   markBar();
+  if (!panel.btn || panel.prof != id) return;   // Studio saved the profile behind the open panel: show it
+  char name[24];
+  int pages = 0;
+  uint8_t col[3];
+  if (!profileMeta(id, name, sizeof name, &pages, col) || panel.page >= pages || !loadPageInto(id, panel.page, panelDoc)) { uiPanel(0); return; }
+  panel.pages = min(pages, MAX_PAGES);
+  memcpy(panel.col, col, 3);
+  startWave();
 }
 
 // ---------------------------------------------------------------- frame
@@ -1466,6 +1491,7 @@ static void renderChunk(uint32_t now) {
   if (mode == M_PAIR) drawPair();
   else if (!sheetCovers) {
     gfxClip(0, bot > STATUS_H ? bot - 18 : 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet or shade (corners are 16 px)
+    if (panel.btn) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
     if (playerPage()) drawPlayer(now);
     else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
     drawStations();
@@ -1896,6 +1922,94 @@ void uiGoPage(int idx, bool push) {
 
 void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
 
+// ---------------------------------------------------------------- the quick bar's panels
+static void panelGo(int idx, bool push) {
+  if (!panel.btn || idx < 0 || idx >= panel.pages || idx == panel.page) return;
+  bool wasPlayer = playerPage();
+  if (!loadPageInto(panel.prof, idx, panelDoc)) {
+    if (!loadPageInto(panel.prof, panel.page, panelDoc)) uiPanel(0);
+    return;
+  }
+  if (push) {
+    if (panel.depth == (int)sizeof panel.back) memmove(panel.back, panel.back + 1, --panel.depth);
+    panel.back[panel.depth++] = panel.page;
+  }
+  panel.page = idx;
+  panel.toggles = 0;
+  emitPanel();
+  if (wasPlayer != playerPage()) startWipe(); else startWave();
+}
+
+// A swipe or a station: the page next door in whatever the grid shows.
+static void viewGo(int idx) {
+  if (panel.btn) panelGo(idx, false);
+  else if (idx >= 0 && idx < pageCount) uiGoPage(idx, false);
+}
+
+void uiPanel(int btn) {
+  if (btn < 0 || btn > QB_BUTTONS) return;
+  if (btn == 0) {
+    if (!panel.btn) return;
+    panelDoc.clear();
+    panel.btn = 0;
+    emitPanel();
+    startWipe();
+    markBar();
+    return;
+  }
+  QbBtn &b = qb[btn - 1];
+  char name[24];
+  int pages = 0;
+  uint8_t col[3];
+  bool was = panel.btn;
+  b.ok = b.prof && profileMeta(b.prof, name, sizeof name, &pages, col) && b.page <= pages && loadPageInto(b.prof, b.page - 1, panelDoc);
+  if (!b.ok) {   // gone since it was set: draw it empty, and don't leave a half-loaded panel up
+    if (was) { panel.btn = 0; panelDoc.clear(); emitPanel(); startWipe(); }
+    markBar();
+    return;
+  }
+  panel = {};
+  panel.btn = btn;
+  panel.prof = b.prof;
+  panel.page = b.page - 1;
+  panel.pages = min(pages, MAX_PAGES);
+  memcpy(panel.col, col, 3);
+  emitPanel();
+  startWipe();
+  markBar();
+}
+
+int uiPanelOpen() { return panel.btn; }
+
+void uiKeyGoPage(int idx) {
+  if (panel.btn) panelGo(idx, true);
+  else uiGoPage(idx, true);
+}
+
+void uiKeyBack() {
+  if (!panel.btn) { uiBack(); return; }
+  if (panel.depth) panelGo(panel.back[--panel.depth], false);
+  else uiPanel(0);   // back on the page the button opens: the panel goes
+}
+
+void uiKeyProfile(int n) {
+  uiPanel(0);
+  uiSetProfile(n);
+}
+
+static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 1-4 a button
+  if (x < BAR_X || x >= SCR_W || y < STATUS_H || y >= SCR_H) return -1;
+  if (y < QB_Y0) return 0;
+  int i = (y - QB_Y0) / QB_H;
+  return i < QB_BUTTONS ? i + 1 : -1;
+}
+
+static void barTap(int i) {
+  if (i < 1) return;   // the suggestion slot: below
+  feedbackClick();
+  uiPanel(panel.btn == i ? 0 : i);
+}
+
 void uiToast(const char *t) {
   int x, y, w, h;
   if (toastOn) { toastRect(&x, &y, &w, &h); mark(x - 6, y, w + 12, h + 16); }
@@ -2301,7 +2415,8 @@ static void runKey(int c, bool hold) {
   if (hold) { macroEngine.start(k, true, c); return; }
   const char *field = nullptr;
   if (k["toggle"] | false) {
-    if (currentPage < MAX_PAGES) toggles[currentPage] ^= 1 << c;
+    if (panel.btn) panel.toggles ^= 1 << c;
+    else if (currentPage < MAX_PAGES) toggles[currentPage] ^= 1 << c;
     if (!toggled(c) && k["off_actions"].size()) field = "off_actions";
   }
   macroEngine.start(k, false, c, field);
@@ -2371,6 +2486,12 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     return;
   }
 
+  // The quick bar takes taps only; a swipe that starts on it turns pages as anywhere else.
+  if ((kind == G_DOWN || kind == G_TAP) && x0 >= BAR_X && y0 >= STATUS_H) {
+    if (kind == G_TAP && barHit(x1, y1) == barHit(x0, y0)) barTap(barHit(x0, y0));
+    return;
+  }
+
   if (playerPage()) {
     if (kind == G_DOWN) {
       for (int i = 0; i < 6; i++)
@@ -2394,12 +2515,12 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       else if (onHostChip(x0, y0)) openHostMenu();
       else if (onProfChip(x0, y0)) uiOpenSheet(1);
       else if (y0 >= LINE_Y) {
-        int total = (pageCount - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
-        for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
-        if (best >= 0 && bd <= 16 && best != currentPage) uiGoPage(best, false);
+        int total = (viewPages() - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
+        for (int i = 0; i < viewPages(); i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
+        if (best >= 0 && bd <= 16 && best != viewPage()) viewGo(best);
       }
-    } else if (kind == G_SWIPE_L) { pressedBtn = -1; if (currentPage + 1 < pageCount) uiGoPage(currentPage + 1, false); }
-    else if (kind == G_SWIPE_R) { pressedBtn = -1; if (currentPage > 0) uiGoPage(currentPage - 1, false); }
+    } else if (kind == G_SWIPE_L) { pressedBtn = -1; viewGo(viewPage() + 1); }
+    else if (kind == G_SWIPE_R) { pressedBtn = -1; viewGo(viewPage() - 1); }
     else if (kind == G_SWIPE_U) { pressedBtn = -1; uiOpenSheet(); }
     else if (kind == G_SWIPE_D) { pressedBtn = -1; uiOpenShade(); }
     return;
@@ -2448,15 +2569,15 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       else if (c < 0 && onBell(x0, y0)) uiOpenShade();
       else if (c < 0 && onHostChip(x0, y0)) openHostMenu();
       else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
-      else if (c < 0 && y0 >= LINE_Y && pageCount > 1) {
-        int total = (pageCount - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
-        for (int i = 0; i < pageCount; i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
-        if (best >= 0 && bd <= 16 && best != currentPage) uiGoPage(best, false);
+      else if (c < 0 && y0 >= LINE_Y && viewPages() > 1) {
+        int total = (viewPages() - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
+        for (int i = 0; i < viewPages(); i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
+        if (best >= 0 && bd <= 16 && best != viewPage()) viewGo(best);
       }
       break;
     }
-    case G_SWIPE_L: release(pressed); if (currentPage + 1 < pageCount) uiGoPage(currentPage + 1, false); break;
-    case G_SWIPE_R: release(pressed); if (currentPage > 0) uiGoPage(currentPage - 1, false); break;
+    case G_SWIPE_L: release(pressed); viewGo(viewPage() + 1); break;
+    case G_SWIPE_R: release(pressed); viewGo(viewPage() - 1); break;
     case G_SWIPE_U: release(pressed); uiOpenSheet(); break;
     case G_SWIPE_D: release(pressed); uiOpenShade(); break;   // pull the shade down
   }

@@ -77,3 +77,10 @@ void uiRenderBench();                // `rbench`: render cost per scene part
 bool uiQuickbarSet(const char *json, String &err);
 void uiQuickbarPrint();                 // `quickbar <json>`
 void uiProfilesChanged(int id);         // a profile file was saved or removed: re-check the buttons
+// A panel: a button's page shown over the keys. The active profile and page stay as they are
+// underneath (host `page`/`setprofile` act on them); keys in it send EVT:PKEY instead of EVT:KEY.
+void uiPanel(int btn);                  // 1-4 opens that button's page (EVT:PANEL), 0 closes
+int  uiPanelOpen();                     // 0 or 1-4
+void uiKeyGoPage(int idx);              // a key's page action: moves an open panel, else uiGoPage(idx, true)
+void uiKeyBack();                       // a key's back: the panel's (closing it on its first page), else uiBack()
+void uiKeyProfile(int n);               // a key's profile action: closes a panel, switches

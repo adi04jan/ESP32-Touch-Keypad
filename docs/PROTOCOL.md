@@ -20,7 +20,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | Command | Reply (before the prompt) | Notes |
 |---|---|---|
 | `help` | one line listing the commands | |
-| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.2.1 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1 theme:glass pwr:usb bat:96` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `cal:1` once touch is calibrated; `theme:` the device theme; `pwr:` usb or bat; `bat:` the cell's charge in % (-1 when no cell is read) |
+| `status` | `Profile:1 loaded:1 idle:0 mode:ble ver:3.2.1 model:touch page:1 ble:0 pages:3 dry:0 ui:home cal:1 theme:glass pwr:usb bat:96` | `ble:1` when an encrypted host link is up; `dry:1` when HID is dry-run; `ui:` home, sheet, pair or cal; `panel:` the open quick-bar panel (0 none, 1-4); `cal:1` once touch is calibrated; `theme:` the device theme; `pwr:` usb or bat; `bat:` the cell's charge in % (-1 when no cell is read) |
 | `ls [dir]` | `path\tsize` per file, recursive, no leading slash (`t/3fa9c2d1.565\t10368`) | default `/` |
 | `cat <file>` | the file, ending with a newline | `ERR no such file: /x` |
 | `rm <file>` | `removed /x` or `ERR no such file: /x` | removing a profile also deletes tiles nothing references |
@@ -59,6 +59,7 @@ The wire contract between the firmware (`firmware/TouchKeypad/cli.cpp`), Studio
 | `notify list\|clear` | `notify <n> unread <u>` then `<i> <app>	<title>	<body>	<icon>` per notification / `notify clear` | the notifications, newest first |
 | `autogen busy\|done\|fail <text>` | `autogen <state>` | Studio's progress for `EVT:AUTOGEN`: `busy` holds a toast with a breathing dot, `done` and `fail` end it |
 | `toast <text>` | `toast` | a toast under the status band |
+| `panel [0-4]` | `panel <n>` | open quick-bar button n's page over the keys (what a tap on it does), 0 closes; no argument reports. The active profile and page stay as they are underneath: `page` and `setprofile` act on them, and a panel stays open through them. A button whose page is gone opens nothing |
 | `quickbar [set <json> \| clear]` | `quickbar <json>` or `ERR quickbar: <why>` | the quick bar right of the keys: exactly four entries, each `{"profile":1-16,"page":1-16,"icon":"<key icon>","label":"<12 chars at most>"}` or `null` (an empty button); a button whose profile or page is missing draws empty. NVS `kp/qbar`; a fresh keypad starts with Media (profile 1 page 2) and Git (profile 2 page 2), an updated one with four empty buttons |
 
 Cell ids are 1–15, row by row, on a 5×3 grid. Unknown commands reply `unknown`.
@@ -89,6 +90,8 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 f
 |---|---|
 | `EVT:KEY <page> <id> 1\|0\|H` | touch down on a key, release, hold fired. A tap's actions run on release, inside the same cell |
 | `EVT:PAGE <n>` | page shown (swipe, station, folder key, `back`, `page`) |
+| `EVT:PANEL <btn> <profile> <page>` / `EVT:PANEL 0` | a quick-bar panel opened, or moved to another page of its profile (folder, swipe, station, `back`), 1-based; `0`: closed (its button again, `back` on its first page, a profile key in it, `panel 0`) |
+| `EVT:PKEY <profile> <page> <id> 1\|0\|H` | a key in an open panel: like `EVT:KEY`, naming the panel's profile and page |
 | `EVT:PROFILE <n>` | profile loaded |
 | `EVT:UI home\|sheet\|pair\|cal\|shade\|menu` | the screen mode changed (`menu`: the status band's host list) |
 | `EVT:THEME <id>` | the theme changed (`theme`, or a chip in Settings → Display) |

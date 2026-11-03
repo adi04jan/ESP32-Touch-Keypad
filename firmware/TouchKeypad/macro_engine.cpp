@@ -104,13 +104,13 @@ void MacroEngine::execAction(JsonObjectConst act, unsigned long now) {
   } else if (!strcmp(type, "profile")) {
     int p = constrain((int)(act["value"] | 1), 1, NUM_PROFILES);
     finish();
-    uiSetProfile(p);
+    uiKeyProfile(p);
   } else if (!strcmp(type, "telephony")) {
     ok = hidSendTelephony(act["value"] | "");
   } else if (!strcmp(type, "page")) {
-    uiGoPage((act["value"] | 1) - 1, true);
+    uiKeyGoPage((act["value"] | 1) - 1);
   } else if (!strcmp(type, "back")) {
-    uiBack();
+    uiKeyBack();
   } else if (!strcmp(type, "host")) {
     ok = hidHostCombo(act["slot"] | -1);
   } else {

@@ -202,30 +202,36 @@ static bool seekPages(FileReader &r) {
   return false;
 }
 
-bool loadPage(int idx) {
-  if (idx < 0 || idx >= pageCount) return false;
-  File f = LittleFS.open(profilePath(currentProfile), "r");
+// Page idx (0-based) of any profile into doc; touches none of the active profile's state.
+bool loadPageInto(int profile, int idx, JsonDocument &doc) {
+  if (idx < 0 || idx >= MAX_PAGES) return false;
+  File f = LittleFS.open(profilePath(profile), "r");
   if (!f) return false;
   FileReader r(f);
   bool ok = seekPages(r);
   JsonDocument skip;
   skip.set(false);
   for (int i = 0; ok && i <= idx; i++) {
-    DeserializationError e = i == idx ? deserializeJson(pageDoc, r, NEST)
-                                      : deserializeJson(pageDoc, r, DeserializationOption::Filter(skip), NEST);
+    DeserializationError e = i == idx ? deserializeJson(doc, r, NEST)
+                                      : deserializeJson(doc, r, DeserializationOption::Filter(skip), NEST);
     int c = 0;
     if (!e && i < idx) while ((c = r.read()) >= 0 && c != ',' && c != ']') {}   // to the next page; ']': none
     ok = !e && (i == idx || c == ',');
   }
   f.close();
-  if (!ok || !pageDoc.is<JsonObject>()) {
-    Con.printf("Page %d of profile %d unreadable\n", idx + 1, currentProfile);
-    pageDoc.clear();
+  if (!ok || !doc.is<JsonObject>()) {
+    Con.printf("Page %d of profile %d unreadable\n", idx + 1, profile);
+    doc.clear();
     return false;
   }
-  if (!pageDoc["keys"].is<JsonArray>()) pageDoc["keys"].to<JsonArray>();
-  JsonArray keys = pageDoc["keys"];
+  if (!doc["keys"].is<JsonArray>()) doc["keys"].to<JsonArray>();
+  JsonArray keys = doc["keys"];
   while (keys.size() < NUM_CELLS) keys.add(nullptr);
+  return true;
+}
+
+bool loadPage(int idx) {
+  if (idx < 0 || idx >= pageCount || !loadPageInto(currentProfile, idx, pageDoc)) return false;
   currentPage = idx;
   return true;
 }

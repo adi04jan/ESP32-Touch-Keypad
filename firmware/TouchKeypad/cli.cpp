@@ -257,12 +257,15 @@ static bool runCommand(char *s) {
     Con.println("help ls [dir] cat <f> fsinfo reboot status setprofile <n> page <n> setkey|sethold <id> <json> "
                    "setface <id> <tile> <r> <g> <b> title <id> <text> show <id> ok|alert widget <name> <json> "
                    "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> notify <json>|list|clear shade [close] "
-                   "quickbar [set <json>|clear] ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
+                   "quickbar [set <json>|clear] panel [0-4] ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
   } else if (cmd == "status") {
-    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s cal:%d theme:%s pwr:%s bat:%d\n",
+    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
-                  uiModeName(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+                  uiModeName(), uiPanelOpen(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+  } else if (cmd == "panel") {
+    if (*arg) { a = atoi(arg); if (a < 0 || a > 4) Con.println("panel 0-4"); else uiPanel(a); }
+    Con.printf("panel %d\n", uiPanelOpen());
   } else if (cmd == "quickbar") {
     bool set = !strncmp(arg, "set", 3) && (arg[3] == ' ' || !arg[3]);
     String err;

@@ -191,6 +191,9 @@ Segments 44 px; the current one is magenta text on a magenta-tinted fill with a 
 ### Player
 128 px album art with a highlight, title in Head, album in Body, artist and source in Text 2 with the source in green and a live equalizer while playing, a seek bar (6 px track, cyan fill, white knob, 44 px touch band), tabular times, and six round controls with an 84 px cyan play key.
 
+### Quick bar
+A 60 px column at x 420–480 below the status band on the ply, a hairline on its left edge: the suggestion slot on top (58 px), a hairline, then four 57 px buttons, each a key icon (22 px) over its label (B612 11). An empty button is blank. The open panel's button is lit like the sheet's current tab (magenta on a magenta-tinted pill). A panel shows its page in the key area on the ply (not the ground), with its own page line in its profile's colour; it wipes in and out like a page-kind change.
+
 ### Overlays
 Toast: a 40 px pill under the status band with the profile line dot. Volume: a 260×76 panel with a 16-segment level and the number. Notification banner: a 464×54 pill dropped over the status band for 4 s, icon, title and age, then the app in cyan and the text. Shade: pulled down from the status band (a swipe down, or the bell) on the sheet's ply; brightness slider and the profile stepper (< name >), three host chips (connected: a green ring), then the newest three notifications on cards, a handle at the foot; a swipe sideways dismisses one, a swipe up or a tap below closes it. Host menu: the status band's host chip drops a 236 px list of the saved hosts (connected: green and a check) and Pair new host.
 
