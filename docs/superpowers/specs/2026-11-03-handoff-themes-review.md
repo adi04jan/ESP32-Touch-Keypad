@@ -42,4 +42,7 @@ Date: 2026-11-03 · branch `feature/handoff-themes` (from `release-3.12.1`) · i
 ## Validation status
 
 - Studio's preview of the new four was checked by screenshot (light Nordic Calm, slate Focus Slate, green Forest Field, plum Ember Atelier). **This is browser rendering, not the TFT.**
-- Firmware builds (90% of flash). The device tests for the new themes are written: a second-row chip picks Focus Slate; each new theme loads and paints its token ground. They and the before/after check that the existing six are unchanged **run on the keypad when it is reconnected**.
+- Firmware builds (90% of flash). On the keypad (test board 58:F8, the branch build), the full device suite passed 101/101. That includes the new tests: a second-row chip picks Focus Slate; each new theme loads and paints its token ground; all ten themes animate at the frame-rate floor.
+- Two test faults surfaced on the way and are fixed. The per-theme paint test had expected colours for the first six themes only, so it now covers those six while the new four have their own token test. The volume test raced a 5 s screenshot against a 1.6 s panel.
+- The run found a firmware bug the themes did not cause: the tile cache (four decoded custom tiles, 41 KB, never freed) left too little RAM for the player's cover and for an upload while the player shows. It is fixed in `c4ca1d0` with a device test, and the fix applies cleanly to `main` for a 3.12.x release.
+- Pending, waiting on the board (it dropped off USB): the full suite on the fixed build, twice without a reboot; the after screenshots of the six existing themes against the before set; the new four photographed on the TFT (home, a quick-bar panel, Settings › Display).
