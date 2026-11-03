@@ -540,6 +540,7 @@ def test_big_upload_streams_with_a_cover_loaded(d):
         assert json.loads("\n".join(d.cmd(f"cat /profile{SLOT}.json", 15))) == big_profile()
     finally:
         d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+        d.upload_bin("ram:artj", make_jpg())   # a raw cover is held for good: a JPEG one frees it off the player
 
 
 def make_jpg(rgb=(255, 0, 255)):
@@ -552,6 +553,33 @@ def make_jpg(rgb=(255, 0, 255)):
 
 def art_state(d):
     return dict(kv.split(":", 1) for kv in d.cmd("art")[0].split()[1:])
+
+
+def test_cached_tiles_give_way_to_the_cover_and_an_upload(d):
+    """Four custom tiles kept decoded hold 41 KB for good: opening the player, then an upload while it shows,
+    must still get their RAM (the tile cache is a cache: dropped, and read from flash again)."""
+    tiles = [c.to_bytes(2, "big") * (TILE_W * TILE_W) for c in (0x001F, 0xFFE0, 0x07FF, 0xF81F)]
+    crcs = [f"{zlib.crc32(t):08x}" for t in tiles]
+    p = json.loads(json.dumps(PROFILE))
+    for i, crc in enumerate(crcs):
+        k = key(i + 1, f"T{i}", [{"type": "key", "value": "F14"}], tile=crc)
+        del k["icon"]
+        p["pages"][0]["keys"][i] = k
+    try:
+        for crc, t in zip(crcs, tiles):
+            d.upload_bin(f"/t/{crc}.565", t)
+        d.upload_text(f"profile{SLOT}.json", json.dumps(p))
+        time.sleep(1.0)                                          # page 1 draws the four tiles: the cache is full
+        d.upload_bin("ram:artj", make_jpg())
+        d.ok("page 2"); time.sleep(0.6)
+        assert art_state(d)["decoded"] == "1", (art_state(d), d.cmd("heap"))
+        r = d.upload_text(f"profile{SLOT}.json", json.dumps(big_profile(), indent=1), timeout=30)
+        assert any(l.startswith("SAVED") for l in r), r
+    finally:
+        d.ok("page 1")
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+        for crc in crcs:
+            d.cmd(f"rm /t/{crc}.565")
 
 
 def test_jpeg_cover_decodes_when_the_player_opens_and_frees_after(d):
@@ -634,8 +662,8 @@ def test_pairing_screen(d):
 
 def test_volume_panel(d):
     base = d.shot().getpixel((250, 152))
-    d.ok('widget volume {"level":50,"muted":false}')
-    for _ in range(5):                                   # the panel slides in; a busy frame can lag a shot
+    for _ in range(5):   # a shot blocks ~5 s and the panel shows 1.6 s: send it again each try (it holds while shown)
+        d.ok('widget volume {"level":50,"muted":false}')
         time.sleep(0.3)
         if d.shot().getpixel((250, 152)) != base:
             return

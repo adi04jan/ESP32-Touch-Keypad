@@ -403,6 +403,7 @@ static void keyWell(const Theme &th, float x, float y, float sz, float r, int A)
 // Custom tile images, kept decoded for the last few keys drawn so an animation
 // does not read flash every frame (a read also stalls the UART interrupt).
 // Tiles (and GIF frames) are read from flash on a miss: about 31 ms for 10 KB, so keep four.
+// Dropped (uiDropTileCache) when the player's cover or an upload cannot get its RAM.
 #define TILE_CACHE 4
 static struct { char crc[9]; uint16_t *img; uint32_t used; } tileCache[TILE_CACHE];
 static int tileLoads = 0;   // flash reads this frame (uiTick resets it): GIF keys take turns
@@ -431,6 +432,10 @@ static const uint16_t *tileImage(const char *crc) {
   strlcpy(t.crc, crc, sizeof t.crc);
   t.used = millis();
   return t.img;
+}
+
+void uiDropTileCache() {
+  for (auto &t : tileCache) { free(t.img); t.img = nullptr; t.crc[0] = 0; }
 }
 
 static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
@@ -1696,6 +1701,7 @@ static void artSync() {
   bool want = playerPage();
   if (want && !artOk) {
     if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
+    if (!art) { uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }   // the tiles are a cache
     if (!art) return;   // no room: the player shows its placeholder
     uint32_t t = millis();
     artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 128);

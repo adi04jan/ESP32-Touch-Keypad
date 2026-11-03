@@ -58,6 +58,7 @@ static bool uploadOpen(const char *path, bool bin, size_t want, uint32_t crc) {
   up.jpg = bin && !strcmp(up.path, "/ram:artj");    // the cover as a JPEG, decoded when the player shows
   up.cap = up.art || up.jpg ? want : UP_CHUNK + CLI_LINE_MAX;
   up.buf = up.art ? uiArtBuffer(want) : up.jpg ? uiArtJpgBuffer(want) : (uint8_t *)malloc(up.cap);
+  if (!up.buf && !up.art && !up.jpg) { uiDropTileCache(); up.buf = (uint8_t *)malloc(up.cap); }   // the tiles are a cache
   if (!up.buf) { Con.printf("ERR no RAM for %u bytes\n", (unsigned)up.cap); return false; }
   if (!up.art && !up.jpg) {   // before RECV: the host sends nothing until then
     LittleFS.remove(tmpPath());

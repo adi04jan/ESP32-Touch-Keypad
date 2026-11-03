@@ -44,6 +44,7 @@ void uiArtDone(bool ok);
 uint8_t *uiArtJpgBuffer(size_t size);   // up to 16 KB
 void uiArtJpgDone(bool ok, size_t len);
 void uiArtPrint();                      // `art`: jpg:<bytes> decoded:<0|1> ms:<last decode>
+void uiDropTileCache();                 // frees the decoded custom tiles (up to 41 KB) when RAM is short; read again later
 void uiPairShow(uint32_t passkey);
 void uiPairClose();
 void uiOpenSheet(int tab = -1);         // tab 1 = Profiles (the status band's profile button)
