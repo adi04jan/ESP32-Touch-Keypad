@@ -173,6 +173,23 @@ setInterval(() => {   // GIF keys in the preview: every one on the same clock, a
   });
 }, 40);
 
+// The keypad draws a label in B612 13 when it fits its 84 px cell, else in B612 11 (ui.cpp drawCell).
+let labelCtx = null;
+function labelSmall(name) {
+  if (!name) return false;
+  labelCtx = labelCtx || document.createElement("canvas").getContext("2d");
+  labelCtx.font = "400 13px B612";
+  return labelCtx.measureText(name).width > 84;
+}
+// The quick bar's reply `quickbar [...]`: the four buttons, or null (an ERR, an old firmware).
+function parseQuickbar(text) {
+  const m = String(text || "").match(/^quickbar (\[.*\])\s*$/m);
+  try { return m ? JSON.parse(m[1]) : null; } catch (_) { return null; }
+}
+function qbarHTML() {
+  const qb = state.quickbar || [null, null, null, null];
+  return `<div class="qbar" aria-label="Quick bar"><div class="sug"></div>${qb.map((b) => `<div class="qb">${b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : ""}</div>`).join("")}</div>`;
+}
 function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
   if (!k) return `<div class="cell${sel}" data-k="${i}" role="button" tabindex="0" aria-label="Empty key ${i + 1}"><div class="well"></div></div>`;
@@ -182,7 +199,7 @@ function keyHTML(k, i) {
   const face = tileFace(k) || (k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`);
   const folder = (k.actions || []).length === 1 && k.actions[0].type === "page";   // drawn as a stack, like the keypad
   return `<div class="cell${sel}${folder ? " folder" : ""}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}${folder ? ` (folder: page ${k.actions[0].value})` : ""}">
-    ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl">${esc(k.name || " ")}</span></div>`;
+    ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl${labelSmall(k.name) ? " sm" : ""}">${esc(k.name || " ")}</span></div>`;
 }
 function playerHTML(sel) {
   const np = state.np, pct = np.len ? Math.min(100, (np.pos / np.len) * 100) : 0;
@@ -205,7 +222,8 @@ function devHTML() {
     <div class="sb"><span class="clock">${time}</span><span class="prof"><i></i>${esc(p.profile_name)} <span>${state.page + 1}/${p.pages.length}</span></span>
       <span class="host${up ? "" : " caution"}">${kicon(up ? "bluetooth" : "bluetooth-off", 18)}${up ? "Host" : "No host"}</span><span class="gear">${kicon("settings", 18)}</span></div>
     ${body}
-    ${p.pages.length > 1 ? `<div class="line" style="--n:${p.pages.length}">${p.pages.map((_, i) => `<i class="${i === state.page ? "cur" : ""}"></i>`).join("")}</div>` : ""}</div>`;
+    ${p.pages.length > 1 ? `<div class="line" style="--n:${p.pages.length}">${p.pages.map((_, i) => `<i class="${i === state.page ? "cur" : ""}"></i>`).join("")}</div>` : ""}
+    ${qbarHTML()}</div>`;
 }
 
 function renderTop() {
@@ -556,6 +574,8 @@ async function renderDevice() {
   const fs = c.connected ? await api.fsinfo() : null;
   const ble = c.connected ? await api.bleList() : { slots: [] };
   const look = c.connected ? await api.lookState() : null;
+  if (c.connected) state.quickbar = parseQuickbar(await api.command("quickbar"));
+  const learned = await api.suggestRows();
   if (gen !== state.devGen) return;
   if (look && look.theme) state.theme = look.theme;
   const dis = c.connected ? "" : "disabled";
@@ -581,6 +601,7 @@ async function renderDevice() {
       <label class="check"><input type="checkbox" id="d-ianim" ${look && look.iconMotion ? "checked" : ""} ${dis}> Moving icons · each icon acts out its key when it fires; a few idle keys play at a time, and a wave runs across now and then</label>
       <label class="field"><span>On battery, sleep after</span><select id="d-sleep" ${dis}>${[[1, "1 minute"], [2, "2 minutes"], [5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [30, "30 minutes"], [0, "Never"]].map(([m, t]) => `<option value="${m}" ${pw && pw.sleep === m ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <p class="hint">On battery the screen dims after 20 seconds and turns off after a minute; a touch wakes it. Asleep, the keypad wakes on a touch and reconnects. On USB it stays at full power.</p></div>
+    <div class="book wide" id="qb-book"></div>
     <div class="book"><h2>Bluetooth hosts</h2>
       ${ble.slots.length ? `<table><thead><tr><th>Host</th><th>State</th><th></th></tr></thead><tbody>${ble.slots.map((b) => `<tr><td>${esc(b.name)}</td><td>${b.state === "connected" ? `<span class="pill ok">connected</span>` : "paired"}</td><td><span class="row" style="flex-wrap:nowrap; justify-content:flex-end">${b.state !== "connected" ? `<button data-use="${b.slot}">Use</button>` : ""}<button class="danger" data-forget="${b.slot}">${ico("trash-2")} Forget</button></span></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">${c.connected ? "No host paired yet." : "Connect the keypad to see its hosts."}</p>`}
@@ -593,6 +614,8 @@ async function renderDevice() {
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>
       <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}" ${dis}>Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
+  state.qbDraft = JSON.parse(JSON.stringify(state.quickbar || [null, null, null, null]));
+  renderQuickbar(learned, dis);
   const cmd = (s) => api.command(s).then(renderDevice);
   $("d-detect").onclick = async () => { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
   $("d-connect").onclick = async () => { const p = $("d-port").value; if (!p) return; const r = await api.connect(p); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
@@ -632,6 +655,51 @@ async function renderDevice() {
     if (!confirm(`Replace profile ${state.slot} with this backup? The current version is backed up first.`)) return;
     state.slots[state.slot] = r.profile; state.page = 0; state.sel = 0; changed(["structure"]); showView("editor");
   }; });
+}
+
+/* ---- Device › Quick bar: four buttons, each a page of a profile; and what the suggestion learned ---- */
+const QB_ROWS = [["Media", "music"], ["Explorer", "folder-open"], ["Git", "git-branch"], ["Commands", "square-terminal"]];
+const pageName = (slot, page) => ((state.slots[slot] && state.slots[slot].pages[page - 1]) || {}).name || "";
+function renderQuickbar(learned, dis) {
+  const el = $("qb-book"), d = state.qbDraft, icons = Object.keys(window.KEY_ICONS || {}).sort();
+  const slots = Object.keys(state.slots).map(Number).filter((n) => !state.empty[n]);
+  const row = ([what], i) => {
+    const b = d[i], pages = b && state.slots[b.profile] ? state.slots[b.profile].pages : [];
+    return `<div class="qb-row"><b>${what}</b>
+      <select data-qb-prof="${i}" aria-label="${what}: profile" ${dis}><option value="">None</option>${slots.map((n) => `<option value="${n}" ${b && b.profile === n ? "selected" : ""}>${n} · ${esc(state.slots[n].profile_name)}</option>`).join("")}</select>
+      <select data-qb-page="${i}" aria-label="${what}: page" ${b ? "" : "disabled"} ${dis}>${pages.map((p, j) => `<option value="${j + 1}" ${b && b.page === j + 1 ? "selected" : ""}>${j + 1} · ${esc(p.name)}</option>`).join("")}</select>
+      <span class="qb-ic">${b ? kicon(b.icon, 22) : ""}</span>
+      <select data-qb-icon="${i}" aria-label="${what}: icon" ${b ? "" : "disabled"} ${dis}>${icons.map((n) => `<option ${b && b.icon === n ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <input data-qb-label="${i}" maxlength="12" aria-label="${what}: label" value="${esc(b ? b.label : "")}" ${b ? "" : "disabled"} ${dis}></div>`;
+  };
+  const ago = (t) => (t ? new Date(t).toLocaleDateString([], { day: "numeric", month: "short" }) : "—");
+  el.innerHTML = `<h2>Quick bar</h2>
+    <p class="hint">Four buttons right of the keys, on every profile. Each opens a page of one of your profiles over the keys; tap it again to close. The top slot suggests a profile for the app in front, learned from your own switches.</p>
+    ${QB_ROWS.map(row).join("")}
+    <div class="row"><button class="primary" id="qb-save" ${dis}>${ico("save")} Save to the keypad</button><span class="hint" id="qb-msg"></span></div>
+    <h3>What it learned</h3>
+    ${learned.length ? `<table><thead><tr><th>App</th><th>Profile</th><th>Weight</th><th></th></tr></thead><tbody>${learned.map((r) => `<tr><td>${esc(r.app)}</td><td>${r.slot} · ${esc((state.slots[r.slot] || {}).profile_name || "")}</td><td><span class="wbar" style="width:${Math.max(2, Math.min(120, r.weight * 8))}px"></span> ${r.presses} presses · ${ago(r.last)}</td><td><button class="ghost" data-sclear="${r.slot}" data-app="${esc(r.app)}">Clear</button></td></tr>`).join("")}</tbody></table>`
+      : `<p class="hint">Nothing learned yet: switch profile on the keypad and use it, and it shows up here.</p>`}`;
+  el.querySelectorAll("[data-qb-prof]").forEach((s) => { s.onchange = () => {
+    const i = +s.dataset.qbProf, v = +s.value;
+    d[i] = v ? { profile: v, page: 1, icon: (d[i] && d[i].icon) || QB_ROWS[i][1], label: pageName(v, 1).slice(0, 12) } : null;
+    renderQuickbar(learned, dis);
+  }; });
+  el.querySelectorAll("[data-qb-page]").forEach((s) => { s.onchange = () => {
+    const b = d[+s.dataset.qbPage], before = pageName(b.profile, b.page).slice(0, 12);
+    b.page = +s.value;
+    if (!b.label || b.label === before) b.label = pageName(b.profile, b.page).slice(0, 12);
+    renderQuickbar(learned, dis);
+  }; });
+  el.querySelectorAll("[data-qb-icon]").forEach((s) => { s.onchange = () => { d[+s.dataset.qbIcon].icon = s.value; renderQuickbar(learned, dis); }; });
+  el.querySelectorAll("[data-qb-label]").forEach((s) => { s.oninput = () => { d[+s.dataset.qbLabel].label = s.value; }; });
+  $("qb-save").onclick = async () => {
+    const r = await api.command(`quickbar set ${JSON.stringify(d)}`), err = String(r || "").match(/ERR quickbar: (.*)/);
+    if (err) { $("qb-msg").textContent = `Not saved: ${err[1]}`; return; }
+    state.quickbar = parseQuickbar(r);
+    $("qb-msg").textContent = "Saved. The keypad's bar shows it now.";
+  };
+  el.querySelectorAll("[data-sclear]").forEach((b) => { b.onclick = async () => renderQuickbar(await api.suggestClear(b.dataset.app, +b.dataset.sclear), dis); });
 }
 
 /* ---- Settings page ---- */
@@ -769,6 +837,7 @@ api.onEvent(({ type, data }) => {
         state.slot = data.activeSlot || state.slot;
         const look = await api.lookState();
         if (look && look.theme) state.theme = look.theme;
+        state.quickbar = parseQuickbar(await api.command("quickbar"));
         renderStudio();
         peekSlots();
       });

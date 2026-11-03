@@ -186,7 +186,7 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .sb .host.caution { color: var(--amber); }
 .dev .sb .gear { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(180deg, #242e39, #151c24); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px var(--hair-2); }
 .dev .sb svg { width: 18px; height: 18px; }
-.dev .grid { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; display: grid; grid-template-columns: repeat(5, 96px); grid-template-rows: repeat(3, 90px); }
+.dev .grid { position: absolute; left: 0; top: 30px; width: 420px; height: 270px; display: grid; grid-template-columns: repeat(5, 84px); grid-template-rows: repeat(3, 90px); }
 .dev .cell { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
 .dev .key { position: relative; width: 66px; height: 66px; border-radius: 19px; display: grid; place-items: center; color: #fff;
   background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d) 0%, color-mix(in oklab, var(--t) 36%, #070a0e) 100%);
@@ -221,25 +221,36 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .chat-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
 .chat-form textarea { resize: vertical; min-height: 44px; max-height: 160px; }
 /* A folder key (its only action opens a page): the next card of the stack peeks out behind it. */
-.dev .cell .stack { position: absolute; top: -1px; left: 21px; width: 66px; height: 66px; border-radius: 19px; background: var(--t); opacity: .65; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 60%, #fff); }
+.dev .cell .stack { position: absolute; top: -1px; left: 15px; width: 66px; height: 66px; border-radius: 19px; background: var(--t); opacity: .65; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--t) 60%, #fff); }
 .dev[data-theme="retro"] .cell .stack { border-radius: 3px; }
 .dev .cell.live .key { transform: scale(.92); filter: brightness(1.2); transition-duration: .08s; }
 .dev .cell.on .key { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--t) 30%, #fff), inset 0 0 0 2px var(--green), 0 12px 16px -12px #000; }
-.dev .cell.sel::after { content: ""; position: absolute; top: 1px; left: 12px; width: 72px; height: 72px; border-radius: 22px; box-shadow: 0 0 0 2px var(--cyan); pointer-events: none; }
-.dev .cell.drop::after { content: ""; position: absolute; top: 1px; left: 12px; width: 72px; height: 72px; border-radius: 22px; box-shadow: 0 0 0 2px var(--mag); }
-.dev .lbl { margin-top: 5px; font: 400 13px/14px var(--body); color: var(--lbl); max-width: 92px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev .cell.sel::after { content: ""; position: absolute; top: 1px; left: 6px; width: 72px; height: 72px; border-radius: 22px; box-shadow: 0 0 0 2px var(--cyan); pointer-events: none; }
+.dev .cell.drop::after { content: ""; position: absolute; top: 1px; left: 6px; width: 72px; height: 72px; border-radius: 22px; box-shadow: 0 0 0 2px var(--mag); }
+.dev .lbl.sm { font-size: 11px; }
+.dev .lbl { margin-top: 5px; font: 400 13px/14px var(--body); color: var(--lbl); max-width: 84px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dev .well { width: 66px; height: 66px; border-radius: 19px; background: var(--well); box-shadow: inset 0 2px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(255,255,255,.05); }
-.dev .tag { position: absolute; top: 0; right: 9px; height: 17px; padding: 0 5px; border-radius: 6px; font: 700 12px/17px var(--mono); }
+.dev .tag { position: absolute; top: 0; right: 3px; height: 17px; padding: 0 5px; border-radius: 6px; font: 700 12px/17px var(--mono); }
 .dev .tag.pc { color: var(--cyan); background: #071318; box-shadow: inset 0 0 0 1px var(--cyan); }
 .dev .tag.hold { color: var(--txt-2); background: #0b1015; box-shadow: inset 0 0 0 1px var(--hair-2); }
 .dev .tag.on { color: #062012; background: var(--green); }
-.dev .tag.anim { color: var(--mag); background: #150b14; box-shadow: inset 0 0 0 1px var(--mag); right: auto; left: 9px; }
-.dev .line { position: absolute; left: 0; right: 0; bottom: 3px; height: 16px; display: flex; justify-content: center; align-items: center; gap: 22px; }
+.dev .tag.anim { color: var(--mag); background: #150b14; box-shadow: inset 0 0 0 1px var(--mag); right: auto; left: 3px; }
+.dev .line { position: absolute; left: 0; right: 60px; bottom: 3px; height: 16px; display: flex; justify-content: center; align-items: center; gap: 22px; }
 .dev .line::before { content: ""; position: absolute; height: 2px; width: calc(var(--n) * 30px - 22px); background: color-mix(in oklab, var(--line) 70%, #000); }
 .dev .line i { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--g1); box-shadow: inset 0 0 0 2px var(--line); }
 .dev .line i.cur { width: 12px; height: 12px; background: var(--line); box-shadow: 0 0 0 2px var(--g1); }
 .dev .line i.cur::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: #fff; }
-.dev .mp { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; cursor: pointer; }
+.dev .mp { position: absolute; left: 0; top: 30px; width: 420px; height: 270px; cursor: pointer; }
+/* The quick bar (firmware/DESIGN.md › Quick bar): a 60 px column right of the keys. */
+.dev .qbar { position: absolute; left: 420px; top: 30px; width: 60px; bottom: 0; display: grid; grid-template-rows: 58px repeat(4, 57px);
+  background: color-mix(in oklab, var(--dg1), var(--txt) 6%); box-shadow: inset 1px 0 0 var(--hair); }
+.dev .qbar .sug { border-bottom: 1px solid var(--hair); margin: 0 8px 1px; }
+.dev .qbar .qb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--txt); font: 400 11px/1 var(--body); }
+.dev .qbar .qb svg { width: 22px; height: 22px; }
+.dev .qbar .qb span { color: var(--txt-2); max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qb-row { display: grid; grid-template-columns: 78px minmax(0, 1.4fr) minmax(0, 1.2fr) 26px minmax(0, 1fr) 110px; gap: 8px; align-items: center; margin: 6px 0; }
+.qb-ic { display: grid; place-items: center; }
+.wbar { display: inline-block; height: 6px; border-radius: 3px; background: var(--cyan); vertical-align: middle; margin-right: 6px; }
 .dev .mp.sel { box-shadow: inset 0 0 0 2px var(--cyan); }
 .dev .art { position: absolute; left: 16px; top: 14px; width: 128px; height: 128px; border-radius: 16px; overflow: hidden; display: grid; place-items: center;
   background: linear-gradient(180deg, color-mix(in oklab, #6b4fd8 74%, #10161d), color-mix(in oklab, #6b4fd8 36%, #070a0e)); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 14px 22px -14px #000; }
@@ -255,10 +266,10 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .seek b { position: absolute; top: -4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px #000; }
 .dev .times { position: absolute; left: 160px; right: 16px; top: 146px; display: flex; justify-content: space-between; font: 400 13px/1 var(--body); font-variant-numeric: tabular-nums; color: var(--txt-2); }
 .dev .ctl { position: absolute; left: 12px; right: 12px; top: 176px; height: 84px; display: flex; align-items: center; justify-content: space-between; }
-.dev .ctl span { --t: #8a98ab; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+.dev .ctl span { --t: #8a98ab; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; color: #fff;
   background: linear-gradient(180deg, color-mix(in oklab, var(--t) 40%, #10161d), color-mix(in oklab, var(--t) 14%, #070a0e)); box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 0 0 1px color-mix(in oklab, var(--t) 45%, transparent), 0 12px 16px -12px #000; }
 .dev .ctl span svg { width: 28px; height: 28px; }
-.dev .ctl .play { --t: var(--cyan); width: 84px; height: 84px; background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d), color-mix(in oklab, var(--t) 36%, #070a0e)); }
+.dev .ctl .play { --t: var(--cyan); width: 76px; height: 76px; background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d), color-mix(in oklab, var(--t) 36%, #070a0e)); }
 .dev .ctl .play svg { width: 36px; height: 36px; }
 .dev .ctl .mute { width: 56px; height: 56px; } .dev .ctl .mute svg { width: 24px; height: 24px; }
 

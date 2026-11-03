@@ -2,6 +2,8 @@
 
 Date: 2026-10-21 · Studio 3.11.0 → 3.12.0 · firmware unchanged (3.11.0)
 
+> Note (2026-11-03): the quick bar ships first as 3.12.0, so this redesign becomes 3.13.0. The keypad grid is now five 84 px columns over 420 px, so the key "Test" taps at `x = col·84 + 42`.
+
 ## Why
 
 A review of Studio 3.11 (renderer/app.js, main.js, services/, screenshots of the three views
