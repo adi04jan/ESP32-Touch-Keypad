@@ -189,7 +189,7 @@ Lit glass, 66 px, glyph 36 px white (40 px masks scaled on device). Tags sit on 
 Segments 44 px; the current one is magenta text on a magenta-tinted fill with a magenta edge. The sheet's tab rail is a column of 48 px soft keys; the current tab is magenta on a magenta-tinted pill.
 
 ### Player
-128 px album art with a highlight, title in Head, album in Body, artist and source in Text 2 with the source in green and a live equalizer while playing, a seek bar (6 px track, cyan fill, white knob, 44 px touch band), tabular times, and six round controls with an 84 px cyan play key.
+128 px album art with a highlight, title in Head, album in Body, artist and source in Text 2 with the source in green and a live equalizer while playing, a seek bar (6 px track, cyan fill, white knob, 44 px touch band), tabular times, and six round controls (58 px) with a 76 px cyan play key, all left of the quick bar.
 
 ### Quick bar
 A 60 px column at x 420–480 below the status band on the ply, a hairline on its left edge: the suggestion slot on top (58 px), a hairline, then four 57 px buttons, each a key icon (22 px) over its label (B612 11). An empty button is blank. The open panel's button is lit like the sheet's current tab (magenta on a magenta-tinted pill). A panel shows its page in the key area on the ply (not the ground), with its own page line in its profile's colour; it wipes in and out like a page-kind change.

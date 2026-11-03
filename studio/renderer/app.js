@@ -614,7 +614,8 @@ async function renderDevice() {
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>
       <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}" ${dis}>Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
-  state.qbDraft = JSON.parse(JSON.stringify(state.quickbar || [null, null, null, null]));
+  // The form keeps unsaved edits across re-renders (every control here, a profile or page change, re-renders).
+  if (!state.qbDirty) state.qbDraft = JSON.parse(JSON.stringify(state.quickbar || [null, null, null, null]));
   renderQuickbar(learned, dis);
   const cmd = (s) => api.command(s).then(renderDevice);
   $("d-detect").onclick = async () => { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
@@ -683,20 +684,23 @@ function renderQuickbar(learned, dis) {
   el.querySelectorAll("[data-qb-prof]").forEach((s) => { s.onchange = () => {
     const i = +s.dataset.qbProf, v = +s.value;
     d[i] = v ? { profile: v, page: 1, icon: (d[i] && d[i].icon) || QB_ROWS[i][1], label: pageName(v, 1).slice(0, 12) } : null;
+    state.qbDirty = true;
     renderQuickbar(learned, dis);
   }; });
   el.querySelectorAll("[data-qb-page]").forEach((s) => { s.onchange = () => {
     const b = d[+s.dataset.qbPage], before = pageName(b.profile, b.page).slice(0, 12);
     b.page = +s.value;
     if (!b.label || b.label === before) b.label = pageName(b.profile, b.page).slice(0, 12);
+    state.qbDirty = true;
     renderQuickbar(learned, dis);
   }; });
-  el.querySelectorAll("[data-qb-icon]").forEach((s) => { s.onchange = () => { d[+s.dataset.qbIcon].icon = s.value; renderQuickbar(learned, dis); }; });
-  el.querySelectorAll("[data-qb-label]").forEach((s) => { s.oninput = () => { d[+s.dataset.qbLabel].label = s.value; }; });
+  el.querySelectorAll("[data-qb-icon]").forEach((s) => { s.onchange = () => { d[+s.dataset.qbIcon].icon = s.value; state.qbDirty = true; renderQuickbar(learned, dis); }; });
+  el.querySelectorAll("[data-qb-label]").forEach((s) => { s.oninput = () => { d[+s.dataset.qbLabel].label = s.value; state.qbDirty = true; }; });
   $("qb-save").onclick = async () => {
     const r = await api.command(`quickbar set ${JSON.stringify(d)}`), err = String(r || "").match(/ERR quickbar: (.*)/);
     if (err) { $("qb-msg").textContent = `Not saved: ${err[1]}`; return; }
     state.quickbar = parseQuickbar(r);
+    state.qbDirty = false;
     $("qb-msg").textContent = "Saved. The keypad's bar shows it now.";
   };
   el.querySelectorAll("[data-sclear]").forEach((b) => { b.onclick = async () => renderQuickbar(await api.suggestClear(b.dataset.app, +b.dataset.sclear), dis); });

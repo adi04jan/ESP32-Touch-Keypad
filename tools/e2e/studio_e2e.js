@@ -242,7 +242,7 @@ test("Music: the PC's media session reaches Studio and the keypad", async () => 
 
 test("Music: tap-to-seek on the keypad moves the PC's track", async () => {
   await sleep(1500);
-  await cmd("touch 388 153 80");                       // 75% along the seek bar
+  await cmd("touch 343 153 80");                       // 75% along the seek bar (x 160-404)
   await until("session near 75%", async () => mediaLines.some((l) => { const m = l.match(/^POS (\d+)/); return m && +m[1] >= 170 && +m[1] <= 190; }), 10000, 200);
 });
 

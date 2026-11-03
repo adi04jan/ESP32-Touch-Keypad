@@ -15,7 +15,7 @@ const HW = process.env.KP_HW === "1" || process.env.npm_lifecycle_event === "tes
 const SLOT = 14;   // scratch: 1-13 hold the owner's profiles
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 5000) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error("timed out waiting"); await sleep(20); } };
-const cellXY = (id) => [((id - 1) % 5) * 96 + 48, 30 + Math.floor((id - 1) / 5) * 90 + 40];
+const cellXY = (id) => [((id - 1) % 5) * 84 + 42, 30 + Math.floor((id - 1) / 5) * 90 + 40];
 
 let link, dev, settings, found = null;   // what the keypad was doing before the tests, put back after
 const rx = [], keys = [], pages = [], profiles = [];

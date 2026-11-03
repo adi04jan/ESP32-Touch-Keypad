@@ -444,6 +444,23 @@ def test_theme_change_keeps_the_panel(d):                        # Review Focus 
     assert "panel:3" in d.cmd("status")[0]
 
 
+def test_back_after_a_swipe_in_a_panel_returns_to_its_first_page(d):
+    set_qb(d); d.touch(*BAR[1]); time.sleep(0.4); since = len(d.events)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 2$", 2, since)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 3$", 2, since)
+    time.sleep(0.4); mark = len(d.events)
+    tap(d, 1)                                              # Back, on a page reached by swiping
+    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, mark)      # the page the button opens, not closed
+    assert "EVT:PANEL 0" not in evts(d, mark, "EVT:PANEL")
+
+
+def test_tapping_an_empty_button_leaves_the_panel_open(d):
+    set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); since = len(d.events)
+    d.touch(450, 90 + 57 + 28)                             # button 2: empty in QB_TEST
+    time.sleep(0.4)
+    assert not evts(d, since, "EVT:PANEL") and "panel:3" in d.cmd("status")[0]
+
+
 def test_panel_costs_little_heap_and_keeps_50_fps(d):
     free = lambda: int(re.search(r"free:(\d+)", d.cmd("heap")[0]).group(1))
     set_qb(d); before = free()

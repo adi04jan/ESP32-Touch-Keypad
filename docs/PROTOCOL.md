@@ -83,7 +83,7 @@ Cell ids are 1–15, row by row, on a 5×3 grid. Unknown commands reply `unknown
 | `bench` | SPI fill and push timings | |
 | `rbench` | `rbench <name> <us>` per primitive | renderer timings |
 
-Screen coordinates: landscape 480×320, a 30 px status band, then cells 96×90 from y = 30, then the page stations at y 310. The cell centre for id n is x = ((n−1) mod 5)·96 + 48, y = 30 + ⌊(n−1)/5⌋·90 + 40. The gear sits at (466, 14). On the player page: seek bar x 160–464 around y 153; transport buttons at y 248, x 40 (mute), 112 (vol −), 188 (previous), 274 (play/pause), 360 (next), 436 (vol +).
+Screen coordinates: landscape 480×320, a 30 px status band, then cells 84×90 over the left 420 px from y = 30, then the page stations at y 310 (centred on x 210). The cell centre for id n is x = ((n−1) mod 5)·84 + 42, y = 30 + ⌊(n−1)/5⌋·90 + 40. The quick bar fills x 420–480 below the band: the suggestion slot centred at (450, 59), buttons 1–4 centred at x 450, y 118, 175, 232, 289. The gear sits at (466, 14). On the player page: seek bar x 160–404 around y 153; transport buttons at y 248, x 35 (mute), 98 (vol −), 165 (previous), 240 (play/pause), 315 (next), 382 (vol +).
 
 ## Events (device → host)
 

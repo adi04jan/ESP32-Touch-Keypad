@@ -51,6 +51,7 @@ static const C3 WHITE = HEXC(0xffffff), BLACK = HEXC(0x000000);
 #define SEG_OFF (T->segOff)
 
 #define KEY 66
+#define LABEL_W (CELL_W - 4)   // a label's widest: neighbours keep a 4 px gap (92 px at 13 px is 78 at 11: still whole)
 #define KEY_R (T->keyR)
 #define LINE_Y 300
 #define POP_MS 120
@@ -136,7 +137,7 @@ static bool qbParse(const char *json, QbBtn out[QB_BUTTONS], String &err);
 static void qbCheck();
 // The open panel (btn 0: none): its own page document, page line, back stack and toggles.
 static JsonDocument panelDoc;
-static struct { int8_t btn, prof, page, pages, back[8], depth; uint16_t toggles; uint8_t col[3]; } panel;
+static struct { int8_t btn, prof, page, pages, start, back[8], depth; uint16_t toggles; uint8_t col[3]; } panel;   // start: the page the button opens
 // The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
 static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
 static struct { int8_t prof, page; char name[24]; uint8_t col[3]; } backTo;   // prof 0: no way back
@@ -667,15 +668,15 @@ static void drawCell(int c, uint32_t now) {
     char up[24];
     strlcpy(up, k["name"] | "", sizeof up);
     for (char *p = up; *p; p++) *p = toupper((uint8_t)*p);
-    Font &lf = textW(fRead, up) <= CELL_W ? fRead : fReadS;   // steps down like the other themes' labels
-    String lbl = ellipsize(lf, up, CELL_W);
+    Font &lf = textW(fRead, up) <= LABEL_W ? fRead : fReadS;   // steps down like the other themes' labels
+    String lbl = ellipsize(lf, up, LABEL_W);
     text(lf, cx + CELL_W / 2, (int)(ky + KEY + 5 + fRead.asc), lbl.c_str(), LBL, A, AL_C);
   } else {
-    // A label that fit the old 96 px cell (92 px) still fits whole: too wide for 84 px at 13 px, it
+    // A label that fit the old 96 px cell (92 px) still fits whole: too wide for 80 px at 13 px, it
     // steps down to 11 px (92 x 11/13 = 78) before anything is cut.
     const char *name = k["name"] | "";
-    Font &lf = textW(fLabel, name) <= CELL_W ? fLabel : fLabelS;
-    String lbl = ellipsize(lf, name, CELL_W);
+    Font &lf = textW(fLabel, name) <= LABEL_W ? fLabel : fLabelS;
+    String lbl = ellipsize(lf, name, LABEL_W);
     text(lf, cx + CELL_W / 2, (int)(ky + KEY + 5 + fLabel.asc), lbl.c_str(), LBL, A, AL_C);
   }
 
@@ -1988,7 +1989,7 @@ void uiPanel(int btn) {
   panel = {};
   panel.btn = btn;
   panel.prof = b.prof;
-  panel.page = b.page - 1;
+  panel.page = panel.start = b.page - 1;
   panel.pages = min(pages, MAX_PAGES);
   memcpy(panel.col, col, 3);
   emitPanel();
@@ -2006,6 +2007,7 @@ void uiKeyGoPage(int idx) {
 void uiKeyBack() {
   if (!panel.btn) { uiBack(); return; }
   if (panel.depth) panelGo(panel.back[--panel.depth], false);
+  else if (panel.page != panel.start) panelGo(panel.start, false);   // reached by a swipe or a station: its first page
   else uiPanel(0);   // back on the page the button opens: the panel goes
 }
 
@@ -2031,7 +2033,7 @@ static void barTap(int i) {
     }
     return;
   }
-  if (i < 1) return;
+  if (i < 1 || !qb[i - 1].prof || !qb[i - 1].ok) return;   // an empty button does nothing
   feedbackClick();
   uiPanel(panel.btn == i ? 0 : i);
 }

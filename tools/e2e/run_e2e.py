@@ -43,7 +43,7 @@ TEXT = "kp-e2e: Hello, Paper Theatre 123!"
 # 120 characters in one go: a dropped or merged HID report shows up as a missing letter
 LONG = " Sphinx of black quartz, judge my vow. The quick brown fox jumps over the lazy dog! 0123456789 Pack my box, end."
 EXPECT = TEXT + "K\r\nsecond lin[on][off]" + LONG   # text, Shift+K, multiline, one backspace, toggle on then off, the long line
-PLAY_XY = (274, 248)                           # the player page's Play/Pause button
+PLAY_XY = (240, 248)                           # the player page's Play/Pause button (left of the quick bar)
 HOST_OK = ROOT / "build" / "e2e-host-ok.txt"
 HOST_SLOT = 5                                  # Ctrl+Alt+Shift+F18
 HOST_CMD = f"run echo host-ok> {HOST_OK}"
@@ -70,7 +70,7 @@ def profile():
 
 def cell_xy(cell):
     i = cell - 1
-    return (i % 5) * 96 + 48, 30 + (i // 5) * 90 + 40
+    return (i % 5) * 84 + 42, 30 + (i // 5) * 90 + 40   # 84 px cells over the left 420 px
 
 
 def typed():
