@@ -188,7 +188,8 @@ function parseQuickbar(text) {
 }
 function qbarHTML() {
   const qb = state.quickbar || [null, null, null, null];
-  return `<div class="qbar" aria-label="Quick bar"><div class="sug"></div>${qb.map((b) => `<div class="qb">${b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : ""}</div>`).join("")}</div>`;
+  // Entry 1 opens with a swipe up; the bar shows entries 2-4, then Settings.
+  return `<div class="qbar" aria-label="Quick bar"><div class="sug"></div>${qb.slice(1).map((b) => `<div class="qb">${b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : ""}</div>`).join("")}<div class="qb">${kicon("settings", 22)}<span>Settings</span></div></div>`;
 }
 function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
@@ -221,7 +222,7 @@ function devHTML() {
   const body = isPlayerPage(page) ? playerHTML(state.sel === 0) : `<div class="grid">${page.keys.map(keyHTML).join("")}</div>`;
   return `<div class="dev" data-theme="${state.theme}" style="--line:${line}">
     <div class="sb"><span class="clock">${time}</span><span class="prof"><i></i>${esc(p.profile_name)} <span>${state.page + 1}/${p.pages.length}</span></span>
-      <span class="host${up ? "" : " caution"}">${kicon(up ? "bluetooth" : "bluetooth-off", 18)}${up ? "Host" : "No host"}</span><span class="gear">${kicon("settings", 18)}</span></div>
+      <span class="host${up ? "" : " caution"}">${kicon(up ? "bluetooth" : "bluetooth-off", 18)}${up ? "Host" : "No host"}</span></div>
     ${body}
     ${p.pages.length > 1 ? `<div class="line" style="--n:${p.pages.length}">${p.pages.map((_, i) => `<i class="${i === state.page ? "cur" : ""}"></i>`).join("")}</div>` : ""}
     ${qbarHTML()}</div>`;
@@ -660,7 +661,7 @@ async function renderDevice() {
 }
 
 /* ---- Device › Quick bar: four buttons, each a page of a profile; and what the suggestion learned ---- */
-const QB_ROWS = [["Media", "music"], ["Explorer", "folder-open"], ["Git", "git-branch"], ["Commands", "square-terminal"]];
+const QB_ROWS = [["Swipe up", "music"], ["Explorer", "folder-open"], ["Git", "git-branch"], ["Commands", "square-terminal"]];
 const pageName = (slot, page) => ((state.slots[slot] && state.slots[slot].pages[page - 1]) || {}).name || "";
 function renderQuickbar(learned, dis) {
   const el = $("qb-book"), d = state.qbDraft, icons = Object.keys(window.KEY_ICONS || {}).sort();
@@ -676,7 +677,7 @@ function renderQuickbar(learned, dis) {
   };
   const ago = (t) => (t ? new Date(t).toLocaleDateString([], { day: "numeric", month: "short" }) : "—");
   el.innerHTML = `<h2>Quick bar</h2>
-    <p class="hint">Four buttons right of the keys, on every profile. Each opens a page of one of your profiles over the keys; tap it again to close. The top slot suggests a profile for the app in front, learned from your own switches.</p>
+    <p class="hint">Each opens a page of one of your profiles over the keys, on every profile. The first opens with a swipe up from the keys. The other three are buttons right of the keys, with Settings below them; tap one again to close it. The top slot suggests a profile for the app in front, learned from your own switches.</p>
     ${QB_ROWS.map(row).join("")}
     <div class="row"><button class="primary" id="qb-save" ${dis}>${ico("save")} Save to the keypad</button><span class="hint" id="qb-msg"></span></div>
     <h3>What it learned</h3>

@@ -736,10 +736,8 @@ static bool onHostChip(int x, int y) { return y < STATUS_H && x >= hostChipX - 2
 static void drawStatus() {
   if (!gfxHits(0, 0, SCR_W, STATUS_H)) return;
   fillRect(0, 28, SCR_W, T->crisp ? 2 : 1, HAIR, T->hairA);
-  // Right to left: settings, the battery, the host switch (a tap lists the hosts), the bell.
-  rrFill(454, 2, 24, 24, 12, ctlFill());
-  glyph(iconFind("settings", true), true, 466, 14, 18, TXT);
-  int right = 424 - drawBattery(440, 14);
+  // Right to left: the battery, the host switch (a tap lists the hosts), the bell. Settings is on the quick bar.
+  int right = 450 - drawBattery(466, 14);
   bool pairing = blePairing(), up = hidConnected();
   String host = pairing ? String("Pairing") : up ? String(hostName) : String("No host");
   host = ellipsize(fRead, host.c_str(), 96);
@@ -1488,16 +1486,19 @@ static void drawBar(uint32_t now) {
     circle(cx, SUG_Y + 21, 5, lc);
     text(fLabelS, cx, SUG_Y + 43, ellipsize(fLabelS, sug.name, BAR_W - 14).c_str(), TXT, 255, AL_C);
   }
-  for (int i = 0; i < QB_BUTTONS; i++) {
-    const QbBtn &b = qb[i];
-    if (!b.prof || !b.ok) continue;
-    int top = QB_Y0 + i * QB_H;
-    bool lit = panel.btn == i + 1;   // the open panel's button: like the sheet's current tab
+  // Rows 0-2: entries 2-4 (entry 1 is the swipe-up page); row 3: Settings, always there.
+  for (int row = 0; row < QB_BUTTONS; row++) {
+    int top = QB_Y0 + row * QB_H;
+    bool settings = row == QB_BUTTONS - 1;
+    const QbBtn &b = qb[settings ? 0 : row + 1];
+    if (!settings && (!b.prof || !b.ok)) continue;
+    bool lit = !settings && panel.btn == row + 2;   // the open panel's button: like the sheet's current tab
     bool inked = T->crisp && T->light;   // Retro: an ink fill
     C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
     if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
-    if (const IconDef *ic = iconFind(b.icon, false)) glyph(ic, false, cx, top + 22, 22, ink);
-    text(fLabelS, cx, top + 46, ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
+    const IconDef *ic = settings ? iconFind("settings", true) : iconFind(b.icon, false);
+    if (ic) glyph(ic, settings, cx, top + 22, 22, ink);
+    text(fLabelS, cx, top + 46, settings ? "Settings" : ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
   }
 }
 
@@ -2065,11 +2066,12 @@ void uiKeyBack() {
 
 void uiKeyProfile(int n) { uiSetProfile(n, "touch"); }
 
-static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 1-4 a button
+#define QB_SETTINGS 5
+static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 2-4 entries 2-4 (rows 0-2), QB_SETTINGS row 3
   if (x < BAR_X || x >= SCR_W || y < STATUS_H || y >= SCR_H) return -1;
   if (y < QB_Y0) return 0;
-  int i = (y - QB_Y0) / QB_H;
-  return i < QB_BUTTONS ? i + 1 : -1;
+  int row = (y - QB_Y0) / QB_H;
+  return row < QB_BUTTONS - 1 ? row + 2 : row == QB_BUTTONS - 1 ? QB_SETTINGS : -1;
 }
 
 static void barTap(int i) {
@@ -2085,7 +2087,8 @@ static void barTap(int i) {
     }
     return;
   }
-  if (i < 1 || !qb[i - 1].prof || !qb[i - 1].ok) return;   // an empty button does nothing
+  if (i == QB_SETTINGS) { feedbackClick(); uiOpenSheet(); return; }
+  if (i < 2 || i > QB_BUTTONS || !qb[i - 1].prof || !qb[i - 1].ok) return;   // an empty button does nothing
   feedbackClick();
   uiPanel(panel.btn == i ? 0 : i);
 }
@@ -2634,8 +2637,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
         np.pos = sec;
         np.at = now;
         mark(SEEK_X - 8, 140, SEEK_W + 16, 56);
-      } else if (y0 < STATUS_H && x0 >= 440) uiOpenSheet();
-      else if (onBell(x0, y0)) uiOpenShade();
+      } else if (onBell(x0, y0)) uiOpenShade();
       else if (onHostChip(x0, y0)) openHostMenu();
       else if (onProfChip(x0, y0)) uiOpenSheet(1);
       else if (y0 >= LINE_Y) {
@@ -2645,8 +2647,8 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       }
     } else if (kind == G_SWIPE_L) { pressedBtn = -1; viewGo(viewPage() + 1); }
     else if (kind == G_SWIPE_R) { pressedBtn = -1; viewGo(viewPage() - 1); }
-    else if (kind == G_SWIPE_U) { pressedBtn = -1; uiOpenSheet(); }
-    else if (kind == G_SWIPE_D) { pressedBtn = -1; uiOpenShade(); }
+    else if (kind == G_SWIPE_U) { pressedBtn = -1; if (panel.btn != 1 && qb[0].prof && qb[0].ok) uiPanel(1); }   // entry 1: Media (none set: nothing)
+    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (panel.btn == 1) uiPanel(0); else uiOpenShade(); }
     return;
   }
 
@@ -2689,7 +2691,6 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       bool fire = c >= 0 && !holdFired && hit(x1, y1) == c;
       release(c);
       if (fire) { runKey(c, false); if (c >= 0) uiFlash(c, true); }
-      else if (c < 0 && y0 < STATUS_H && x0 >= 440) uiOpenSheet();
       else if (c < 0 && onBell(x0, y0)) uiOpenShade();
       else if (c < 0 && onHostChip(x0, y0)) openHostMenu();
       else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
@@ -2702,7 +2703,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     }
     case G_SWIPE_L: release(pressed); viewGo(viewPage() + 1); break;
     case G_SWIPE_R: release(pressed); viewGo(viewPage() - 1); break;
-    case G_SWIPE_U: release(pressed); uiOpenSheet(); break;
-    case G_SWIPE_D: release(pressed); uiOpenShade(); break;   // pull the shade down
+    case G_SWIPE_U: release(pressed); if (panel.btn != 1 && qb[0].prof && qb[0].ok) uiPanel(1); break;   // entry 1: Media (none set: nothing)
+    case G_SWIPE_D: release(pressed); if (panel.btn == 1) uiPanel(0); else uiOpenShade(); break;   // Media closes, else the shade comes down
   }
 }

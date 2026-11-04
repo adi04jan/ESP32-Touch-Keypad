@@ -346,8 +346,10 @@ def test_player_controls_fit_left_of_the_bar(d):
 
 
 # ---------------------------------------------------------------- quick bar
-QB_TEST = [{"profile": SLOT, "page": 1, "icon": "music", "label": "Media"}, None,
+QB_TEST = [{"profile": SLOT, "page": 1, "icon": "music", "label": "Media"},          # entry 1: the swipe-up page
+           {"profile": SLOT, "page": 1, "icon": "folder-open", "label": "Panel"},    # entries 2-4: the bar's rows 0-2
            {"profile": SLOT, "page": 3, "icon": "git-branch", "label": "Git"}, None]
+QB_FULL = QB_TEST[:3] + [{"profile": SLOT, "page": 1, "icon": "square-terminal", "label": "Cmds"}]
 
 
 def set_qb(d, qb=QB_TEST):
@@ -369,15 +371,53 @@ def test_bar_draws_a_set_button_and_leaves_an_empty_one_blank(d):
     set_qb(d)
     time.sleep(0.3)
     img = d.shot()
-    assert any(img.getpixel((450, y)) != img.getpixel((432, y)) for y in range(96, 140))   # button 1: icon and label
-    assert all(img.getpixel((450, y)) == img.getpixel((432, y)) for y in range(150, 200))  # button 2: blank
+    assert any(img.getpixel((450, y)) != img.getpixel((432, y)) for y in range(96, 140))   # row 0 (entry 2): icon and label
+    assert all(img.getpixel((450, y)) == img.getpixel((432, y)) for y in range(210, 255))  # row 2 (entry 4): blank
 
 
-BAR = {1: (450, 90 + 28), 3: (450, 90 + 2 * 57 + 28)}       # quick-bar button centres
+BAR = {2: (450, 118), 3: (450, 175), 4: (450, 232), "settings": (450, 289)}   # rows 0-3 under the suggestion slot
+
+
+def swipe_up(d, ms=250): d.swipe(210, 270, 210, 90, ms)
+def swipe_down(d, ms=250): d.swipe(210, 90, 210, 270, ms)
 
 
 def evts(d, since, pre):
     return [l for _, l in d.events[since:] if l.startswith(pre)]
+
+
+def test_bar_rows_are_entries_2_to_4_then_settings(d):
+    set_qb(d, QB_FULL); since = len(d.events)
+    for n, page in ((2, 1), (3, 3), (4, 1)):
+        d.touch(*BAR[n]); d.wait_event(rf"^EVT:PANEL {n} {SLOT} {page}$", 2, since)
+    d.ok("panel 0"); time.sleep(0.4)
+    d.touch(*BAR["settings"]); d.wait_event(r"^EVT:UI sheet$", 2, since)
+
+
+def test_swipe_up_opens_entry_1_and_swipe_down_closes_it(d):
+    set_qb(d); since = len(d.events)
+    swipe_up(d); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, since)
+    assert not evts(d, since, "EVT:UI sheet")
+    swipe_down(d); d.wait_event(r"^EVT:PANEL 0$", 2, since)
+    assert not evts(d, since, "EVT:UI shade")
+
+
+def test_swipe_up_with_no_entry_1_does_nothing(d):
+    set_qb(d, [None] + QB_TEST[1:]); since = len(d.events)
+    swipe_up(d); time.sleep(0.6)
+    assert not evts(d, since, "EVT:PANEL") and not evts(d, since, "EVT:UI")
+
+
+def test_swipe_up_with_media_open_does_nothing(d):
+    set_qb(d); swipe_up(d); time.sleep(0.6); since = len(d.events)
+    swipe_up(d); time.sleep(0.6)
+    assert not evts(d, since, "EVT:") and "panel:1" in d.cmd("status")[0]
+
+
+def test_status_band_has_no_settings_button(d):
+    since = len(d.events)
+    d.touch(466, 14); time.sleep(0.5)                      # where the gear was
+    assert not evts(d, since, "EVT:UI")
 
 
 def test_bar_tap_opens_and_closes_a_panel(d):
@@ -399,11 +439,11 @@ def test_panel_key_fires_from_the_panel_profile(d):
 
 
 def test_panel_folder_back_and_swipe_stay_in_the_panel(d):
-    set_qb(d); d.touch(*BAR[1]); time.sleep(0.4); since = len(d.events)
+    set_qb(d); d.touch(*BAR[2]); time.sleep(0.4); since = len(d.events)
     tap(d, 3)                                              # Folder -> page 2 of the panel (the player)
-    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 2$", 2, since)
+    d.wait_event(rf"^EVT:PANEL 2 {SLOT} 2$", 2, since)
     d.swipe(100, 160, 400, 160)                            # back to the panel's page 1
-    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, since)
+    d.wait_event(rf"^EVT:PANEL 2 {SLOT} 1$", 2, since)
     assert "page:1 " in d.cmd("status")[0]
 
 
@@ -426,10 +466,10 @@ def test_host_setprofile_keeps_the_panel(d):
 
 
 def test_upload_of_active_profile_keeps_the_panel(d):            # Review Focus 1
-    set_qb(d); d.ok("page 3"); d.touch(*BAR[1]); time.sleep(0.4)
+    set_qb(d); d.ok("page 3"); d.touch(*BAR[2]); time.sleep(0.4)
     d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
     st = d.cmd("status")[0]
-    assert "panel:1" in st and "page:3 " in st
+    assert "panel:2" in st and "page:3 " in st
 
 
 def test_saving_the_panels_profile_reloads_the_panel(d):
@@ -443,8 +483,8 @@ def test_saving_the_panels_profile_reloads_the_panel(d):
 
 
 def test_button_to_a_missing_page_does_nothing(d):               # Review Focus 2
-    set_qb(d, [{"profile": SLOT, "page": 9, "icon": "music", "label": "Gone"}, None, None, None]); since = len(d.events)
-    d.touch(*BAR[1]); time.sleep(0.4)
+    set_qb(d, [None, {"profile": SLOT, "page": 9, "icon": "music", "label": "Gone"}, None, None]); since = len(d.events)
+    d.touch(*BAR[2]); time.sleep(0.4)
     assert not evts(d, since, "EVT:PANEL")
 
 
@@ -455,18 +495,18 @@ def test_theme_change_keeps_the_panel(d):                        # Review Focus 
 
 
 def test_back_after_a_swipe_in_a_panel_returns_to_its_first_page(d):
-    set_qb(d); d.touch(*BAR[1]); time.sleep(0.4); since = len(d.events)
-    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 2$", 2, since)
-    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 3$", 2, since)
+    set_qb(d); d.touch(*BAR[2]); time.sleep(0.4); since = len(d.events)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 2 {SLOT} 2$", 2, since)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 2 {SLOT} 3$", 2, since)
     time.sleep(0.4); mark = len(d.events)
     tap(d, 1)                                              # Back, on a page reached by swiping
-    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, mark)      # the page the button opens, not closed
+    d.wait_event(rf"^EVT:PANEL 2 {SLOT} 1$", 2, mark)      # the page the button opens, not closed
     assert "EVT:PANEL 0" not in evts(d, mark, "EVT:PANEL")
 
 
 def test_tapping_an_empty_button_leaves_the_panel_open(d):
     set_qb(d); d.touch(*BAR[3]); time.sleep(0.4); since = len(d.events)
-    d.touch(450, 90 + 57 + 28)                             # button 2: empty in QB_TEST
+    d.touch(*BAR[4])                                       # entry 4: empty in QB_TEST
     time.sleep(0.4)
     assert not evts(d, since, "EVT:PANEL") and "panel:3" in d.cmd("status")[0]
 
