@@ -94,6 +94,7 @@ def dev():
     old = d.cmd(f"cat /profile{SLOT}.json")   # someone's slot 16, put back at the end
     qb0 = d.cmd("quickbar")[0]                # the owner's quick bar, put back at the end
     old = None if not old or old[0].startswith("ERR") else "\n".join(old)
+    owned0 = owner_profiles(d)                # slots 1-15: checked untouched at the end
     d.ok("setdim 0")
     d.ok("hid dry on")
     ianim = d.cmd("iconanim")[0]                  # pixel tests want still icons; put the owner's choice back after
@@ -120,7 +121,16 @@ def dev():
     d.cmd("iconanim on" if ianim.endswith("on") else "iconanim off")
     if qb0.startswith("quickbar "):
         d.cmd("quickbar set " + qb0.split(" ", 1)[1])
+    owned = owner_profiles(d)
     d.close()
+    assert owned == owned0, f"a test changed the owner's profiles: {owned0} -> {owned}"
+
+
+def owner_profiles(d):
+    """Slots 1-15 belong to the keypad's owner: name -> size from `ls`.
+    ponytail: sizes, not contents; a same-size overwrite slips by (add a crc command if one ever does)."""
+    return {n: s for n, s in (l.split("\t") for l in d.cmd("ls") if "\t" in l)
+            if re.fullmatch(r"profile([1-9]|1[0-5])\.json", n)}
 
 
 @pytest.fixture
@@ -1161,9 +1171,9 @@ def test_gif_key_plays_its_frames(dev):
     keys = [None] * 15
     keys[0] = key(1, "GIF", [{"type": "key", "value": "F13"}], frames=names, frame_ms=250)
     prof = {"schema_version": 2, "profile_name": "GIF", "color": [79, 140, 255], "default_delay": 5, "pages": [{"name": "One", "keys": keys}]}
-    assert any(l.startswith("SAVED") for l in dev.upload_text("profile15.json", json.dumps(prof, indent=1)))
+    assert any(l.startswith("SAVED") for l in dev.upload_text(f"profile{SLOT}.json", json.dumps(prof, indent=1)))
     try:
-        dev.ok("setprofile 15")
+        dev.ok(f"setprofile {SLOT}")
         time.sleep(0.8)
         x, y = key_box(1)
         seen = set()
@@ -1173,8 +1183,8 @@ def test_gif_key_plays_its_frames(dev):
             time.sleep(0.2)
         assert {"red", "blue"} <= seen, seen
     finally:
+        dev.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))   # slots 1-15 are the owner's: never written
         dev.ok(f"setprofile {SLOT}")
-        dev.cmd("rm /profile15.json")
         for n in names:
             dev.cmd(f"rm /t/{n}.565")
 
