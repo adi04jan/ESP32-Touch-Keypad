@@ -635,6 +635,26 @@ def test_media_player_page(d):
     assert 90 <= int(m.group(1)) <= 110
 
 
+def test_player_mic_button_runs_the_widgets_mic_actions(d):
+    """A player whose widget has mic_actions gets a seventh control, the mic, left of mute: a tap runs them
+    (on the owner's keypad, the host's `mic toggle`); the other controls move up and still work."""
+    p = json.loads(json.dumps(PROFILE))
+    p["pages"][1]["keys"][0]["mic_actions"] = [{"type": "key", "value": "A"}]
+    try:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(p))
+        d.ok("page 2"); time.sleep(0.6)
+        d.clear_events()
+        d.touch(33, 248)                                         # the mic, where mute sits on a 6-control player
+        assert hid_reports(d, 1, 2)[:2] == ["0000040000000000", "0000000000000000"]   # A down, up
+        assert not [l for _, l in d.events if l.startswith("EVT:HID 2 ")], d.events    # and no media key
+        d.clear_events()
+        d.touch(89, 248)                                         # mute, one place right
+        hid_reports(d, 2, 1)
+    finally:
+        d.ok("page 1")
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+
+
 def test_album_art_upload_shows_on_the_player(d):
     art = (0xF81F).to_bytes(2, "big") * (128 * 128)                # magenta
     r = d.upload_bin("ram:art", art)

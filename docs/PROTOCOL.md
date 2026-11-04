@@ -155,7 +155,7 @@ Screen coordinates: landscape 480×320, a 30 px status band, then cells 84×90 o
 | profile `color` `[r,g,b]` | the profile's line colour: the status-band dot and the page stations |
 | key `anim` | `eq` (equalizer while media plays), `pulse` (while a toggle is off), `rec` (red blink while a toggle is on) |
 | key `toggle: true` | the key keeps an on/off state and shows ON; `off_actions` run when it turns off (else `actions` both ways) |
-| widget `media`, span `[5,3]` on cell 1 | the page is the full media player |
+| widget `media`, span `[5,3]` on cell 1 | the page is the full media player; optional `mic_actions` (an action list, e.g. `[{"type":"host","cmd":"mic toggle","slot":30}]`) adds a seventh control, the mic, left of mute, which runs them |
 
 ## Power
 

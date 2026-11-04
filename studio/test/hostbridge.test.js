@@ -103,3 +103,12 @@ test("mic: parseCommand and execute call the mic helper", async () => {
   assert.equal((await bridge.execute("mic loud")).ok, false);
   assert.deepEqual(calls, ["toggle", "mute"]);
 });
+
+test("findActionConflicts also checks a media player's mic_actions", () => {
+  const combo = hb.comboForSlot(0);
+  const keys = Array(15).fill(null);
+  keys[0] = { id: 1, name: "Now Playing", widget: "media", span: [5, 3], actions: [], mic_actions: [{ type: "keycombo", keys: [...combo.keys] }] };
+  const out = hb.findActionConflicts({ pages: [{ name: "Media", keys }] });
+  assert.equal(out.length, 1);
+  assert.match(out[0].where, /mic/);
+});

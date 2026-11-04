@@ -272,6 +272,8 @@ input[type="range"] { padding: 0; background: none; box-shadow: none; accent-col
 .dev .ctl .play { --t: var(--cyan); width: 76px; height: 76px; background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d), color-mix(in oklab, var(--t) 36%, #070a0e)); }
 .dev .ctl .play svg { width: 36px; height: 36px; }
 .dev .ctl .mute { width: 56px; height: 56px; } .dev .ctl .mute svg { width: 24px; height: 24px; }
+.dev .ctl.mic7 span { width: 48px; height: 48px; } .dev .ctl.mic7 span svg { width: 24px; height: 24px; }
+.dev .ctl.mic7 .play { width: 64px; height: 64px; } .dev .ctl.mic7 .play svg { width: 30px; height: 30px; }
 
 /* ---------- device themes: the same six looks the firmware draws (firmware/TouchKeypad/themes.h) ---------- */
 .dev { --dg0: #121c28; --dg1: #0e1620; --dg2: #0a1119; --tag-bg: #0a141a; --gear-top: #242e39; --gear-bot: #151c24; --knob: #fff; --art: #6b4fd8; --ink: #fff;

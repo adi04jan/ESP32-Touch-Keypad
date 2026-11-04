@@ -132,3 +132,14 @@ test("device default profiles validate and use built-in icons", () => {
     for (const pg of p.pages) for (const k of pg.keys) if (k && !k.widget) assert.ok(KEY_ICONS[k.icon], `${p.profile_name}: icon ${k.icon}`);
   }
 });
+
+test("a media player's mic_actions survive repair, are validated, and their host actions get a slot", () => {
+  const keys = blank();
+  const mic = [{ type: "host", cmd: "mic toggle", slot: 30 }];
+  keys[0] = { id: 1, name: "Now Playing", widget: "media", span: [5, 3], actions: [], mic_actions: mic };
+  assert.deepEqual(schema.validateProfile(profile(keys)).errors, []);
+  assert.deepEqual(schema.repairProfile(profile(keys)).pages[0].keys[0].mic_actions, mic);
+  assert.deepEqual(schema.hostActions(profile(keys)).map((a) => a.cmd), ["mic toggle"]);
+  keys[0] = { ...keys[0], mic_actions: [{ type: "nope" }] };
+  assert.match(schema.validateProfile(profile(keys)).errors.join("\n"), /mic_actions\[0\]/);
+});

@@ -805,9 +805,15 @@ static void drawStations() {
 }
 
 // ---------------------------------------------------------------- media player
-static const int16_t BTN_X[6] = { 35, 98, 165, 240, 315, 382 }, BTN_R[6] = { 26, 29, 29, 38, 29, 29 };   // left of the quick bar
-static const char *const BTN_ICON[6] = { "volume-x", "volume-1", "skip-back", "", "skip-forward", "volume-2" };
-static const char *const BTN_MEDIA[6] = { "MUTE", "VOLUME_DOWN", "PREVIOUS", "PLAY_PAUSE", "NEXT", "VOLUME_UP" };
+// The controls, left of the quick bar. A widget with mic_actions gets a seventh, the mic, left of mute: all a
+// little smaller to fit. The mic runs the widget's own actions (the host's `mic toggle` on the owner's keypad).
+struct PBtn { int16_t x, r, gs; const char *icon, *media; };
+static const PBtn PB6[6] = { { 35, 26, 24, "volume-x", "MUTE" }, { 98, 29, 28, "volume-1", "VOLUME_DOWN" }, { 165, 29, 28, "skip-back", "PREVIOUS" },
+                             { 240, 38, 36, "", "PLAY_PAUSE" }, { 315, 29, 28, "skip-forward", "NEXT" }, { 382, 29, 28, "volume-2", "VOLUME_UP" } };
+static const PBtn PB7[7] = { { 33, 24, 22, "mic-off", "" }, { 89, 24, 22, "volume-x", "MUTE" }, { 146, 24, 24, "volume-1", "VOLUME_DOWN" },
+                             { 202, 24, 24, "skip-back", "PREVIOUS" }, { 266, 32, 30, "", "PLAY_PAUSE" }, { 331, 24, 24, "skip-forward", "NEXT" },
+                             { 387, 24, 24, "volume-2", "VOLUME_UP" } };
+static int playerBtns(const PBtn *&b) { bool m = keyAt(0)["mic_actions"].size() > 0; b = m ? PB7 : PB6; return m ? 7 : 6; }
 #define BTN_Y 248
 #define SEEK_X 160
 #define SEEK_W 244
@@ -874,25 +880,27 @@ static void drawPlayer(uint32_t now) {
   text(fLabel, SEEK_X, 190, a, TXT2);
   text(fLabel, SEEK_X + SEEK_W, 190, b, TXT2, 255, AL_R);
   // controls
-  for (int i = 0; i < 6; i++) {
-    bool dn = pressedBtn == i;
-    float r = BTN_R[i] * (dn && T->ks != KS_PAPER && T->ks != KS_FLAT && T->ks != KS_PIXEL ? 0.92f : 1);
-    C3 t = i == 3 ? CYAN : SLATE;
-    const char *ic = i == 3 ? (np.playing ? "pause" : "play") : BTN_ICON[i];
-    float gs = i == 3 ? 36 : i == 0 ? 24 : 28, bx = BTN_X[i] - r, by = BTN_Y - r;
+  const PBtn *B;
+  int nb = playerBtns(B);
+  for (int i = 0; i < nb; i++) {
+    bool dn = pressedBtn == i, play = !strcmp(B[i].media, "PLAY_PAUSE");
+    float r = B[i].r * (dn && T->ks != KS_PAPER && T->ks != KS_FLAT && T->ks != KS_PIXEL ? 0.92f : 1);
+    C3 t = play ? CYAN : SLATE;
+    const char *ic = play ? (np.playing ? "pause" : "play") : B[i].icon;
+    float gs = B[i].gs, bx = B[i].x - r, by = BTN_Y - r;
     if (T->ks == KS_GLASS) {   // the original: slate controls darker than keys, the play key lit
       softShadow(bx, by, 2 * r, 2 * r, 255);
       Fill f = glassFill(t, dn ? 50 : 0);
-      if (i != 3) { f.top = mix(HEXC(0x10161d), t, 102); f.bot = mix(HEXC(0x070a0e), t, 36); }
+      if (!play) { f.top = mix(HEXC(0x10161d), t, 102); f.bot = mix(HEXC(0x070a0e), t, 36); }
       rrFill(bx, by, 2 * r, 2 * r, r, f);
-      glyphLit(ic, false, BTN_X[i], BTN_Y, gs, WHITE, mix(t, BLACK, 150));
+      glyphLit(ic, false, B[i].x, BTN_Y, gs, WHITE, mix(t, BLACK, 150));
       continue;
     }
-    bool fill = i == 3 && T->ks != KS_FLAT;   // the play key is the filled one
+    bool fill = play && T->ks != KS_FLAT;   // the play key is the filled one
     float pr = dn ? 0.6f : -1, sink = keySink(*T, 2 * r, pr);
     keyBody(*T, bx, by, 2 * r, 2 * r, r, T->ks == KS_PIXEL ? T->track : t, pr, fill, 255);
-    C3 ink = i == 3 && T->ks == KS_FLAT ? ACCENT : keyInk(*T, t, dn, fill);
-    float gx = BTN_X[i] + (T->ks == KS_PAPER || T->ks == KS_PIXEL ? sink : 0), gy = BTN_Y + sink;
+    C3 ink = play && T->ks == KS_FLAT ? ACCENT : keyInk(*T, t, dn, fill);
+    float gx = B[i].x + (T->ks == KS_PAPER || T->ks == KS_PIXEL ? sink : 0), gy = BTN_Y + sink;
     if (keyInkDrop(*T)) glyphLit(ic, false, gx, gy, gs, ink, mix(t, BLACK, 150));
     else glyph(iconFind(ic, false), false, gx, gy, gs, ink);
   }
@@ -2603,15 +2611,22 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
 
   if (playerPage()) {
     if (kind == G_DOWN) {
-      for (int i = 0; i < 6; i++)
-        if (hypotf(x0 - BTN_X[i], y0 - BTN_Y) <= BTN_R[i] + 6) { pressedBtn = i; feedbackClick(); mark(0, BTN_Y - 46, SCR_W, 92); }
+      const PBtn *B;
+      int nb = playerBtns(B);
+      for (int i = 0; i < nb; i++)
+        if (hypotf(x0 - B[i].x, y0 - BTN_Y) <= B[i].r + 6) { pressedBtn = i; feedbackClick(); mark(0, BTN_Y - 46, SCR_W, 92); }
     } else if (kind == G_TAP) {
       int b = pressedBtn;
       pressedBtn = -1;
       if (b >= 0) {
         released = 100 + b;
         release0 = now;
-        if (hypotf(x1 - BTN_X[b], y1 - BTN_Y) <= BTN_R[b] + 10) { hidSendMedia(mediaNameToCode(BTN_MEDIA[b])); uiMediaKey(BTN_MEDIA[b]); }
+        const PBtn *B;
+        playerBtns(B);
+        if (hypotf(x1 - B[b].x, y1 - BTN_Y) <= B[b].r + 10) {
+          if (*B[b].media) { hidSendMedia(mediaNameToCode(B[b].media)); uiMediaKey(B[b].media); }
+          else macroEngine.start(keyAt(0), false, 0, "mic_actions");   // the mic: the widget's own actions
+        }
         mark(0, BTN_Y - 46, SCR_W, 92);
       } else if (inRect(x1, y1, SEEK_X - 8, 134, SEEK_W + 16, 44) && np.len > 0) {
         int sec = (int)(clamp01((x1 - SEEK_X) / (float)SEEK_W) * np.len);

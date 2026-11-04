@@ -55,6 +55,7 @@ function findActionConflicts(profile) {
     if (!k) return;
     walk(k.actions, `page ${pi + 1} key ${k.id}`);
     walk(k.hold_actions, `page ${pi + 1} key ${k.id} (hold)`);
+    walk(k.mic_actions, `page ${pi + 1} key ${k.id} (mic)`);
   }));
   return out;
 }

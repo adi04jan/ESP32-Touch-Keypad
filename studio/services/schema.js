@@ -310,7 +310,7 @@ function validateProfile(p) {
           e.push(`${kp}.frames must be 2 to ${MAX_FRAMES} tile names (8 lowercase hex chars)`);
         if (k.frame_ms !== undefined && (!Number.isInteger(k.frame_ms) || k.frame_ms < 40 || k.frame_ms > 2000)) e.push(`${kp}.frame_ms must be 40 to 2000`);
       }
-      for (const field of ["actions", "hold_actions", "off_actions"]) {
+      for (const field of ["actions", "hold_actions", "off_actions", "mic_actions"]) {   // mic_actions: the player's mic button
         if (field !== "actions" && k[field] === undefined) continue;
         if (!Array.isArray(k[field])) { e.push(`${kp}.${field} must be an array`); continue; }
         k[field].forEach((a, ai) => {
@@ -341,7 +341,7 @@ function repairKey(k, i) {
     if (k.toggle === true) out.toggle = true;
   }
   out.actions = repairActions(k.actions || []);
-  for (const f of ["hold_actions", "off_actions"]) {
+  for (const f of ["hold_actions", "off_actions", ...(k.widget ? ["mic_actions"] : [])]) {   // mic_actions: the player's mic button
     if (!Array.isArray(k[f])) continue;
     const list = repairActions(k[f]);
     if (list.length) out[f] = list;
@@ -410,7 +410,7 @@ function hostActions(p) {
     if (a && a.type === "host") out.push(a);
     if (a && a.type === "repeat") walk(a.actions);
   });
-  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) { walk(k.actions); walk(k.hold_actions); }
+  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) { walk(k.actions); walk(k.hold_actions); walk(k.mic_actions); }
   return out;
 }
 

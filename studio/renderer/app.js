@@ -203,6 +203,7 @@ function keyHTML(k, i) {
 }
 function playerHTML(sel) {
   const np = state.np, pct = np.len ? Math.min(100, (np.pos / np.len) * 100) : 0;
+  const mic = !!pg().keys?.[0]?.mic_actions?.length;   // a seventh control, as on the keypad
   const art = state.art ? `<img src="${state.art}" alt="Album art">` : kicon("music", 36);
   return `<div class="mp${sel ? " sel" : ""}" data-k="0" role="button" tabindex="0" aria-label="Media player page">
     <div class="art">${art}</div>
@@ -210,7 +211,7 @@ function playerHTML(sel) {
       <div class="a">${esc(np.artist || "Studio sends the track here")}${np.app ? ` <b>${esc(String(np.app).split("!").pop().replace(/\.exe$/i, "").split(".").pop())}</b>` : ""}</div></div>
     <div class="seek"><i style="width:${pct}%"></i><b style="left:${pct}%"></b></div>
     <div class="times"><span>${mmss(np.pos)}</span><span>−${mmss(Math.max(0, np.len - np.pos))}</span></div>
-    <div class="ctl"><span class="mute">${kicon("volume-x", 24)}</span><span>${kicon("volume-1", 28)}</span><span>${kicon("skip-back", 28)}</span>
+    <div class="ctl${mic ? " mic7" : ""}">${mic ? `<span class="mute">${kicon("mic-off", 22)}</span>` : ""}<span class="mute">${kicon("volume-x", 24)}</span><span>${kicon("volume-1", 28)}</span><span>${kicon("skip-back", 28)}</span>
       <span class="play">${kicon(np.playing ? "pause" : "play", 36)}</span><span>${kicon("skip-forward", 28)}</span><span>${kicon("volume-2", 28)}</span></div></div>`;
 }
 function devHTML() {
