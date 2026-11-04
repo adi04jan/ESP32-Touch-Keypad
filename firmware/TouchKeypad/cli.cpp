@@ -315,9 +315,9 @@ static bool runCommand(char *s) {
   } else if (cmd == "motion") {
     uiMotionCmd(arg);
   } else if (cmd == "status") {
-    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d slide:%d sug:%d cal:%d theme:%s pwr:%s bat:%d\n",
+    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d slide:%d rise:%d sug:%d cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
-                  uiModeName(), uiPanelOpen(), uiSlidePx(), uiSuggested(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+                  uiModeName(), uiPanelOpen(), uiSlidePx(), uiRisePx(), uiSuggested(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
   } else if (cmd == "art") {
     uiArtPrint();
   } else if (cmd == "suggest") {

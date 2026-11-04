@@ -25,6 +25,7 @@ TILE_W = 72
 G_LINE = 310                      # page stations
 FPS_FLOOR = 50                    # every animation, measured by the firmware's `perf`
 SLIDE_FLOOR = 20                  # a page slide (redrawn in software every frame): Task 5 of the motion plan raises it to 25
+RISE_FLOOR = 20                   # Media or Settings rising (redrawn every frame): likewise
 
 
 def cell_xy(cell):
@@ -819,8 +820,8 @@ def test_page_slide_frame_rate(d):
 
 
 def test_sheet_frame_rate(d):
-    frames, rate, _ = fps(d, lambda: d.ok("sheet"))
-    assert rate >= FPS_FLOOR, (frames, rate)
+    frames, rate, _ = fps(d, lambda: d.ok("sheet"), wait=1.0)
+    assert rate >= RISE_FLOOR, (frames, rate)
     d.ok("sheet close")
 
 
@@ -969,6 +970,57 @@ def test_slide_holds_its_floor_on_a_full_page(d):
         assert frames >= 12 and rate >= SLIDE_FLOOR, (frames, rate)
     finally:
         d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE)); d.ok(f"setprofile {SLOT}")
+
+
+
+# ---------------------------------------------------------------- Media and Settings rise (motion plan, Task 4)
+def test_media_follows_a_drag_up(d):
+    set_qb(d); since = len(d.events)
+    swipe_held(d, 210, 290, 210, 110, 1500); time.sleep(0.75)
+    r = field(d, "rise")
+    assert 40 <= r <= 150 and "panel:0" in d.cmd("status")[0], r     # following, not committed
+    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 3, since); time.sleep(0.8)
+    assert field(d, "rise") == 290
+
+
+def test_a_short_slow_drag_up_falls_back(d):
+    set_qb(d); since = len(d.events)
+    d.swipe(210, 290, 210, 230, 800); time.sleep(1.0)
+    assert not evts(d, since, "EVT:PANEL") and field(d, "rise") == 0
+
+
+def test_a_flick_up_opens_media_and_a_drag_down_closes_it(d):
+    set_qb(d); since = len(d.events)
+    d.swipe(210, 290, 210, 200, 80); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)   # 90 px in 80 ms
+    time.sleep(0.8); d.swipe(210, 60, 210, 250, 300); d.wait_event(r"^EVT:PANEL 0$", 1.5, since)
+    time.sleep(0.8); assert field(d, "rise") == 0
+
+
+def test_settings_rises_from_the_bar_and_a_drag_down_closes_it(d):
+    since = len(d.events)
+    d.touch(*BAR["settings"]); d.wait_event(r"^EVT:UI sheet$", 1, since); time.sleep(0.8)
+    assert field(d, "rise") == 290
+    d.swipe(60, 120, 60, 300, 300); d.wait_event(r"^EVT:UI home$", 1.5, since)
+
+
+def test_rises_hold_their_floor(d):
+    set_qb(d)
+    frames, rate, _ = fps(d, lambda: d.ok("panel 1"), wait=1.0); d.ok("panel 0"); time.sleep(0.8)
+    print(f"media rise {rate:.1f}")
+    assert rate >= RISE_FLOOR, ("media", frames, rate)
+    frames, rate, _ = fps(d, lambda: d.ok("sheet"), wait=1.0); d.ok("sheet close"); time.sleep(0.8)
+    print(f"settings rise {rate:.1f}")
+    assert rate >= RISE_FLOOR, ("settings", frames, rate)
+
+
+def test_media_drag_over_a_panel_with_a_cover_keeps_the_heap(d):  # motion plan, Review Focus 3
+    set_qb(d); d.upload_bin("ram:artj", make_jpg()); time.sleep(0.3)
+    before = heap_free(d)
+    d.touch(*BAR[3]); time.sleep(0.4)
+    swipe_held(d, 210, 290, 210, 110, 1500); time.sleep(0.75)
+    assert heap_free(d) > 20000 and not [l for _, l in d.events if "no RAM" in l]
+    time.sleep(1.2); d.ok("panel 0"); time.sleep(0.8)
+    assert abs(heap_free(d) - before) < 1024
 
 
 # ---------------------------------------------------------------- LED and feedback

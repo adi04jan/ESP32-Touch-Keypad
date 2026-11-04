@@ -146,7 +146,22 @@ static void qbCheck();
 // panel again. start: the page the entry opens.
 struct Layer { int8_t btn, prof, page, pages, start, back[8], depth; uint16_t toggles; uint8_t col[3]; JsonDocument doc; };
 static Layer panel, media;
-static Layer *topLayer() { return media.btn ? &media : panel.btn ? &panel : nullptr; }
+// Media and Settings rise as sheets that follow the finger, then spring (x: 0 closed .. 1 open, over the
+// 290 px under the status band). mediaRise.to 0 while Media is still up: it is falling (closing, or a drag
+// that did not open it), and it is no longer the top layer.
+static Spring mediaRise, sheetRise;
+static bool mediaDrag, mediaDragOpen, sheetDrag;   // a finger holds it; mediaDragOpen: a drag up from closed
+static int16_t ry[6];                               // the finger's latest y and when, for the release velocity
+static uint32_t rt[6];
+static uint8_t rn;
+static uint32_t riseLast;
+static Layer *topLayer() { return media.btn && mediaRise.to > 0.5f ? &media : panel.btn ? &panel : nullptr; }
+static int8_t viewForce = -1;   // drawing one layer: 0 the home page, 1 Media, 2 the panel; -1 the top one
+static Layer *viewLayer() {     // the layer being drawn
+  switch (viewForce) { case 0: return nullptr; case 1: return &media; case 2: return panel.btn ? &panel : nullptr; }
+  return topLayer();
+}
+static float sinkK = 1;         // under a rising sheet the keys sink back a little: drawCell scales them by this
 static void layerClear(Layer &L) { L.doc.clear(); L.btn = L.depth = 0; L.toggles = 0; }
 static void layerClose(Layer &L);   // that layer goes (EVT:PANEL, the wipe): Media shows the panel under it again
 
@@ -170,8 +185,8 @@ static float pageK = 230, pageZ = 0.78f, sheetK = 240, sheetZ = 0.80f;   // the 
 // The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
 static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
 static struct { int8_t prof, page; char name[24]; uint8_t col[3]; } backTo;   // prof 0: no way back
-static int viewPage() { Layer *L = topLayer(); return L ? L->page : currentPage; }      // the page the grid shows
-static int viewPages() { Layer *L = topLayer(); return L ? L->pages : pageCount; }
+static int viewPage() { Layer *L = viewLayer(); return L ? L->page : currentPage; }      // the page the grid shows
+static int viewPages() { Layer *L = viewLayer(); return L ? L->pages : pageCount; }
 static void startWave();
 static void startWipe();
 
@@ -221,15 +236,15 @@ static uint32_t dmgPx() { uint32_t px = 0; for (int i = 0; i < dmgN; i++) px += 
 // ---------------------------------------------------------------- helpers
 static JsonVariant keyAt(int c) {
   if (slideOther) return slide.doc["keys"][c];
-  Layer *L = topLayer();
+  Layer *L = viewLayer();
   return (L ? L->doc : pageDoc)["keys"][c];
 }
 static bool playerPage() { JsonVariant k = keyAt(0); return !k.isNull() && k["widget"].is<const char *>(); }
 static bool toggled(int c) {
   if (slideOther) return (slide.otherToggles >> c) & 1;
-  Layer *L = topLayer();
+  Layer *L = viewLayer();
   return L ? (L->toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
-static C3 groundAt(int y) { return topLayer() && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
+static C3 groundAt(int y) { return viewLayer() && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
 static C3 tintOf(JsonVariant k) { return { (uint8_t)(k["led_color"][0] | 138), (uint8_t)(k["led_color"][1] | 152), (uint8_t)(k["led_color"][2] | 171) }; }
 static C3 lineOf(const uint8_t col[3]) {   // a profile's line colour, made to read on this theme's ground
   C3 c = { col[0], col[1], col[2] };
@@ -457,7 +472,8 @@ static const uint16_t *tileImage(const char *crc) {
     if (tileCache[i].img && !strncmp(tileCache[i].crc, crc, 8)) { tileCache[i].used = millis(); return tileCache[i].img; }
     if (tileCache[i].used < tileCache[slot].used) slot = i;
   }
-  if (slide.on) return nullptr;   // a page moving: no flash reads (~31 ms a tile); its key shows its face until it lands
+  if (slide.on || mediaDrag || mediaRise.on || sheetDrag || (mode == M_SHEET && sheetRise.on))
+    return nullptr;   // a page or sheet moving: no flash reads (~31 ms a tile); its key shows its face until it lands
   char path[24];
   snprintf(path, sizeof path, "/t/%.8s.565", crc);
   File f = LittleFS.open(path, "r");   // no exists() first: that alone is another 15 ms
@@ -633,7 +649,7 @@ static bool isFolder(JsonVariant k) {
 static void drawCell(int c, uint32_t now) {
   int cx = cellX(c), cy = cellY(c);
   if (!gfxHits(cx, cy, CELL_W, CELL_H)) return;
-  float a = 1, s = 1;
+  float a = 1, s = sinkK;
   if (ca[c].pop0) {
     float t = (int32_t)(now - ca[c].pop0) / (float)POP_MS;
     if (t < 0) return;   // its turn in the page wave has not come yet
@@ -826,7 +842,7 @@ static void drawStatus() {
 static void drawStations() {
   int pages = viewPages(), cur = viewPage();
   if (pages < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
-  Layer *L = topLayer();
+  Layer *L = viewLayer();
   C3 line = L ? lineOf(L->col) : lineC(), gnd = groundAt(310);
   int total = (pages - 1) * 30, x0 = KEYS_W / 2 - total / 2;
   fillRect(x0, 309, total, 2, T->crisp ? line : mix(line, BLACK, 77));
@@ -1090,6 +1106,14 @@ static bool slideGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t 
   if (!slide.drag) return false;   // no drag: a tap or a swipe as before
   if (kind == G_HOLD) return true;
   slide.drag = false;   // the release: where a flick of this speed lands
+  if (slide.n && slide.sx[slide.n - 1] != x1) {   // it lifted somewhere the last poll did not see (an injected swipe's end)
+    if (slide.n == 6) { memmove(slide.sx, slide.sx + 1, 5 * sizeof *slide.sx); memmove(slide.st, slide.st + 1, 5 * sizeof *slide.st); slide.n = 5; }
+    slide.sx[slide.n] = x1;
+    slide.st[slide.n] = now;
+    slide.n++;
+    float raw = -dx / (float)KEYS_W;
+    slide.s.x = constrain(slide.other >= 0 ? raw : raw * 0.35f, -1.0f, 1.0f);
+  }
   float v = 0;
   if (slide.n > 1 && slide.st[slide.n - 1] != slide.st[0])
     v = -(slide.sx[slide.n - 1] - slide.sx[0]) * 1000.0f / KEYS_W / (float)(slide.st[slide.n - 1] - slide.st[0]);
@@ -1114,6 +1138,128 @@ void uiMotionCmd(const char *arg) {   // `motion [page|sheet <k> <z>]`
     else if (!strcmp(which, "sheet")) { sheetK = k; sheetZ = z; }
   }
   Con.printf("motion page k:%.0f z:%.2f sheet k:%.0f z:%.2f\n", pageK, pageZ, sheetK, sheetZ);
+}
+
+// ---------------------------------------------------------------- Media and Settings rise
+static void markBar();
+static int riseTop(const Spring &r) { return SCR_H - (int)lroundf(r.x * (SCR_H - STATUS_H)); }
+static int mediaTop() { return media.btn && mediaRise.x > 0.002f ? riseTop(mediaRise) : SCR_H; }   // SCR_H: no Media sheet
+int uiRisePx() {
+  if (mode == M_SHEET) return SCR_H - riseTop(sheetRise);
+  return media.btn ? SCR_H - riseTop(mediaRise) : 0;
+}
+
+static void riseMark(bool bar) {   // what a rise redraws, in cell rects (one chunk each); Settings covers the bar too
+  for (int c = 0; c < NUM_CELLS; c++) markCellRect(c);
+  mark(0, LINE_Y, KEYS_W, SCR_H - LINE_Y);
+  if (bar) mark(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H);
+}
+
+static void riseGo(Spring &r, float to, float v) { r.to = to; r.v = v; r.k = sheetK; r.z = sheetZ; r.on = true; riseLast = millis(); }
+static void mediaShow() { riseGo(mediaRise, 1, mediaRise.on ? mediaRise.v : 0); riseMark(false); }   // up, on the spring
+static void mediaDrop() { if (media.btn) { riseGo(mediaRise, 0, mediaRise.on ? mediaRise.v : 0); riseMark(false); } }   // it falls; cleared when it lands
+
+static bool mediaPlayer() { JsonVariant k = media.doc["keys"][0]; return !k.isNull() && k["widget"].is<const char *>(); }
+
+// Entry 1's page into the Media layer, quietly: a drag up shows it before it is committed.
+static bool mediaLoad() {
+  QbBtn &b = qb[0];
+  char name[24];
+  int pages = 0;
+  uint8_t col[3];
+  b.ok = b.prof && profileMeta(b.prof, name, sizeof name, &pages, col) && b.page <= pages && loadPageInto(b.prof, b.page - 1, media.doc);
+  if (!b.ok) { media.doc.clear(); return false; }
+  media.btn = 1;
+  media.prof = b.prof;
+  media.page = media.start = b.page - 1;
+  media.pages = min(pages, MAX_PAGES);
+  media.depth = 0;
+  media.toggles = 0;
+  memcpy(media.col, col, 3);
+  return true;
+}
+
+static void riseSample(int y, uint32_t now) {
+  if (rn == 6) { memmove(ry, ry + 1, 5 * sizeof *ry); memmove(rt, rt + 1, 5 * sizeof *rt); rn = 5; }
+  ry[rn] = y;
+  rt[rn] = now;
+  rn++;
+}
+static float riseVelocity() {   // sheets per second, + up
+  return rn > 1 && rt[rn - 1] != rt[0] ? -(ry[rn - 1] - ry[0]) * 1000.0f / (SCR_H - STATUS_H) / (float)(rt[rn - 1] - rt[0]) : 0;
+}
+
+static void drawGrid(uint32_t now) {   // a layer's page on the key area (the slide, if it is that layer) and its stations
+  if (viewLayer()) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
+  if (slide.on && viewLayer() == topLayer()) drawSlide(now);
+  else drawView(now);
+  drawStations();
+}
+
+static void drawMediaSheet(uint32_t now, int top) {   // Media from `top` down, its page riding up with it
+  Fill f = solidFill(PLY);
+  f.hi = WHITE;
+  f.hiA = T->light ? 0 : 33;
+  if (T->light) { f.edge = HAIR; f.edgeA = T->hairA; }
+  rrFill(0, top, KEYS_W, SCR_H - top + 20, T->crisp ? 4 : 16, f);
+  if (T->crisp) fillRect(0, top, KEYS_W, 2, TXT);
+  int dy = top - STATUS_H;
+  gfxPan(0, -dy);
+  viewForce = 1;
+  if (slide.on && topLayer() == &media) drawSlide(now);
+  else drawView(now);
+  drawStations();
+  viewForce = -1;
+  gfxPan(0, dy);
+}
+
+// Up and down drags on the home screen: Media follows the finger. Up from the keys or a panel opens it; down
+// on an open Media closes it. A drag down anywhere else is the shade's, as before (on release).
+static bool riseGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t now) {
+  if (kind == G_DOWN) {
+    rn = 0;
+    if (media.btn && mediaRise.on && !mediaDrag) {   // a finger on a sheet still moving: it lands at once
+      mediaRise.x = mediaRise.to;
+      mediaRise.v = 0;
+      mediaRise.on = false;
+      if (mediaRise.x == 0) { layerClear(media); markBar(); }
+      riseMark(false);
+    }
+    return false;
+  }
+  int dx = x1 - x0, dy = y1 - y0;
+  if (kind == G_MOVE) {
+    if (!mediaDrag) {
+      if (abs(dy) <= LOCK_PX || abs(dy) <= abs(dx)) return false;
+      bool open = topLayer() == &media;
+      if (open ? dy < 0 : dy > 0) return false;   // up on an open Media, or down on the keys (the shade's)
+      if (!open && !mediaLoad()) return false;    // no entry 1: nothing to open
+      slideCancelPress();
+      slideEnd();
+      mediaDrag = true;
+      mediaDragOpen = !open;
+      mediaRise.on = false;
+      mediaRise.v = 0;
+      if (!open) mediaRise.x = mediaRise.to = 0;
+    }
+    riseSample(y1, now);
+    float f = (y0 - y1) / (float)(SCR_H - STATUS_H);   // + up
+    mediaRise.x = constrain(mediaDragOpen ? f : 1 + f, 0.0f, 1.0f);
+    return true;
+  }
+  if (!mediaDrag) return false;
+  if (kind == G_HOLD) return true;
+  mediaDrag = false;   // let go: it opens or closes where a flick of this speed lands
+  if (rn && ry[rn - 1] != y1) {   // it lifted somewhere the last poll did not see (an injected swipe's end)
+    riseSample(y1, now);
+    float f = (y0 - y1) / (float)(SCR_H - STATUS_H);
+    mediaRise.x = constrain(mediaDragOpen ? f : 1 + f, 0.0f, 1.0f);
+  }
+  float v = riseVelocity(), t = flickTarget(mediaRise.x, v, 0, 1);
+  riseGo(mediaRise, t, v);
+  if ((t == 1) == mediaDragOpen) emitPanel();   // it opened (Media on top) or closed (the layer under it is)
+  markBar();
+  return true;
 }
 
 // The saved hosts, cheaply (no file system walk): true when something shown changed.
@@ -1288,10 +1434,7 @@ static void drawPane() {
 }
 
 static int sheetTop(uint32_t now) {
-  float t = clamp01((now - sheet0) / 260.0f), e = easeQuad(t);
-  if (sheetClosing) e = 1 - e;
-  if (mode != M_SHEET) return SCR_H;
-  return SCR_H - (int)((SCR_H - STATUS_H) * e);
+  return mode == M_SHEET ? riseTop(sheetRise) : SCR_H;
 }
 
 static void drawSheet(int top) {
@@ -1742,12 +1885,25 @@ static void renderChunk(uint32_t now) {
   if (mode == M_PAIR) drawPair();
   else if (!sheetCovers) {
     gfxClip(0, bot > STATUS_H ? bot - 18 : 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet or shade (corners are 16 px)
-    if (topLayer()) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
-    if (slide.on) drawSlide(now);
-    else if (playerPage()) drawPlayer(now);
-    else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
-    drawStations();
+    float sx = mode == M_SHEET ? sheetRise.x : 0, back = max(sx, media.btn ? mediaRise.x : 0.0f);
+    int mtop = mediaTop(), cl[4];
+    gfxClipGet(cl);
+    viewForce = mtop < SCR_H ? (panel.btn ? 2 : 0) : -1;   // with Media up: the layer under it, above its edge
+    if (mtop < SCR_H) gfxClipAnd(0, 0, KEYS_W, mtop);
+    sinkK = 1 - 0.05f * back;
+    drawGrid(now);
+    sinkK = 1;
+    viewForce = -1;
+    if (back > 0) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, BLACK, (int)(115 * back));   // dimmed under a sheet
+    gfxClipSet(cl);
+    if (mtop < SCR_H) {
+      gfxClipAnd(0, mtop, KEYS_W, SCR_H);
+      drawMediaSheet(now, mtop);
+      if (sx > 0) fillRect(0, mtop, KEYS_W, SCR_H - mtop, BLACK, (int)(115 * sx));   // Settings over Media dims it too
+      gfxClipSet(cl);
+    }
     drawBar(now);
+    if (sx > 0) fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, BLACK, (int)(115 * sx));   // Settings covers the bar: it dims too
     gfxUnclip();
   }
   drawSheet(top);
@@ -1848,13 +2004,17 @@ static bool animate(uint32_t now) {
     if (e >= 1) wiping = false;
     live = true;
   }
-  if (mode == M_SHEET || sheetClosing) {
-    int top = sheetTop(now);
-    if (sheetClosing && now - sheet0 > 260) { sheetClosing = false; mode = M_HOME; emitMode(); top = SCR_H; }
-    if (top != sheetTopDrawn) {
-      int a = min(top, sheetTopDrawn), b = max(top, sheetTopDrawn);
-      mark(0, a - 2, SCR_W, b - a + 4);
-      sheetTopDrawn = top;
+  {   // Media and Settings rising or falling: the springs, once a finger lets go
+    float dt = min(0.05f, (now - riseLast) / 1000.0f), eps = 0.5f / (SCR_H - STATUS_H);
+    riseLast = now;
+    if (media.btn && (mediaRise.on || mediaDrag)) {
+      if (!mediaDrag && springStep(mediaRise, dt, eps) && mediaRise.x == 0) { layerClear(media); markBar(); }   // landed: gone
+      riseMark(false);
+      live = true;
+    }
+    if (mode == M_SHEET && (sheetRise.on || sheetDrag)) {
+      if (!sheetDrag && springStep(sheetRise, dt, eps) && sheetClosing) { sheetClosing = false; mode = M_HOME; emitMode(); }
+      riseMark(true);
       live = true;
     }
   }
@@ -1925,7 +2085,7 @@ static bool animate(uint32_t now) {
 static void artSync() {
   if (!artJpgLen) return;   // a raw cover (or none) is kept as it is
   static bool dropped;   // the tile cache, given up once per player visit: not every loop pass if RAM stays short
-  bool want = playerPage();
+  bool want = playerPage() || (media.btn && mediaPlayer());
   if (want && !artOk) {
     if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
     if (!art && !dropped) { dropped = true; uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }
@@ -2241,6 +2401,7 @@ static void viewGo(int idx) {
 
 static void layerClose(Layer &L) {
   if (!L.btn) return;
+  if (&L == &media) { mediaDrop(); emitPanel(); markBar(); return; }   // it falls; cleared when it lands
   layerClear(L);
   emitPanel();
   startWipe();
@@ -2253,14 +2414,21 @@ void uiPanel(int btn) {
   slideEnd();
   if (btn == 0) {
     if (!panel.btn && !media.btn) return;
-    layerClear(media);
-    layerClear(panel);
+    if (panel.btn) { layerClear(panel); startWipe(); }
+    mediaDrop();
     emitPanel();
-    startWipe();
     markBar();
     return;
   }
-  if (btn > 1 && media.btn && panel.btn == btn) { layerClose(media); return; }   // its panel is under Media: show it
+  if (btn == 1) {   // Media: it rises over whatever is open
+    if (topLayer() == &media) return;
+    if (!mediaLoad()) { if (media.btn) { layerClear(media); emitPanel(); } markBar(); return; }
+    mediaShow();
+    emitPanel();
+    markBar();
+    return;
+  }
+  if (media.btn && panel.btn == btn) { layerClose(media); return; }   // its panel is under Media: show it
   Layer &L = btn == 1 ? media : panel;
   QbBtn &b = qb[btn - 1];
   char name[24];
@@ -2280,7 +2448,7 @@ void uiPanel(int btn) {
   L.depth = 0;
   L.toggles = 0;
   memcpy(L.col, col, 3);
-  if (btn > 1) layerClear(media);   // a bar button with Media up: Media goes
+  mediaDrop();   // a bar button with Media up: Media falls away over the panel
   emitPanel();
   startWipe();
   markBar();
@@ -2486,10 +2654,11 @@ void uiOpenSheet(int tab) {
   if (mode == M_SHEET && !sheetClosing) { mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
   if (mode != M_HOME && mode != M_SHEET) return;
   loadSlots();
+  bool was = mode == M_SHEET;   // closing: it turns back
   mode = M_SHEET;
   sheetClosing = false;
-  sheet0 = millis();
-  sheetTopDrawn = SCR_H;
+  if (!was) sheetRise = { 0, 0, 0, sheetK, sheetZ, false };
+  riseGo(sheetRise, 1, was ? sheetRise.v : 0);
   pressed = -1;
   emitMode();
 }
@@ -2497,7 +2666,7 @@ void uiOpenSheet(int tab) {
 void uiCloseSheet() {
   if (mode != M_SHEET || sheetClosing) return;
   sheetClosing = true;
-  sheet0 = millis();
+  riseGo(sheetRise, 0, 0);
   dragSlider = -1;
 }
 bool uiSheetOpen() { return mode == M_SHEET && !sheetClosing; }
@@ -2789,6 +2958,26 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     return;
   }
   if (mode == M_SHEET && !sheetClosing) {
+    if (kind == G_DOWN) rn = 0;
+    if (kind == G_DOWN && sheetRise.on) { sheetRise.x = sheetRise.to; sheetRise.v = 0; sheetRise.on = false; riseMark(true); }   // lands at once
+    if (kind == G_MOVE && dragSlider < 0) {   // a drag down: the sheet follows
+      int dx = x1 - x0, dy = y1 - y0;
+      if (!sheetDrag && dy > LOCK_PX && dy > abs(dx)) {
+        sheetDrag = true;
+        sheetRise.on = false;
+        if (pressedBtn >= 0) { pressedBtn = -1; mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
+      }
+      if (sheetDrag) { riseSample(y1, now); sheetRise.x = constrain(1 - dy / (float)(SCR_H - STATUS_H), 0.0f, 1.0f); }
+      return;
+    }
+    if (sheetDrag && (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D))) {   // let go: closes, or springs back
+      sheetDrag = false;
+      if (rn && ry[rn - 1] != y1) { riseSample(y1, now); sheetRise.x = constrain(1 - (y1 - y0) / (float)(SCR_H - STATUS_H), 0.0f, 1.0f); }
+      float v = riseVelocity();
+      if (flickTarget(sheetRise.x, v, 0, 1) == 0) { sheetClosing = true; dragSlider = -1; riseGo(sheetRise, 0, v); }
+      else riseGo(sheetRise, 1, v);
+      return;
+    }
     if (kind == G_DOWN) {
       if (sheetTab == 0 && inRect(x0, y0, PANE_X, 110, PANE_W, 44)) { dragSlider = 0; sheetSlider(0, x0); }
       else if (sheetTab == 3 && inRect(x0, y0, PANE_X, 196, PANE_W, 44)) { dragSlider = 1; sheetSlider(1, x0); }
@@ -2845,6 +3034,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
   }
 
   if (slideGesture(kind, x0, y0, x1, y1, now)) return;   // a sideways drag: the page under the finger
+  if (riseGesture(kind, x0, y0, x1, y1, now)) return;    // up and down: Media follows the finger
 
   // The quick bar takes taps only; a swipe that starts on it turns pages as anywhere else.
   if ((kind == G_DOWN || kind == G_TAP) && x0 >= BAR_X && y0 >= STATUS_H) {
@@ -2888,7 +3078,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     } else if (kind == G_SWIPE_L) { pressedBtn = -1; viewGo(viewPage() + 1); }
     else if (kind == G_SWIPE_R) { pressedBtn = -1; viewGo(viewPage() - 1); }
     else if (kind == G_SWIPE_U) { pressedBtn = -1; if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); }   // entry 1: Media (none set: nothing)
-    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (media.btn) layerClose(media); else uiOpenShade(); }
+    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (topLayer() == &media) layerClose(media); else uiOpenShade(); }
     return;
   }
 
@@ -2944,6 +3134,6 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     case G_SWIPE_L: release(pressed); viewGo(viewPage() + 1); break;
     case G_SWIPE_R: release(pressed); viewGo(viewPage() - 1); break;
     case G_SWIPE_U: release(pressed); if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); break;   // entry 1: Media (none set: nothing)
-    case G_SWIPE_D: release(pressed); if (media.btn) layerClose(media); else uiOpenShade(); break;   // Media closes, else the shade comes down
+    case G_SWIPE_D: release(pressed); if (topLayer() == &media) layerClose(media); else uiOpenShade(); break;   // Media closes, else the shade comes down
   }
 }
