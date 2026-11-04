@@ -805,14 +805,14 @@ static void drawStations() {
 }
 
 // ---------------------------------------------------------------- media player
-// The controls, left of the quick bar. A widget with mic_actions gets a seventh, the mic, left of mute: all a
-// little smaller to fit. The mic runs the widget's own actions (the host's `mic toggle` on the owner's keypad).
+// The controls, left of the quick bar. A widget with mic_actions gets a seventh, the mic, at the right end: all a
+// little smaller to fit, play in the middle (x 210, the centre of the keys' width). The mic runs the widget's own actions (the host's `mic toggle` on the owner's keypad).
 struct PBtn { int16_t x, r, gs; const char *icon, *media; };
 static const PBtn PB6[6] = { { 35, 26, 24, "volume-x", "MUTE" }, { 98, 29, 28, "volume-1", "VOLUME_DOWN" }, { 165, 29, 28, "skip-back", "PREVIOUS" },
                              { 240, 38, 36, "", "PLAY_PAUSE" }, { 315, 29, 28, "skip-forward", "NEXT" }, { 382, 29, 28, "volume-2", "VOLUME_UP" } };
-static const PBtn PB7[7] = { { 33, 24, 22, "mic-off", "" }, { 89, 24, 22, "volume-x", "MUTE" }, { 146, 24, 24, "volume-1", "VOLUME_DOWN" },
-                             { 202, 24, 24, "skip-back", "PREVIOUS" }, { 266, 32, 30, "", "PLAY_PAUSE" }, { 331, 24, 24, "skip-forward", "NEXT" },
-                             { 387, 24, 24, "volume-2", "VOLUME_UP" } };
+static const PBtn PB7[7] = { { 33, 24, 22, "volume-x", "MUTE" }, { 89, 24, 24, "volume-1", "VOLUME_DOWN" }, { 146, 24, 24, "skip-back", "PREVIOUS" },
+                             { 210, 32, 30, "", "PLAY_PAUSE" }, { 274, 24, 24, "skip-forward", "NEXT" }, { 331, 24, 24, "volume-2", "VOLUME_UP" },
+                             { 387, 24, 22, "mic-off", "" } };
 static int playerBtns(const PBtn *&b) { bool m = keyAt(0)["mic_actions"].size() > 0; b = m ? PB7 : PB6; return m ? 7 : 6; }
 #define BTN_Y 248
 #define SEEK_X 160

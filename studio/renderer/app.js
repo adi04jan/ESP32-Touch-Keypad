@@ -211,8 +211,8 @@ function playerHTML(sel) {
       <div class="a">${esc(np.artist || "Studio sends the track here")}${np.app ? ` <b>${esc(String(np.app).split("!").pop().replace(/\.exe$/i, "").split(".").pop())}</b>` : ""}</div></div>
     <div class="seek"><i style="width:${pct}%"></i><b style="left:${pct}%"></b></div>
     <div class="times"><span>${mmss(np.pos)}</span><span>−${mmss(Math.max(0, np.len - np.pos))}</span></div>
-    <div class="ctl${mic ? " mic7" : ""}">${mic ? `<span class="mute">${kicon("mic-off", 22)}</span>` : ""}<span class="mute">${kicon("volume-x", 24)}</span><span>${kicon("volume-1", 28)}</span><span>${kicon("skip-back", 28)}</span>
-      <span class="play">${kicon(np.playing ? "pause" : "play", 36)}</span><span>${kicon("skip-forward", 28)}</span><span>${kicon("volume-2", 28)}</span></div></div>`;
+    <div class="ctl${mic ? " mic7" : ""}"><span class="mute">${kicon("volume-x", 24)}</span><span>${kicon("volume-1", 28)}</span><span>${kicon("skip-back", 28)}</span>
+      <span class="play">${kicon(np.playing ? "pause" : "play", 36)}</span><span>${kicon("skip-forward", 28)}</span><span>${kicon("volume-2", 28)}</span>${mic ? `<span class="mute">${kicon("mic-off", 22)}</span>` : ""}</div></div>`;
 }
 function devHTML() {
   const p = prof(), page = pg(), line = rgb(lineFor(p.color || [138, 152, 171]));
