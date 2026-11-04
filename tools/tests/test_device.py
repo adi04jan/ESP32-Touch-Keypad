@@ -937,6 +937,30 @@ def test_motion_command_tunes_the_springs(d):
     d.cmd("motion page 230 0.78")
 
 
+def test_a_slide_reads_no_tiles_from_flash(d):
+    """Six custom tiles on the incoming page, the cache holds four: a slide draws the ones it has and plain
+    faces for the rest (they come in once it lands), rather than reading flash (~31 ms a tile) every frame."""
+    tiles = [c.to_bytes(2, "big") * (TILE_W * TILE_W) for c in (0x001F, 0xFFE0, 0x07FF, 0xF81F, 0x07E0, 0xF800)]
+    crcs = [f"{zlib.crc32(t):08x}" for t in tiles]
+    p = json.loads(json.dumps(PROFILE))
+    for i, crc in enumerate(crcs):
+        k = key(i + 1, f"T{i}", [{"type": "key", "value": "F14"}], tile=crc)
+        del k["icon"]
+        p["pages"][0]["keys"][i] = k
+    try:
+        for crc, t in zip(crcs, tiles):
+            d.upload_bin(f"/t/{crc}.565", t)
+        d.upload_text(f"profile{SLOT}.json", json.dumps(p)); d.ok("page 3"); time.sleep(1.0)
+        frames, rate, worst = fps(d, lambda: d.ok("page 1"), wait=1.0)   # page 3 -> page 1, six tiles coming in
+        slow = [l for l in d.cmd("perf log") if len(l.split()) == 3 and int(l.split()[1]) > 60000]   # a frame and a flash read (~31 ms)
+        print(f"tile slide: {frames} frames {rate:.1f} fps worst {worst:.1f} ms, {len(slow)} over 60 ms")
+        assert frames >= 8 and rate >= SLIDE_FLOOR and len(slow) <= 1, (frames, rate, slow)   # one: the landing reads the rest
+    finally:
+        d.ok("page 1")
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+        for crc in crcs:
+            d.cmd(f"rm /t/{crc}.565")
+
 def test_slide_holds_its_floor_on_a_full_page(d):
     try:
         d.upload_text(f"profile{SLOT}.json", json.dumps(full_profile())); d.ok(f"setprofile {SLOT}"); time.sleep(0.6)
@@ -1291,7 +1315,7 @@ def test_shade_brightness_profile_and_clear(d):
         since = len(d.events)
         frames, rate, worst = fps(d, lambda: d.swipe(240, 70, 240, 270), wait=0.6)
         d.wait_event(r"^EVT:UI shade$", 3, since)
-        assert rate >= FPS_FLOOR and worst <= 20, (frames, rate, worst)
+        assert rate >= FPS_FLOOR and worst <= 20, (frames, rate, worst, d.cmd("perf log")[-8:])   # the slow frames: at, us, px
         time.sleep(0.3)
         d.touch(30 + 13 + 4, 60)                                           # the slider's left end: dimmest
         assert d.cmd("setbrightness")[0] == "brightness 13"

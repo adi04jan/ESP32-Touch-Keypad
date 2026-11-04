@@ -457,6 +457,7 @@ static const uint16_t *tileImage(const char *crc) {
     if (tileCache[i].img && !strncmp(tileCache[i].crc, crc, 8)) { tileCache[i].used = millis(); return tileCache[i].img; }
     if (tileCache[i].used < tileCache[slot].used) slot = i;
   }
+  if (slide.on) return nullptr;   // a page moving: no flash reads (~31 ms a tile); its key shows its face until it lands
   char path[24];
   snprintf(path, sizeof path, "/t/%.8s.565", crc);
   File f = LittleFS.open(path, "r");   // no exists() first: that alone is another 15 ms
