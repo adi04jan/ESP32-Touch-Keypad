@@ -140,14 +140,19 @@ struct QbBtn { int8_t prof, page; char icon[24], label[13]; bool ok; };   // pro
 static QbBtn qb[QB_BUTTONS];
 static bool qbParse(const char *json, QbBtn out[QB_BUTTONS], String &err);
 static void qbCheck();
-// The open panel (btn 0: none): its own page document, page line, back stack and toggles.
-static JsonDocument panelDoc;
-static struct { int8_t btn, prof, page, pages, start, back[8], depth; uint16_t toggles; uint8_t col[3]; } panel;   // start: the page the button opens
+// The layers over the keys (btn 0: closed), each with its own page document, page line, back stack and
+// toggles: a bar panel (entries 2-4) and, above it, Media (entry 1, the swipe up). Closing Media shows the
+// panel again. start: the page the entry opens.
+struct Layer { int8_t btn, prof, page, pages, start, back[8], depth; uint16_t toggles; uint8_t col[3]; JsonDocument doc; };
+static Layer panel, media;
+static Layer *topLayer() { return media.btn ? &media : panel.btn ? &panel : nullptr; }
+static void layerClear(Layer &L) { L.doc.clear(); L.btn = L.depth = 0; L.toggles = 0; }
+static void layerClose(Layer &L);   // that layer goes (EVT:PANEL, the wipe): Media shows the panel under it again
 // The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
 static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
 static struct { int8_t prof, page; char name[24]; uint8_t col[3]; } backTo;   // prof 0: no way back
-static int viewPage() { return panel.btn ? panel.page : currentPage; }      // the page the grid shows
-static int viewPages() { return panel.btn ? panel.pages : pageCount; }
+static int viewPage() { Layer *L = topLayer(); return L ? L->page : currentPage; }      // the page the grid shows
+static int viewPages() { Layer *L = topLayer(); return L ? L->pages : pageCount; }
 static void startWave();
 static void startWipe();
 
@@ -195,10 +200,10 @@ static uint32_t dmgPx() { uint32_t px = 0; for (int i = 0; i < dmgN; i++) px += 
 #define FRAME_PX 30000   // dirty pixels a frame takes icon frames up to (~0.45 us a pixel: inside 16 ms)
 
 // ---------------------------------------------------------------- helpers
-static JsonVariant keyAt(int c) { return (panel.btn ? panelDoc : pageDoc)["keys"][c]; }
+static JsonVariant keyAt(int c) { Layer *L = topLayer(); return (L ? L->doc : pageDoc)["keys"][c]; }
 static bool playerPage() { JsonVariant k = keyAt(0); return !k.isNull() && k["widget"].is<const char *>(); }
-static bool toggled(int c) { return panel.btn ? (panel.toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
-static C3 groundAt(int y) { return panel.btn && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
+static bool toggled(int c) { Layer *L = topLayer(); return L ? (L->toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
+static C3 groundAt(int y) { return topLayer() && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
 static C3 tintOf(JsonVariant k) { return { (uint8_t)(k["led_color"][0] | 138), (uint8_t)(k["led_color"][1] | 152), (uint8_t)(k["led_color"][2] | 171) }; }
 static C3 lineOf(const uint8_t col[3]) {   // a profile's line colour, made to read on this theme's ground
   C3 c = { col[0], col[1], col[2] };
@@ -208,10 +213,12 @@ static C3 lineOf(const uint8_t col[3]) {   // a profile's line colour, made to r
 }
 static C3 lineC() { return lineOf(profileColor); }
 static void emitKey(int c, char st) {
-  if (panel.btn) Con.printf("EVT:PKEY %d %d %d %c\n", panel.prof, panel.page + 1, c + 1, st);
+  if (Layer *L = topLayer()) Con.printf("EVT:PKEY %d %d %d %c\n", L->prof, L->page + 1, c + 1, st);
   else Con.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st);
 }
-static void emitPanel() { if (panel.btn) Con.printf("EVT:PANEL %d %d %d\n", panel.btn, panel.prof, panel.page + 1); else Con.println("EVT:PANEL 0"); }
+static void emitPanel() {   // the top layer: Media over a panel reports Media; closing it reports the panel again
+  if (Layer *L = topLayer()) Con.printf("EVT:PANEL %d %d %d\n", L->btn, L->prof, L->page + 1); else Con.println("EVT:PANEL 0");
+}
 static void emitMode() { Con.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
 static int npPos() {
   int p = np.pos + (np.playing ? (int)((millis() - np.at) / 1000) : 0);
@@ -792,7 +799,8 @@ static void drawStatus() {
 static void drawStations() {
   int pages = viewPages(), cur = viewPage();
   if (pages < 2 || !gfxHits(0, LINE_Y, SCR_W, SCR_H - LINE_Y)) return;
-  C3 line = panel.btn ? lineOf(panel.col) : lineC(), gnd = groundAt(310);
+  Layer *L = topLayer();
+  C3 line = L ? lineOf(L->col) : lineC(), gnd = groundAt(310);
   int total = (pages - 1) * 30, x0 = KEYS_W / 2 - total / 2;
   fillRect(x0, 309, total, 2, T->crisp ? line : mix(line, BLACK, 77));
   for (int i = 0; i < pages; i++) {
@@ -1520,14 +1528,16 @@ void uiProfilesChanged(int id) {
   markBar();
   if (sug.slot == id) uiSuggest(id);   // re-reads it; gone: no suggestion (a tap must never make a default)
   if (backTo.prof == id && !LittleFS.exists("/profile" + String(id) + ".json")) backTo.prof = 0;
-  if (!panel.btn || panel.prof != id) return;   // Studio saved the profile behind the open panel: show it
-  char name[24];
-  int pages = 0;
-  uint8_t col[3];
-  if (!profileMeta(id, name, sizeof name, &pages, col) || panel.page >= pages || !loadPageInto(id, panel.page, panelDoc)) { uiPanel(0); return; }
-  panel.pages = min(pages, MAX_PAGES);
-  memcpy(panel.col, col, 3);
-  startWave();
+  for (Layer *L : { &panel, &media }) {   // Studio saved the profile behind an open layer: show it
+    if (!L->btn || L->prof != id) continue;
+    char name[24];
+    int pages = 0;
+    uint8_t col[3];
+    if (!profileMeta(id, name, sizeof name, &pages, col) || L->page >= pages || !loadPageInto(id, L->page, L->doc)) { layerClose(*L); continue; }
+    L->pages = min(pages, MAX_PAGES);
+    memcpy(L->col, col, 3);
+    startWave();
+  }
 }
 
 // ---------------------------------------------------------------- frame
@@ -1540,7 +1550,7 @@ static void renderChunk(uint32_t now) {
   if (mode == M_PAIR) drawPair();
   else if (!sheetCovers) {
     gfxClip(0, bot > STATUS_H ? bot - 18 : 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet or shade (corners are 16 px)
-    if (panel.btn) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
+    if (topLayer()) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
     if (playerPage()) drawPlayer(now);
     else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
     drawStations();
@@ -1994,74 +2004,89 @@ void uiGoPage(int idx, bool push) {
 void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
 
 // ---------------------------------------------------------------- the quick bar's panels
-static void panelGo(int idx, bool push) {
-  if (!panel.btn || idx < 0 || idx >= panel.pages || idx == panel.page) return;
+static void panelGo(int idx, bool push) {   // the top layer's page idx
+  Layer *L = topLayer();
+  if (!L || idx < 0 || idx >= L->pages || idx == L->page) return;
   bool wasPlayer = playerPage();
-  if (!loadPageInto(panel.prof, idx, panelDoc)) {
-    if (!loadPageInto(panel.prof, panel.page, panelDoc)) uiPanel(0);
+  if (!loadPageInto(L->prof, idx, L->doc)) {
+    if (!loadPageInto(L->prof, L->page, L->doc)) layerClose(*L);
     return;
   }
   if (push) {
-    if (panel.depth == (int)sizeof panel.back) memmove(panel.back, panel.back + 1, --panel.depth);
-    panel.back[panel.depth++] = panel.page;
+    if (L->depth == (int)sizeof L->back) memmove(L->back, L->back + 1, --L->depth);
+    L->back[L->depth++] = L->page;
   }
-  panel.page = idx;
-  panel.toggles = 0;
+  L->page = idx;
+  L->toggles = 0;
   emitPanel();
   if (wasPlayer != playerPage()) startWipe(); else startWave();
 }
 
 // A swipe or a station: the page next door in whatever the grid shows.
 static void viewGo(int idx) {
-  if (panel.btn) panelGo(idx, false);
+  if (topLayer()) panelGo(idx, false);
   else if (idx >= 0 && idx < pageCount) uiGoPage(idx, false);
 }
 
-void uiPanel(int btn) {
-  if (btn < 0 || btn > QB_BUTTONS) return;
-  if (btn == 0) {
-    if (!panel.btn) return;
-    panelDoc.clear();
-    panel.btn = 0;
-    emitPanel();
-    startWipe();
-    markBar();
-    return;
-  }
-  QbBtn &b = qb[btn - 1];
-  char name[24];
-  int pages = 0;
-  uint8_t col[3];
-  bool was = panel.btn;
-  b.ok = b.prof && profileMeta(b.prof, name, sizeof name, &pages, col) && b.page <= pages && loadPageInto(b.prof, b.page - 1, panelDoc);
-  if (!b.ok) {   // gone since it was set: draw it empty, and don't leave a half-loaded panel up
-    if (was) { panel.btn = 0; panelDoc.clear(); emitPanel(); startWipe(); }
-    markBar();
-    return;
-  }
-  panel = {};
-  panel.btn = btn;
-  panel.prof = b.prof;
-  panel.page = panel.start = b.page - 1;
-  panel.pages = min(pages, MAX_PAGES);
-  memcpy(panel.col, col, 3);
+static void layerClose(Layer &L) {
+  if (!L.btn) return;
+  layerClear(L);
   emitPanel();
   startWipe();
   markBar();
 }
 
-int uiPanelOpen() { return panel.btn; }
+// 1: Media (entry 1), over whatever is open; 2-4: a bar panel (Media goes); 0: both go.
+void uiPanel(int btn) {
+  if (btn < 0 || btn > QB_BUTTONS) return;
+  if (btn == 0) {
+    if (!panel.btn && !media.btn) return;
+    layerClear(media);
+    layerClear(panel);
+    emitPanel();
+    startWipe();
+    markBar();
+    return;
+  }
+  if (btn > 1 && media.btn && panel.btn == btn) { layerClose(media); return; }   // its panel is under Media: show it
+  Layer &L = btn == 1 ? media : panel;
+  QbBtn &b = qb[btn - 1];
+  char name[24];
+  int pages = 0;
+  uint8_t col[3];
+  bool was = L.btn;
+  b.ok = b.prof && profileMeta(b.prof, name, sizeof name, &pages, col) && b.page <= pages && loadPageInto(b.prof, b.page - 1, L.doc);
+  if (!b.ok) {   // gone since it was set: draw it empty, and don't leave a half-loaded layer up
+    if (was) layerClose(L); else L.doc.clear();
+    markBar();
+    return;
+  }
+  L.btn = btn;
+  L.prof = b.prof;
+  L.page = L.start = b.page - 1;
+  L.pages = min(pages, MAX_PAGES);
+  L.depth = 0;
+  L.toggles = 0;
+  memcpy(L.col, col, 3);
+  if (btn > 1) layerClear(media);   // a bar button with Media up: Media goes
+  emitPanel();
+  startWipe();
+  markBar();
+}
+
+int uiPanelOpen() { Layer *L = topLayer(); return L ? L->btn : 0; }
 
 void uiKeyGoPage(int idx) {
-  if (panel.btn) panelGo(idx, true);
+  if (topLayer()) panelGo(idx, true);
   else uiGoPage(idx, true);
 }
 
 void uiKeyBack() {
-  if (!panel.btn) { uiBack(); return; }
-  if (panel.depth) panelGo(panel.back[--panel.depth], false);
-  else if (panel.page != panel.start) panelGo(panel.start, false);   // reached by a swipe or a station: its first page
-  else uiPanel(0);   // back on the page the button opens: the panel goes
+  Layer *L = topLayer();
+  if (!L) { uiBack(); return; }
+  if (L->depth) panelGo(L->back[--L->depth], false);
+  else if (L->page != L->start) panelGo(L->start, false);   // reached by a swipe or a station: its first page
+  else layerClose(*L);   // back on the page the entry opens: that layer goes
 }
 
 void uiKeyProfile(int n) { uiSetProfile(n, "touch"); }
@@ -2090,7 +2115,7 @@ static void barTap(int i) {
   if (i == QB_SETTINGS) { feedbackClick(); uiOpenSheet(); return; }
   if (i < 2 || i > QB_BUTTONS || !qb[i - 1].prof || !qb[i - 1].ok) return;   // an empty button does nothing
   feedbackClick();
-  uiPanel(panel.btn == i ? 0 : i);
+  uiPanel(panel.btn == i && !media.btn ? 0 : i);   // with Media up, the panel's own button shows the panel
 }
 
 void uiToast(const char *t) {
@@ -2535,7 +2560,7 @@ static void runKey(int c, bool hold) {
   if (hold) { macroEngine.start(k, true, c); return; }
   const char *field = nullptr;
   if (k["toggle"] | false) {
-    if (panel.btn) panel.toggles ^= 1 << c;
+    if (Layer *L = topLayer()) L->toggles ^= 1 << c;
     else if (currentPage < MAX_PAGES) toggles[currentPage] ^= 1 << c;
     if (!toggled(c) && k["off_actions"].size()) field = "off_actions";
   }
@@ -2647,8 +2672,8 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       }
     } else if (kind == G_SWIPE_L) { pressedBtn = -1; viewGo(viewPage() + 1); }
     else if (kind == G_SWIPE_R) { pressedBtn = -1; viewGo(viewPage() - 1); }
-    else if (kind == G_SWIPE_U) { pressedBtn = -1; if (panel.btn != 1 && qb[0].prof && qb[0].ok) uiPanel(1); }   // entry 1: Media (none set: nothing)
-    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (panel.btn == 1) uiPanel(0); else uiOpenShade(); }
+    else if (kind == G_SWIPE_U) { pressedBtn = -1; if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); }   // entry 1: Media (none set: nothing)
+    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (media.btn) layerClose(media); else uiOpenShade(); }
     return;
   }
 
@@ -2703,7 +2728,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     }
     case G_SWIPE_L: release(pressed); viewGo(viewPage() + 1); break;
     case G_SWIPE_R: release(pressed); viewGo(viewPage() - 1); break;
-    case G_SWIPE_U: release(pressed); if (panel.btn != 1 && qb[0].prof && qb[0].ok) uiPanel(1); break;   // entry 1: Media (none set: nothing)
-    case G_SWIPE_D: release(pressed); if (panel.btn == 1) uiPanel(0); else uiOpenShade(); break;   // Media closes, else the shade comes down
+    case G_SWIPE_U: release(pressed); if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); break;   // entry 1: Media (none set: nothing)
+    case G_SWIPE_D: release(pressed); if (media.btn) layerClose(media); else uiOpenShade(); break;   // Media closes, else the shade comes down
   }
 }

@@ -420,6 +420,34 @@ def test_status_band_has_no_settings_button(d):
     assert not evts(d, since, "EVT:UI")
 
 
+def test_media_opens_over_a_panel_and_closing_returns_to_it(d):
+    set_qb(d); d.touch(*BAR[3]); d.wait_event(rf"^EVT:PANEL 3 {SLOT} 3$", 2)
+    since = len(d.events)
+    swipe_up(d); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 2, since)
+    assert "panel:1" in d.cmd("status")[0]
+    swipe_down(d); d.wait_event(rf"^EVT:PANEL 3 {SLOT} 3$", 2, since)
+    assert "panel:3" in d.cmd("status")[0]
+
+
+def test_bar_tap_with_media_open_swaps_to_that_panel(d):
+    set_qb(d); swipe_up(d); time.sleep(0.6); since = len(d.events)
+    d.touch(*BAR[3]); d.wait_event(rf"^EVT:PANEL 3 {SLOT} 3$", 2, since)
+    swipe_down(d); d.wait_event(r"^EVT:UI shade$", 2, since)          # media was closed, not hidden
+    d.cmd("shade close")
+
+
+def test_settings_from_media_comes_back_to_media(d):
+    set_qb(d); swipe_up(d); time.sleep(0.6); since = len(d.events)
+    d.touch(*BAR["settings"]); d.wait_event(r"^EVT:UI sheet$", 2, since)
+    d.ok("sheet close"); d.wait_event(r"^EVT:UI home$", 2, since)
+    assert "panel:1" in d.cmd("status")[0]
+
+
+def test_media_keys_report_as_panel_keys(d):
+    set_qb(d); swipe_up(d); time.sleep(0.6); since = len(d.events)
+    tap(d, 1); d.wait_event(rf"^EVT:PKEY {SLOT} 1 1 1$", 2, since)
+
+
 def test_bar_tap_opens_and_closes_a_panel(d):
     set_qb(d); since = len(d.events)
     d.touch(*BAR[3])
