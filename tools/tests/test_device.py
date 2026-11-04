@@ -166,6 +166,14 @@ def d(dev):
     return dev
 
 
+def put_back_profile(d):
+    """PROFILE in slot 16 again, with its tile: a profile that does not use the tile lets the keypad delete
+    the file (unreferenced tiles are collected on upload), and the Tile key would then try to open a missing
+    file on every redraw."""
+    d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
+    d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+
+
 def tap(d, cell, ms=80):
     d.touch(*cell_xy(cell), ms)
 
@@ -969,7 +977,7 @@ def test_slide_holds_its_floor_on_a_full_page(d):
         print(f"slide fps {rate:.1f} over {frames} frames")
         assert frames >= 12 and rate >= SLIDE_FLOOR, (frames, rate)
     finally:
-        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE)); d.ok(f"setprofile {SLOT}")
+        put_back_profile(d); d.ok(f"setprofile {SLOT}")
 
 
 
@@ -1471,7 +1479,7 @@ def test_gif_key_plays_its_frames(dev):
             time.sleep(0.2)
         assert {"red", "blue"} <= seen, seen
     finally:
-        dev.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))   # slots 1-15 are the owner's: never written
+        put_back_profile(dev)   # slots 1-15 are the owner's: never written
         dev.ok(f"setprofile {SLOT}")
         for n in names:
             dev.cmd(f"rm /t/{n}.565")
