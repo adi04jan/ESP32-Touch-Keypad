@@ -39,6 +39,10 @@ void gfxClipAnd(int x0, int y0, int x1, int y1);    // narrow the current clip f
 void gfxClipGet(int c[4]);                          // save and put back a clip
 void gfxClipSet(const int c[4]);
 bool gfxHits(int x, int y, int w, int h);           // rectangle meets the clip
+// Move the chunk's origin and clip by (dx, dy): what is drawn at (x, y) then lands at (x - dx, y - dy).
+// The buffer stays; gfxPan(-dx, -dy) undoes it. A vertical pan only over a flat ground (the panel ply):
+// the ground tables are indexed by row.
+void gfxPan(int dx, int dy);
 void gfxGround();                                   // the screen's vertical gradient
 void gfxFill(const C3 &c);                          // whole clip, one colour
 void fillRect(int x, int y, int w, int h, C3 c, int alpha = 255);

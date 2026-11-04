@@ -21,7 +21,9 @@ void uiActivity();                   // resets the dim/off timers
 bool uiWake();                       // true if the screen was dimmed/off (that touch is swallowed)
 void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1);
 
-void uiGoPage(int idx, bool push);   // emits EVT:PAGE
+void uiGoPage(int idx, bool push, bool slide = true);   // emits EVT:PAGE; slides in from the old page (false: the wave)
+int  uiSlidePx();                    // the page slide's offset in px (+ moved left), 0 at rest (status slide:)
+void uiMotionCmd(const char *arg);   // `motion`: the springs' stiffness and damping (page, sheet), RAM only
 void uiBack();
 // Emits EVT:PROFILE, shows a toast. how: nullptr = the host chose it (`setprofile`, an upload
 // reload): a panel stays open. "touch" | "suggest" | "back" = chosen on the keypad: a panel closes,

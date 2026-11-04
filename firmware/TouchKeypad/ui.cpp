@@ -9,6 +9,7 @@
 #include "macro_engine.h"
 #include "ble_hid.h"
 #include "touch.h"
+#include "motion.h"
 #include "leds.h"
 #include "power.h"
 #include "hid_maps.h"
@@ -148,6 +149,24 @@ static Layer panel, media;
 static Layer *topLayer() { return media.btn ? &media : panel.btn ? &panel : nullptr; }
 static void layerClear(Layer &L) { L.doc.clear(); L.btn = L.depth = 0; L.toggles = 0; }
 static void layerClose(Layer &L);   // that layer goes (EVT:PANEL, the wipe): Media shows the panel under it again
+
+// The page slide: the view's page and a neighbour side by side at an offset that follows the finger, then
+// springs (docs/superpowers/specs/2026-11-04-motion-and-swipe-up-media-design.md). Page state commits at the
+// decision (a release, or at once for a key, station or host page); the slide is the picture catching up.
+static struct {
+  bool on, drag, ignore;    // ignore: the rest of this touch (a profile switch ended its slide)
+  int8_t other;             // the page drawn beside the view's, -1 none
+  Spring s;                 // s.x: the view page's offset in pages, + moved left (the next page coming in)
+  JsonDocument doc;         // the other page
+  uint16_t otherToggles;
+  int16_t sx[6];            // the finger's latest x and when, for the release velocity
+  uint32_t st[6];
+  uint8_t n;
+  uint32_t last;            // the spring's last step
+  int drawn;                // the offset last marked
+} slide;
+static bool slideOther;     // drawing the other page: keyAt and toggled read it
+static float pageK = 230, pageZ = 0.78f, sheetK = 240, sheetZ = 0.80f;   // the springs; `motion` tunes them (RAM only)
 // The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
 static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
 static struct { int8_t prof, page; char name[24]; uint8_t col[3]; } backTo;   // prof 0: no way back
@@ -200,9 +219,16 @@ static uint32_t dmgPx() { uint32_t px = 0; for (int i = 0; i < dmgN; i++) px += 
 #define FRAME_PX 30000   // dirty pixels a frame takes icon frames up to (~0.45 us a pixel: inside 16 ms)
 
 // ---------------------------------------------------------------- helpers
-static JsonVariant keyAt(int c) { Layer *L = topLayer(); return (L ? L->doc : pageDoc)["keys"][c]; }
+static JsonVariant keyAt(int c) {
+  if (slideOther) return slide.doc["keys"][c];
+  Layer *L = topLayer();
+  return (L ? L->doc : pageDoc)["keys"][c];
+}
 static bool playerPage() { JsonVariant k = keyAt(0); return !k.isNull() && k["widget"].is<const char *>(); }
-static bool toggled(int c) { Layer *L = topLayer(); return L ? (L->toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
+static bool toggled(int c) {
+  if (slideOther) return (slide.otherToggles >> c) & 1;
+  Layer *L = topLayer();
+  return L ? (L->toggles >> c) & 1 : currentPage < MAX_PAGES && ((toggles[currentPage] >> c) & 1); }
 static C3 groundAt(int y) { return topLayer() && y >= STATUS_H ? PLY : gfxGroundAt(y); }   // a panel lies on the overlay ply
 static C3 tintOf(JsonVariant k) { return { (uint8_t)(k["led_color"][0] | 138), (uint8_t)(k["led_color"][1] | 152), (uint8_t)(k["led_color"][2] | 171) }; }
 static C3 lineOf(const uint8_t col[3]) {   // a profile's line colour, made to read on this theme's ground
@@ -925,6 +951,170 @@ static const C3 SWATCH[8] = { HEXC(0x4f8cff), HEXC(0x3fc6e0), HEXC(0x52d68f), HE
 #define GEN_X 248              // the Generate button, left of Done
 #define GEN_W 132
 
+// ---------------------------------------------------------------- the page slide
+static int slideOff() { return slide.on ? (int)lroundf(slide.s.x * KEYS_W) : 0; }
+int uiSlidePx() { return slideOff(); }
+
+// The key area in rects on the moving cell grid: every DMA chunk then holds one cell, drawn once
+// (one 420-wide rect is cut into 20-row chunks, and each cell would be drawn about five times).
+static void slideMark() {
+  int f = ((slideOff() % CELL_W) + CELL_W) % CELL_W;
+  for (int x = -f; x < KEYS_W; x += CELL_W)
+    for (int r = 0; r < GRID_ROWS; r++) mark(x, STATUS_H + r * CELL_H, min(CELL_W, KEYS_W - x), CELL_H);
+}
+
+static void slideQuiet() {   // the keys' own animations stop while pages move
+  stopIcons();
+  for (auto &a : ca) { a.pop0 = 0; a.ring = 0; }
+  pressed = released = -1;
+  pressedBtn = -1;
+}
+
+static void slideEnd() {   // the page in place at once
+  if (!slide.on) return;
+  slide.on = slide.drag = false;
+  slide.s.on = false;
+  slide.other = -1;
+  slide.doc.clear();
+  slideMark();
+}
+
+static void slideAbort() { slideEnd(); slide.ignore = true; }   // and the rest of this touch is ignored
+
+// The page beside the view's: page idx of the view's profile; out of range: none.
+static bool slideLoad(int idx) {
+  slide.other = -1;
+  slide.doc.clear();
+  slide.otherToggles = 0;
+  if (idx < 0 || idx >= viewPages()) return false;
+  Layer *L = topLayer();
+  if (!loadPageInto(L ? L->prof : currentProfile, idx, slide.doc)) { slide.doc.clear(); return false; }
+  slide.other = idx;
+  if (!L && idx < MAX_PAGES) slide.otherToggles = toggles[idx];
+  return true;
+}
+
+// The view just changed from page `from` (its document now in slide.doc): the new page slides in from
+// the side the old one leaves by.
+static void slideFrom(int from, uint16_t fromToggles) {
+  slide.other = from;
+  slide.otherToggles = fromToggles;
+  slide.on = true;
+  slide.drag = false;
+  slide.s = { viewPage() > from ? -1.0f : 1.0f, 0, 0, pageK, pageZ, true };
+  slide.last = millis();
+  slideQuiet();
+  mark(0, 0, SCR_W, STATUS_H);              // the page number
+  mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);   // and the stations: once, for the new page
+  slideMark();
+  slide.drawn = slideOff();
+}
+
+// A drag lands on the neighbour: it becomes the view's page (its document swapped in, no reload), the old
+// page the other, and the picture keeps its place.
+static void slideCommit() {
+  Layer *L = topLayer();
+  int from = viewPage(), to = slide.other;
+  swap(L ? L->doc : pageDoc, slide.doc);
+  if (L) { slide.otherToggles = L->toggles; L->toggles = 0; L->page = to; emitPanel(); }
+  else { slide.otherToggles = from < MAX_PAGES ? toggles[from] : 0; currentPage = to; Con.printf("EVT:PAGE %d\n", to + 1); }
+  slide.other = from;
+  slide.s.x -= to > from ? 1 : -1;
+  mark(0, 0, SCR_W, STATUS_H);
+  mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
+}
+
+static void drawView(uint32_t now) {   // the grid's page (the other one while slideOther)
+  if (playerPage()) drawPlayer(now);
+  else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
+}
+
+static void drawSlide(uint32_t now) {
+  int cl[4];
+  gfxClipGet(cl);
+  gfxClipAnd(0, STATUS_H, KEYS_W, LINE_Y);   // the bar, the band and the stations stay put
+  int off = slideOff();
+  gfxPan(off, 0);
+  drawView(now);
+  gfxPan(-off, 0);
+  if (slide.other >= 0) {   // a later page sits on the right, an earlier one on the left
+    int at = slide.other > viewPage() ? off - KEYS_W : off + KEYS_W;
+    slideOther = true;
+    gfxPan(at, 0);
+    drawView(now);
+    gfxPan(-at, 0);
+    slideOther = false;
+  }
+  gfxClipSet(cl);
+}
+
+// A drag took the touch: what was under the finger goes up without firing.
+static void slideCancelPress() {
+  if (pressed >= 0) { int c = pressed; pressed = -1; emitKey(c, '0'); markCellRect(c); }
+  if (pressedBtn >= 0) { pressedBtn = -1; mark(0, BTN_Y - 46, SCR_W, 92); }
+}
+
+// Sideways drags on the home screen (the keys, a panel, Media): the page under the finger. True when it
+// took the gesture. Runs ahead of the bar's taps and the player's buttons, so a drag from either slides.
+static bool slideGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t now) {
+  if (kind == G_DOWN) {
+    slide.ignore = false;
+    slide.n = 0;
+    if (slide.on && !slide.drag) slideEnd();   // a finger on a page still springing: it lands at once
+    return false;
+  }
+  if (slide.ignore) return true;
+  int dx = x1 - x0, dy = y1 - y0;
+  if (kind == G_MOVE) {
+    if (!slide.drag) {
+      if (abs(dx) <= LOCK_PX || abs(dx) <= abs(dy)) return false;
+      slideCancelPress();
+      slideQuiet();
+      slide.on = slide.drag = true;
+      slide.s = { 0, 0, 0, pageK, pageZ, false };
+      slideLoad(viewPage() + (dx < 0 ? 1 : -1));
+    }
+    if (slide.n == 6) { memmove(slide.sx, slide.sx + 1, 5 * sizeof *slide.sx); memmove(slide.st, slide.st + 1, 5 * sizeof *slide.st); slide.n = 5; }
+    slide.sx[slide.n] = x1;
+    slide.st[slide.n] = now;
+    slide.n++;
+    float raw = -dx / (float)KEYS_W;   // + the finger went left: the next page comes in
+    if (raw != 0) {   // the neighbour on the side it is pulled from; reversing past the start swaps it
+      int want = viewPage() + (raw > 0 ? 1 : -1);
+      if (want != slide.other) { if (want >= 0 && want < viewPages()) slideLoad(want); else { slide.other = -1; slide.doc.clear(); } }
+    }
+    slide.s.x = constrain(slide.other >= 0 ? raw : raw * 0.35f, -1.0f, 1.0f);   // no page there: it gives a little
+    return true;
+  }
+  if (!slide.drag) return false;   // no drag: a tap or a swipe as before
+  if (kind == G_HOLD) return true;
+  slide.drag = false;   // the release: where a flick of this speed lands
+  float v = 0;
+  if (slide.n > 1 && slide.st[slide.n - 1] != slide.st[0])
+    v = -(slide.sx[slide.n - 1] - slide.sx[0]) * 1000.0f / KEYS_W / (float)(slide.st[slide.n - 1] - slide.st[0]);
+  float lo = 0, hi = 0;
+  if (slide.other > viewPage()) hi = 1;
+  else if (slide.other >= 0) lo = -1;
+  if (flickTarget(slide.s.x, v, lo, hi) != 0) slideCommit();
+  slide.s.v = v;
+  slide.s.to = 0;
+  slide.s.k = pageK;
+  slide.s.z = pageZ;
+  slide.s.on = true;
+  slide.last = now;
+  return true;
+}
+
+void uiMotionCmd(const char *arg) {   // `motion [page|sheet <k> <z>]`
+  char which[8] = "";
+  float k = 0, z = 0;
+  if (sscanf(arg, "%7s %f %f", which, &k, &z) == 3 && k >= 20 && k <= 2000 && z >= 0.1f && z <= 3) {
+    if (!strcmp(which, "page")) { pageK = k; pageZ = z; }
+    else if (!strcmp(which, "sheet")) { sheetK = k; sheetZ = z; }
+  }
+  Con.printf("motion page k:%.0f z:%.2f sheet k:%.0f z:%.2f\n", pageK, pageZ, sheetK, sheetZ);
+}
+
 // The saved hosts, cheaply (no file system walk): true when something shown changed.
 static bool refreshHosts() {
   auto before = info;
@@ -1530,6 +1720,7 @@ void uiProfilesChanged(int id) {
   if (backTo.prof == id && !LittleFS.exists("/profile" + String(id) + ".json")) backTo.prof = 0;
   for (Layer *L : { &panel, &media }) {   // Studio saved the profile behind an open layer: show it
     if (!L->btn || L->prof != id) continue;
+    slideEnd();
     char name[24];
     int pages = 0;
     uint8_t col[3];
@@ -1551,7 +1742,8 @@ static void renderChunk(uint32_t now) {
   else if (!sheetCovers) {
     gfxClip(0, bot > STATUS_H ? bot - 18 : 0, SCR_W, min(SCR_H, top + 18));   // nothing under the opaque sheet or shade (corners are 16 px)
     if (topLayer()) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, PLY);
-    if (playerPage()) drawPlayer(now);
+    if (slide.on) drawSlide(now);
+    else if (playerPage()) drawPlayer(now);
     else for (int c = 0; c < NUM_CELLS; c++) drawCell(c, now);
     drawStations();
     drawBar(now);
@@ -1597,7 +1789,16 @@ static bool animate(uint32_t now) {
   if (!home || playerPage()) stopIcons();   // icons play on the key grid only
   for (auto &a : ca) playing |= a.sig0 != 0;
   if (!playing && !waveOn) iconAnimReleaseAll();   // nothing should be left; make sure
-  if (home && !playerPage()) {
+  if (slide.on) {   // the page slide: the spring once a finger lets go
+    if (!slide.drag && slide.s.on && springStep(slide.s, min(0.05f, (now - slide.last) / 1000.0f), 0.5f / KEYS_W)) slideEnd();
+    slide.last = now;
+    if (slide.on) {
+      int off = slideOff();
+      if (off != slide.drawn) { slideMark(); slide.drawn = off; }
+      live = true;
+    }
+  }
+  if (home && !playerPage() && !slide.on) {
     if (mode == M_HOME) idleTurn(now);
     for (int c = 0; c < NUM_CELLS; c++) {
       bool m = false;
@@ -1630,7 +1831,7 @@ static bool animate(uint32_t now) {
       if (m) live = true;
     }
   }
-  if (home && playerPage()) {
+  if (home && playerPage() && !slide.on) {
     static uint32_t lastSec = 0;
     if (np.playing) {
       mark(SEEK_X, 70, SEEK_W, 50);   // the live equalizer by the source
@@ -1931,6 +2132,7 @@ void uiSetTheme(int i, bool save) {
     p.end();
   }
   if (i == themeIdx && T == &THEMES[i]) return;
+  slideEnd();
   applyTheme(i);
   Con.printf("EVT:THEME %s\n", T->id);
   // the new theme wipes down over the old one, a band of rows per frame
@@ -1988,17 +2190,25 @@ static void startWipe() {
   mark(0, LINE_Y, SCR_W, SCR_H - LINE_Y);
 }
 
-void uiGoPage(int idx, bool push) {
+void uiGoPage(int idx, bool push, bool slides) {
   if (idx < 0 || idx >= pageCount) return;
   int from = currentPage;
   bool wasPlayer = playerPage();
-  if (!loadPage(idx)) { loadPage(from); return; }
+  slides = slides && idx != from && !topLayer();   // the page on screen: it slides in, the old one beside it
+  slideEnd();
+  if (slides) swap(pageDoc, slide.doc);
+  if (!loadPage(idx)) {
+    if (slides) { swap(pageDoc, slide.doc); slide.doc.clear(); }
+    else loadPage(from);
+    return;
+  }
   if (push && idx != from) {
     if (backDepth == (int)sizeof backStack) memmove(backStack, backStack + 1, --backDepth);
     backStack[backDepth++] = from;
   }
   Con.printf("EVT:PAGE %d\n", idx + 1);
-  if (wasPlayer != playerPage()) startWipe(); else startWave();
+  if (slides) slideFrom(from, from < MAX_PAGES ? toggles[from] : 0);
+  else if (wasPlayer != playerPage()) startWipe(); else startWave();
 }
 
 void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
@@ -2007,19 +2217,19 @@ void uiBack() { uiGoPage(backDepth ? backStack[--backDepth] : 0, false); }
 static void panelGo(int idx, bool push) {   // the top layer's page idx
   Layer *L = topLayer();
   if (!L || idx < 0 || idx >= L->pages || idx == L->page) return;
-  bool wasPlayer = playerPage();
-  if (!loadPageInto(L->prof, idx, L->doc)) {
-    if (!loadPageInto(L->prof, L->page, L->doc)) layerClose(*L);
-    return;
-  }
+  slideEnd();
+  swap(L->doc, slide.doc);   // the old page is drawn beside the new one
+  if (!loadPageInto(L->prof, idx, L->doc)) { swap(L->doc, slide.doc); slide.doc.clear(); return; }
   if (push) {
     if (L->depth == (int)sizeof L->back) memmove(L->back, L->back + 1, --L->depth);
     L->back[L->depth++] = L->page;
   }
+  int from = L->page;
+  uint16_t t = L->toggles;
   L->page = idx;
   L->toggles = 0;
   emitPanel();
-  if (wasPlayer != playerPage()) startWipe(); else startWave();
+  slideFrom(from, t);
 }
 
 // A swipe or a station: the page next door in whatever the grid shows.
@@ -2039,6 +2249,7 @@ static void layerClose(Layer &L) {
 // 1: Media (entry 1), over whatever is open; 2-4: a bar panel (Media goes); 0: both go.
 void uiPanel(int btn) {
   if (btn < 0 || btn > QB_BUTTONS) return;
+  slideEnd();
   if (btn == 0) {
     if (!panel.btn && !media.btn) return;
     layerClear(media);
@@ -2135,6 +2346,7 @@ void uiAutogen(int state, const char *text) {
 
 void uiSetProfile(int n, const char *how) {
   int from = currentProfile, fromPage = currentPage;
+  slideAbort();   // a new profile: no slide, and the touch in progress can't start one on it
   if (how) uiPanel(0);   // the owner picked a profile: show it, not a panel over it
   macroEngine.abort();
   backDepth = 0;
@@ -2630,6 +2842,8 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     if (kind == G_TAP || kind == G_SWIPE_D) uiOpenShade();
     return;
   }
+
+  if (slideGesture(kind, x0, y0, x1, y1, now)) return;   // a sideways drag: the page under the finger
 
   // The quick bar takes taps only; a swipe that starts on it turns pages as anywhere else.
   if ((kind == G_DOWN || kind == G_TAP) && x0 >= BAR_X && y0 >= STATUS_H) {

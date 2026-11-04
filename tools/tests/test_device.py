@@ -24,6 +24,7 @@ SLOT = 16                         # the last slot: 1-13 hold the owner's profile
 TILE_W = 72
 G_LINE = 310                      # page stations
 FPS_FLOOR = 50                    # every animation, measured by the firmware's `perf`
+SLIDE_FLOOR = 20                  # a page slide (redrawn in software every frame): Task 5 of the motion plan raises it to 25
 
 
 def cell_xy(cell):
@@ -801,15 +802,15 @@ def test_press_animation_frame_rate(d):
     assert frames > 30 and rate >= FPS_FLOOR, (frames, rate)
 
 
-def test_page_wave_frame_rate(d):
+def test_page_slide_frame_rate(d):
     d.ok("page 3")
-    time.sleep(0.6)
+    time.sleep(0.8)
     frames, rate, _ = fps(d, lambda: d.swipe(100, 160, 400, 160))   # back to page 2: grid -> player
-    assert rate >= FPS_FLOOR, (frames, rate)
+    assert rate >= SLIDE_FLOOR, (frames, rate)
     d.ok("page 1")
-    time.sleep(0.6)
-    frames, rate, _ = fps(d, lambda: d.ok("page 3"))                 # grid -> grid wave
-    assert rate >= FPS_FLOOR, (frames, rate)
+    time.sleep(0.8)
+    frames, rate, _ = fps(d, lambda: d.ok("page 3"))                 # grid -> grid
+    assert rate >= SLIDE_FLOOR, (frames, rate)
 
 
 def test_sheet_frame_rate(d):
@@ -821,6 +822,124 @@ def test_sheet_frame_rate(d):
 def test_volume_panel_frame_rate(d):
     frames, rate, _ = fps(d, lambda: d.ok('widget volume {"level":30,"muted":false}'))
     assert rate >= FPS_FLOOR, (frames, rate)
+
+
+
+# ---------------------------------------------------------------- the page slide (motion plan, Task 3)
+def field(d, name):
+    return int(re.search(rf" {name}:(-?\d+)", d.cmd("status")[0]).group(1))
+
+
+def swipe_held(d, x1, y1, x2, y2, ms):
+    """A swipe that returns at once, the finger still down: d.swipe waits for the keypad's prompt, which
+    comes when the finger lifts, so state read during a drag needs this. The prompt it leaves is drained
+    by the next d.cmd."""
+    d.drain()
+    d.write_line(f"swipe {x1} {y1} {x2} {y2} {ms}")
+
+
+def full_profile():   # 2 pages x 15 icon keys, every 4th a host key (its PC tag): the owner's kind of page
+    icons = ["copy", "type", "folder", "file-text", "play", "volume-x", "mic", "arrow-left", "layers", "flag"]
+    acts = lambda i: [{"type": "host", "cmd": "open notepad", "slot": 5}] if i % 4 == 0 else [{"type": "key", "value": "A"}]
+    page = lambda n: {"name": n, "keys": [key(i + 1, f"{n} {i + 1}", acts(i), icon=icons[i % 10]) for i in range(15)]}
+    return {"schema_version": 2, "profile_name": "Full", "color": [80, 140, 255], "default_delay": 5, "pages": [page("One"), page("Two")]}
+
+
+def test_page_follows_the_finger(d):
+    swipe_held(d, 400, 160, 100, 160, 1500); time.sleep(0.75)
+    off = field(d, "slide")
+    assert 80 <= off <= 200 and "page:1 " in d.cmd("status")[0], off   # mid-drag: moved, not committed
+    d.wait_event(r"^EVT:PAGE 2$", 3); time.sleep(0.8)
+    assert field(d, "slide") == 0
+
+
+def test_a_flick_turns_the_page(d):
+    # 90 px in 80 ms: touch is read between frames (~28 ms while a slide draws), so a 60 ms flick gets two
+    # samples and lands at the half-page line; this one lands at about 0.7 of a page.
+    d.swipe(300, 160, 210, 160, 80); d.wait_event(r"^EVT:PAGE 2$", 1.5)
+
+
+def test_a_slow_short_drag_springs_back(d):
+    since = len(d.events)
+    d.swipe(300, 160, 220, 160, 800); time.sleep(1.6)
+    assert not evts(d, since, "EVT:PAGE") and field(d, "slide") == 0
+
+
+def test_both_ends_of_the_row_give_and_spring_back(d):               # motion plan, Review Focus 5
+    since = len(d.events)
+    swipe_held(d, 100, 160, 400, 160, 1200); time.sleep(0.6)
+    assert field(d, "slide") < -20                                        # page 1 gives to the right
+    time.sleep(1.4); d.ok("page 3"); time.sleep(0.8); since = len(d.events)
+    d.swipe(400, 160, 100, 160, 600); time.sleep(1.4)
+    assert not evts(d, since, "EVT:PAGE") and field(d, "slide") == 0
+
+
+def test_a_wobbly_tap_fires_and_a_drag_does_not(d):
+    x, y = cell_xy(1)
+    d.swipe(x, y, x + 6, y, 90); assert hid_reports(d, 1, 1)             # Copy: a 6 px wobble is a tap
+    d.listen(0.5); d.clear_events(); d.swipe(x, y, x + 60, y, 400); time.sleep(0.8)   # the tap's release report read first
+    assert not [l for _, l in d.events if l.startswith("EVT:HID")]
+
+
+def test_stations_keys_and_host_page_slide(d):
+    d.touch(210, G_LINE); d.wait_event(r"^EVT:PAGE 2$", 1); time.sleep(0.1)
+    assert field(d, "slide") != 0
+    time.sleep(1.0); d.ok("page 3"); time.sleep(0.1)
+    assert field(d, "slide") != 0 and "page:3 " in d.cmd("status")[0]   # committed at once
+
+
+def test_a_touch_mid_spring_lands_on_the_settled_page(d):            # motion plan, Review Focus 4
+    d.ok("page 3"); since = len(d.events)
+    tap(d, 15); d.wait_event(r"^EVT:KEY 3 15 1$", 1, since)              # Last, on page 3
+
+
+def test_slide_keeps_the_status_band_and_line_still(d):
+    before = d.shot()
+    swipe_held(d, 400, 160, 100, 160, 7000); time.sleep(1.5)
+    mid = d.shot()
+    band = lambda im: im.crop((150, 0, 440, 30)).tobytes()              # past the clock, short of the battery (live)
+    line = lambda im: im.crop((0, 300, 480, 320)).tobytes()
+    assert band(mid) == band(before) and line(mid) == line(before)
+    assert mid.crop((0, 30, 420, 300)).tobytes() != before.crop((0, 30, 420, 300)).tobytes()
+    time.sleep(6)
+
+
+def test_profile_change_mid_drag_ends_the_slide(d):                   # motion plan, Review Focus 1
+    swipe_held(d, 400, 160, 100, 160, 2000); time.sleep(0.6)
+    d.ok(f"setprofile {SLOT}"); time.sleep(2.0)
+    assert field(d, "slide") == 0 and "page:1 " in d.cmd("status")[0]
+    since = len(d.events); tap(d, 2); d.wait_event(r"^EVT:KEY 1 2 1$", 1, since)
+
+
+def test_drag_from_the_bar_or_a_player_button_slides_and_fires_nothing(d):   # motion plan, Review Focus 2
+    since = len(d.events)
+    d.swipe(450, 200, 150, 200); d.wait_event(r"^EVT:PAGE 2$", 1.5, since)   # from the bar: page 2, the player
+    time.sleep(0.8); since = len(d.events)
+    d.swipe(210, 248, 400, 248); d.wait_event(r"^EVT:PAGE 1$", 1.5, since)   # from play/pause
+    assert not [l for _, l in d.events[since:] if l.startswith("EVT:HID 2")]
+
+
+def test_pages_slide_inside_a_panel_and_in_media(d):
+    set_qb(d); d.touch(*BAR[2]); time.sleep(0.4); since = len(d.events)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 2 {SLOT} 2$", 1.5, since)
+    d.ok("panel 0"); time.sleep(0.4); swipe_up(d); time.sleep(0.6); since = len(d.events)
+    d.swipe(400, 160, 100, 160); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 2$", 1.5, since)
+
+
+def test_motion_command_tunes_the_springs(d):
+    assert d.cmd("motion")[0] == "motion page k:230 z:0.78 sheet k:240 z:0.80"
+    d.cmd("motion page 300 0.9"); assert "page k:300 z:0.90" in d.cmd("motion")[0]
+    d.cmd("motion page 230 0.78")
+
+
+def test_slide_holds_its_floor_on_a_full_page(d):
+    try:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(full_profile())); d.ok(f"setprofile {SLOT}"); time.sleep(0.6)
+        frames, rate, _ = fps(d, lambda: d.swipe(400, 160, 100, 160, 500), wait=1.4)
+        print(f"slide fps {rate:.1f} over {frames} frames")
+        assert frames >= 12 and rate >= SLIDE_FLOOR, (frames, rate)
+    finally:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE)); d.ok(f"setprofile {SLOT}")
 
 
 # ---------------------------------------------------------------- LED and feedback
@@ -954,8 +1073,8 @@ def test_each_theme_paints_its_ground_and_keys(d, name):
 def test_each_theme_animates_at_60fps(d, name):
     d.ok(f"theme {name}")
     time.sleep(0.6)
-    frames, rate, _ = fps(d, lambda: d.ok("page 3"))     # grid -> grid wave
-    assert frames >= 12 and rate >= FPS_FLOOR, (name, frames, rate)
+    frames, rate, _ = fps(d, lambda: d.ok("page 3"))     # grid -> grid slide
+    assert frames >= 8 and rate >= SLIDE_FLOOR, (name, frames, rate)
     d.ok("page 1")
     time.sleep(0.6)
     frames, rate, _ = fps(d, lambda: d.touch(*cell_xy(2), 700))

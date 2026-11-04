@@ -72,6 +72,7 @@ void gfxChunk(uint16_t *buf, int x, int y, int w, int h) {
   gfxUnclip();
 }
 void gfxUnclip() { CX0 = KX; CY0 = KY; CX1 = KX + KW; CY1 = KY + KH; }
+void gfxPan(int dx, int dy) { KX += dx; KY += dy; CX0 += dx; CX1 += dx; CY0 += dy; CY1 += dy; }
 void gfxClipAnd(int x0, int y0, int x1, int y1) { CX0 = max(CX0, x0); CY0 = max(CY0, y0); CX1 = min(CX1, x1); CY1 = min(CY1, y1); }
 void gfxClipGet(int c[4]) { c[0] = CX0; c[1] = CY0; c[2] = CX1; c[3] = CY1; }
 void gfxClipSet(const int c[4]) { CX0 = c[0]; CY0 = c[1]; CX1 = c[2]; CY1 = c[3]; }

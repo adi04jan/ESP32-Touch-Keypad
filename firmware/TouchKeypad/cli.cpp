@@ -222,7 +222,7 @@ static void uploadFinish() {
     if (id == currentProfile) {
       int pg = currentPage;
       uiSetProfile(id);
-      if (pg > 0 && pg < pageCount) uiGoPage(pg, false);
+      if (pg > 0 && pg < pageCount) uiGoPage(pg, false, false);   // back on the page it was showing: no slide
     }
   }
   prompt();
@@ -312,10 +312,12 @@ static bool runCommand(char *s) {
                    "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> notify <json>|list|clear shade [close] "
                    "quickbar [set <json>|clear] panel [0-4] suggest [0-16] ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
+  } else if (cmd == "motion") {
+    uiMotionCmd(arg);
   } else if (cmd == "status") {
-    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d sug:%d cal:%d theme:%s pwr:%s bat:%d\n",
+    Con.printf("Profile:%d loaded:%d idle:0 mode:ble ver:%s model:touch page:%d ble:%d pages:%d dry:%d ui:%s panel:%d slide:%d sug:%d cal:%d theme:%s pwr:%s bat:%d\n",
                   currentProfile, profileLoaded, FW_VERSION, currentPage + 1, hidConnected() ? 1 : 0, pageCount, hidDry() ? 1 : 0,
-                  uiModeName(), uiPanelOpen(), uiSuggested(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
+                  uiModeName(), uiPanelOpen(), uiSlidePx(), uiSuggested(), touchCalibrated() ? 1 : 0, uiThemeId(uiTheme()), powerOnUsb() ? "usb" : "bat", powerBatteryPct());
   } else if (cmd == "art") {
     uiArtPrint();
   } else if (cmd == "suggest") {
