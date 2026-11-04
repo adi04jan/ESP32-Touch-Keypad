@@ -8,9 +8,11 @@
 #include "miniz.h"   // the ROM's inflate (tinfl)
 static_assert(ANIM_COUNT == ICON_COUNT, "anims_gen.h is stale: run tools/icons/build_anims.js");
 
-static uint16_t *K;               // chunk pixels
-static int KX, KY, KW, KH;        // chunk rectangle
-static int CX0, CY0, CX1, CY1;    // clip, inside the chunk
+// The chunk being drawn and its clip: one per task (thread-local), so the two cores can each draw a
+// chunk at once (ui.cpp, renderDamage).
+static __thread uint16_t *K;               // chunk pixels
+static __thread int KX, KY, KW, KH;        // chunk rectangle
+static __thread int CX0, CY0, CX1, CY1;    // clip, inside the chunk
 static uint16_t ground[SCR_H], groundB[SCR_H];   // the two checkerboard values of each row
 static C3 groundC[SCR_H];
 
@@ -135,6 +137,24 @@ IRAM_ATTR void fillRect(int x, int y, int w, int h, C3 c, int alpha) {
   for (int py = y0; py < y1; py++) for (int px = x0; px < x1; px++) blend(px, py, c, alpha);
 }
 
+// A region faded toward black by alpha: the dim behind a rising sheet. The very sums of fillRect(..., black,
+// alpha) (blendP with a black foreground), without converting a colour for every pixel.
+IRAM_ATTR void gfxDarken(int x, int y, int w, int h, int alpha) {
+  int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+  if (crisp) alpha = alpha >= 128 ? 255 : 0;
+  if (alpha <= 0 || !clipBox(x0, y0, x1, y1)) return;
+  if (alpha >= 255) { for (int py = y0; py < y1; py++) for (int px = x0; px < x1; px++) P(px, py) = 0; return; }
+  uint32_t a5 = (alpha + 4) >> 3;
+  for (int py = y0; py < y1; py++) {
+    uint16_t *p = &P(x0, py);
+    for (int n = x1 - x0; n; n--, p++) {
+      uint32_t bg = __builtin_bswap16(*p), v = (bg | bg << 16) & 0x07E0F81F;
+      v = (v + (((0 - v) * a5) >> 5)) & 0x07E0F81F;
+      *p = __builtin_bswap16((uint16_t)(v | v >> 16));
+    }
+  }
+}
+
 void groundBlend(int x, int y, int w, int h, int alpha) {
   int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
   if (alpha <= 0 || !clipBox(x0, y0, x1, y1)) return;
@@ -142,11 +162,24 @@ void groundBlend(int x, int y, int w, int h, int alpha) {
 }
 
 // ---------------------------------------------------------------- shapes
+// A square root for antialiasing distances: libm's sqrtf is ~100 cycles here and a rounded corner takes one a
+// pixel. A reciprocal-root estimate and two Newton steps (multiplies only): within ~1e-5 of sqrtf, so an edge
+// pixel's coverage (to 1/255) almost never moves.
+static inline float aaSqrt(float x) {
+  if (x <= 0) return 0;
+  union { float f; uint32_t i; } u = { x };
+  u.i = 0x5f3759df - (u.i >> 1);
+  float y = u.f, h = 0.5f * x;
+  y = y * (1.5f - h * y * y);
+  y = y * (1.5f - h * y * y);
+  return x * y;
+}
+
 // Signed distance from a point to a rounded rectangle (negative inside).
 static inline float sdRR(float px, float py, float cx, float cy, float hw, float hh, float r) {
   float qx = fabsf(px - cx) - hw + r, qy = fabsf(py - cy) - hh + r;
   float ox = qx > 0 ? qx : 0, oy = qy > 0 ? qy : 0;
-  float out = (ox > 0 && oy > 0) ? sqrtf(ox * ox + oy * oy) : ox + oy;
+  float out = (ox > 0 && oy > 0) ? aaSqrt(ox * ox + oy * oy) : ox + oy;
   float in = qx > qy ? qx : qy;
   return out + (in < 0 ? in : 0) - r;
 }
@@ -159,7 +192,7 @@ static inline float innerHalf(float dy, float hw, float hh, float r, float m) {
   if (ry <= 0) return hw - m;
   float rr = r - m;
   if (rr <= 0 || ry >= rr) return -1;   // m < 0 asks for an extent outside the outline
-  return hw - r + sqrtf(rr * rr - ry * ry);
+  return hw - r + aaSqrt(rr * rr - ry * ry);
 }
 
 IRAM_ATTR void rrFill(float x, float y, float w, float h, float r, const Fill &f, int alpha) {
@@ -273,7 +306,7 @@ IRAM_ATTR void seg(float ax, float ay, float bx, float by, float width, C3 c, in
       float t = len2 > 0 ? (qx * dx + qy * dy) / len2 : 0;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       float ex = qx - t * dx, ey = qy - t * dy;
-      float a = half + 0.5f - sqrtf(ex * ex + ey * ey);
+      float a = half + 0.5f - aaSqrt(ex * ex + ey * ey);
       if (a > 0) blend(px, py, c, (int)((a > 1 ? 1 : a) * alpha));
     }
 }
@@ -415,13 +448,17 @@ void iconAnimReleaseAll() {
 // Frame k of a key icon's animation: its resting mask with the frame's changed runs written over
 // it. The last frame decoded is kept, so the drop shadow and the ink share one decode.
 void glyphFrame(const IconDef *ic, int frame, float cx, float cy, C3 c, int alpha) {
-  static uint8_t buf[ICON_PX * ICON_PX / 2];
-  static const IconDef *bufIc = nullptr;
-  static int bufFrame = -1;
+  static uint8_t bufs[2][ICON_PX * ICON_PX / 2];   // one per core: both may draw at once
+  static const IconDef *bufIcs[2];
+  static int bufFrames[2] = { -1, -1 };
+  int core = xPortGetCoreID() & 1;
+  uint8_t *buf = bufs[core];
+  const IconDef *&bufIc = bufIcs[core];
+  int &bufFrame = bufFrames[core];
   const uint8_t *p = frame >= 0 && frame < iconAnimFrames(ic) ? animRuns(ic) : nullptr;
   if (!p) { glyph(ic, false, cx, cy, ICON_PX, c, alpha); return; }
   if (ic != bufIc || frame != bufFrame) {
-    memcpy(buf, ICON_DATA + ic->off, sizeof buf);
+    memcpy(buf, ICON_DATA + ic->off, sizeof bufs[0]);
     for (int f = 0; f <= frame; f++) {
       int pos = 0;
       while (true) {

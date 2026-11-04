@@ -83,6 +83,7 @@ const char *uiModeName();            // home | sheet | pair | cal | shade | menu
 void uiPerf(bool reset);             // `perf`: frame timing of animated frames
 void uiPerfLog();                    // `perf log`: the latest frames one by one
 void uiRenderBench();                // `rbench`: render cost per scene part
+void uiRenderCores(int n);           // `render 1|2`: draw frames on core 1 alone, or on both (the default); RAM only
 // The quick bar (docs/superpowers/specs/2026-11-03-quick-bar-design.md): four buttons right of the
 // keys, each a page of a profile. `quickbar` JSON: [ {"profile","page","icon","label"} | null ] x 4,
 // saved in NVS kp/qbar.

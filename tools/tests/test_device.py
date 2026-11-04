@@ -23,9 +23,10 @@ import kp  # noqa: E402
 SLOT = 16                         # the last slot: 1-13 hold the owner's profiles
 TILE_W = 72
 G_LINE = 310                      # page stations
+THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"]
 FPS_FLOOR = 50                    # every animation, measured by the firmware's `perf`
-SLIDE_FLOOR = 20                  # a page slide (redrawn in software every frame): Task 5 of the motion plan raises it to 25
-RISE_FLOOR = 20                   # Media or Settings rising (redrawn every frame): likewise
+SLIDE_FLOOR = 25                  # a page slide (redrawn in software every frame); the goal is 30
+RISE_FLOOR = 25                   # Media or Settings rising (redrawn every frame): likewise
 
 
 def cell_xy(cell):
@@ -970,12 +971,14 @@ def test_a_slide_reads_no_tiles_from_flash(d):
         for crc in crcs:
             d.cmd(f"rm /t/{crc}.565")
 
-def test_slide_holds_its_floor_on_a_full_page(d):
+@pytest.mark.parametrize("name", THEMES)
+def test_slide_holds_its_floor_on_a_full_page(d, name):
     try:
-        d.upload_text(f"profile{SLOT}.json", json.dumps(full_profile())); d.ok(f"setprofile {SLOT}"); time.sleep(0.6)
+        d.ok(f"theme {name}")
+        d.upload_text(f"profile{SLOT}.json", json.dumps(full_profile())); d.ok(f"setprofile {SLOT}"); time.sleep(0.8)
         frames, rate, _ = fps(d, lambda: d.swipe(400, 160, 100, 160, 500), wait=1.4)
-        print(f"slide fps {rate:.1f} over {frames} frames")
-        assert frames >= 12 and rate >= SLIDE_FLOOR, (frames, rate)
+        print(f"slide fps {name} {rate:.1f} over {frames} frames")
+        assert frames >= 12 and rate >= SLIDE_FLOOR, (name, frames, rate)
     finally:
         put_back_profile(d); d.ok(f"setprofile {SLOT}")
 
@@ -1011,13 +1014,15 @@ def test_settings_rises_from_the_bar_and_a_drag_down_closes_it(d):
     d.swipe(60, 120, 60, 300, 300); d.wait_event(r"^EVT:UI home$", 1.5, since)
 
 
-def test_rises_hold_their_floor(d):
+@pytest.mark.parametrize("name", ["glass", "paper"])
+def test_rises_hold_their_floor(d, name):
+    d.ok(f"theme {name}"); time.sleep(0.6)
     set_qb(d)
     frames, rate, _ = fps(d, lambda: d.ok("panel 1"), wait=1.0); d.ok("panel 0"); time.sleep(0.8)
-    print(f"media rise {rate:.1f}")
+    print(f"media rise {name} {rate:.1f}")
     assert rate >= RISE_FLOOR, ("media", frames, rate)
     frames, rate, _ = fps(d, lambda: d.ok("sheet"), wait=1.0); d.ok("sheet close"); time.sleep(0.8)
-    print(f"settings rise {rate:.1f}")
+    print(f"settings rise {name} {rate:.1f}")
     assert rate >= RISE_FLOOR, ("settings", frames, rate)
 
 
@@ -1079,7 +1084,6 @@ def test_profile_and_theme_survive_reboot(dev):
 
 
 # ---------------------------------------------------------------- themes
-THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"]
 # The bottom stop of each theme's ground (themes.h): the corner below the grid shows it.
 GROUND_BOTTOM = {"glass": (10, 17, 25), "paper": (229, 214, 182), "daylight": (233, 240, 248),
                  "aurora": (12, 91, 98), "synth": (207, 204, 196), "retro": (147, 180, 14)}

@@ -156,12 +156,12 @@ static uint32_t rt[6];
 static uint8_t rn;
 static uint32_t riseLast;
 static Layer *topLayer() { return media.btn && mediaRise.to > 0.5f ? &media : panel.btn ? &panel : nullptr; }
-static int8_t viewForce = -1;   // drawing one layer: 0 the home page, 1 Media, 2 the panel; -1 the top one
+static __thread int8_t viewForce = -1;   // drawing one layer: 0 the home page, 1 Media, 2 the panel; -1 the top one (per core)
 static Layer *viewLayer() {     // the layer being drawn
   switch (viewForce) { case 0: return nullptr; case 1: return &media; case 2: return panel.btn ? &panel : nullptr; }
   return topLayer();
 }
-static float sinkK = 1;         // under a rising sheet the keys sink back a little: drawCell scales them by this
+static __thread float sinkK = 1;         // under a rising sheet the keys sink back a little: drawCell scales them by this
 static void layerClear(Layer &L) { L.doc.clear(); L.btn = L.depth = 0; L.toggles = 0; }
 static void layerClose(Layer &L);   // that layer goes (EVT:PANEL, the wipe): Media shows the panel under it again
 
@@ -180,7 +180,7 @@ static struct {
   uint32_t last;            // the spring's last step
   int drawn;                // the offset last marked
 } slide;
-static bool slideOther;     // drawing the other page: keyAt and toggled read it
+static __thread bool slideOther;     // drawing the other page: keyAt and toggled read it (per core)
 static float pageK = 230, pageZ = 0.78f, sheetK = 240, sheetZ = 0.80f;   // the springs; `motion` tunes them (RAM only)
 // The suggestion slot: Studio's suggested profile, and once it is taken, the way back.
 static struct { int8_t slot; char name[24]; uint8_t col[3]; } sug;
@@ -466,6 +466,8 @@ static bool tileCached(const char *crc) {
   return false;
 }
 
+static SemaphoreHandle_t tileMux;   // both cores draw keys: the cache, and an image while it is blitted, one at a time
+
 static const uint16_t *tileImage(const char *crc) {
   int slot = 0;
   for (int i = 0; i < TILE_CACHE; i++) {
@@ -490,12 +492,16 @@ static const uint16_t *tileImage(const char *crc) {
 }
 
 void uiDropTileCache() {
+  if (tileMux) xSemaphoreTake(tileMux, portMAX_DELAY);
   for (auto &t : tileCache) { free(t.img); t.img = nullptr; t.crc[0] = 0; }
+  if (tileMux) xSemaphoreGive(tileMux);
 }
 
 static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
+  if (tileMux) xSemaphoreTake(tileMux, portMAX_DELAY);   // the other core may be loading into this very slot
   const uint16_t *img = tileImage(crc);
   if (img) blitImage(img, TILE_PX, TILE_PX, x, y, sz, sz, KEY_R * sz / KEY, alpha);
+  if (tileMux) xSemaphoreGive(tileMux);
   return img != nullptr;
 }
 
@@ -1894,16 +1900,16 @@ static void renderChunk(uint32_t now) {
     drawGrid(now);
     sinkK = 1;
     viewForce = -1;
-    if (back > 0) fillRect(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, BLACK, (int)(115 * back));   // dimmed under a sheet
+    if (back > 0) gfxDarken(0, STATUS_H, KEYS_W, SCR_H - STATUS_H, (int)(115 * back));   // dimmed under a sheet
     gfxClipSet(cl);
     if (mtop < SCR_H) {
       gfxClipAnd(0, mtop, KEYS_W, SCR_H);
       drawMediaSheet(now, mtop);
-      if (sx > 0) fillRect(0, mtop, KEYS_W, SCR_H - mtop, BLACK, (int)(115 * sx));   // Settings over Media dims it too
+      if (sx > 0) gfxDarken(0, mtop, KEYS_W, SCR_H - mtop, (int)(115 * sx));   // Settings over Media dims it too
       gfxClipSet(cl);
     }
     drawBar(now);
-    if (sx > 0) fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, BLACK, (int)(115 * sx));   // Settings covers the bar: it dims too
+    if (sx > 0) gfxDarken(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, (int)(115 * sx));   // Settings covers the bar: it dims too
     gfxUnclip();
   }
   drawSheet(top);
@@ -1914,27 +1920,94 @@ static void renderChunk(uint32_t now) {
   drawHud(now);
 }
 
-#define CHUNK_PX (96 * 90)   // pixels a DMA chunk holds (the old cell): fewer, larger chunks redraw faster
-static uint16_t chunkBuf[2][CHUNK_PX];
+// The frame on both cores: the damage is cut into chunks; core 1 (this loop) and a helper task on core 0
+// (under Bluetooth's priority, so it only takes idle time) each claim the next one and draw it into its
+// buffer, and core 1 sends them to the panel by DMA in order. Three buffers: two being drawn while one goes
+// out. A chunk's buffer is free once the DMA of the chunk three before it is done. `render 1` draws on core
+// 1 alone (the old way) if two ever misbehave.
+#define CHUNK_PX (96 * 45)   // pixels a DMA chunk holds; a cell (84 x 90) is two of them (three whole cells won't fit in RAM)
+#define NBUF 3   // two being drawn while one goes out; a fourth cost 8.6 KB of heap for ~1 fps
+static uint16_t chunkBuf[NBUF][CHUNK_PX];   // contiguous: rbench draws a 96 x 90 chunk across the first two
+#define MAX_CHUNKS 96
+static struct { int16_t x, y, w, h; } chunks[MAX_CHUNKS];
+static volatile int chunkN, nextChunk, dmaDone;
+static volatile uint8_t chunkReady[MAX_CHUNKS];
+static uint32_t frameNow;
+static TaskHandle_t helper;
+static SemaphoreHandle_t helperGo, helperIdle;
+static bool twoCores = true;
+
+static bool bufFree(int i) { return i - NBUF <= dmaDone; }
+static bool claimChunk(int &i) {   // the next chunk, if its buffer is free
+  i = nextChunk;
+  return i < chunkN && bufFree(i) && __atomic_compare_exchange_n(&nextChunk, &i, i + 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
+static uint32_t chunksBy[2], chunkUs[2];   // `render`: chunks drawn on each core, and their time
+static void drawChunk(int i) {
+  uint32_t t0 = micros();
+  gfxChunk(chunkBuf[i % NBUF], chunks[i].x, chunks[i].y, chunks[i].w, chunks[i].h);
+  renderChunk(frameNow);
+  int core = xPortGetCoreID() & 1;
+  chunksBy[core]++;
+  chunkUs[core] += micros() - t0;
+  __atomic_store_n(&chunkReady[i], 1, __ATOMIC_RELEASE);
+}
+
+static void helperLoop(void *) {
+  for (;;) {
+    xSemaphoreTake(helperGo, portMAX_DELAY);
+    int i;
+    while (nextChunk < chunkN) {
+      if (claimChunk(i)) drawChunk(i);
+      else taskYIELD();   // its buffer is still going out
+    }
+    xSemaphoreGive(helperIdle);
+  }
+}
+
+static void renderBatch() {   // chunks[0, chunkN) drawn and sent
+  nextChunk = 0;
+  dmaDone = -1;
+  for (int i = 0; i < chunkN; i++) chunkReady[i] = 0;
+  bool two = twoCores && helper && chunkN > 1;
+  if (two) xSemaphoreGive(helperGo);
+  for (int p = 0; p < chunkN; p++) {
+    int i;
+    while (!__atomic_load_n(&chunkReady[p], __ATOMIC_ACQUIRE))
+      if (claimChunk(i)) drawChunk(i);   // draw while waiting; a chunk the helper holds will be ready soon
+    lcd.waitDMA();
+    dmaDone = p - 1;
+    lcd.pushImageDMA(chunks[p].x, chunks[p].y, chunks[p].w, chunks[p].h, (const lgfx::swap565_t *)chunkBuf[p % NBUF]);
+  }
+  lcd.waitDMA();
+  dmaDone = chunkN - 1;
+  if (two) xSemaphoreTake(helperIdle, portMAX_DELAY);   // the helper is done before anything it reads changes
+  chunkN = 0;
+}
 
 static void renderDamage(uint32_t now) {
-  int bi = 0;
+  frameNow = now;
+  chunkN = 0;
   lcd.startWrite();
   for (int i = 0; i < dmgN; i++) {
     Rect r = dmg[i];
     int rows = max(1, CHUNK_PX / r.w);
     for (int y = r.y; y < r.y + r.h; y += rows) {
-      int h = min(rows, r.y + r.h - y);
-      gfxChunk(chunkBuf[bi], r.x, y, r.w, h);
-      renderChunk(now);
-      lcd.waitDMA();
-      lcd.pushImageDMA(r.x, y, r.w, h, (const lgfx::swap565_t *)chunkBuf[bi]);
-      bi ^= 1;
+      if (chunkN == MAX_CHUNKS) renderBatch();
+      chunks[chunkN] = { r.x, (int16_t)y, r.w, (int16_t)min(rows, r.y + r.h - y) };
+      chunkN++;
     }
   }
-  lcd.waitDMA();
+  if (chunkN) renderBatch();
   lcd.endWrite();
   dmgN = 0;
+}
+
+void uiRenderCores(int n) {
+  if (n == 1 || n == 2) twoCores = n == 2;
+  Con.printf("render %d core0:%u/%ums core1:%u/%ums stack:%u\n", twoCores ? 2 : 1, (unsigned)chunksBy[0], (unsigned)(chunkUs[0] / 1000),
+             (unsigned)chunksBy[1], (unsigned)(chunkUs[1] / 1000), helper ? (unsigned)uxTaskGetStackHighWaterMark(helper) : 0);
+  if (n == 0) chunksBy[0] = chunksBy[1] = chunkUs[0] = chunkUs[1] = 0;   // `render 0`: the counts start again
 }
 
 // Marks what moves this frame; true when something animates every frame.
@@ -2160,6 +2233,22 @@ void uiRenderBench() {
   run("tag", 0, 30, 96, 90, [] { tag(87, 30, "PC", TAG_BG, true, CYAN, CYAN, 255); });
   run("json", 0, 30, 96, 90, [] { JsonVariant k = keyAt(0); volatile int n = 0; for (int i = 0; i < 10; i++) n += (k["led_color"][0] | 0) + strlen(k["anim"] | "") + strlen(k["name"] | ""); });
   run("cell", 0, 30, 96, 90, [&] { drawCell(0, now); });
+  run("sunk", 0, 30, 96, 90, [&] { sinkK = 0.95f; drawCell(0, now); sinkK = 1; });   // a key under a rising sheet
+  run("dim", 0, 30, 96, 90, [] { fillRect(0, 30, 96, 90, BLACK, 115); });         // the dim behind it, as a blend
+  run("darken", 0, 30, 96, 90, [] { gfxDarken(0, 30, 96, 90, 115); });               // and as the dim draws it
+  run("msheet", 0, 120, 96, 90, [] { rrFill(0, 100, KEYS_W, 240, 16, solidFill(PLY)); });   // the Media sheet's fill
+  run("pback", 0, 30, 96, 90, [] {   // a Paper key, part by part: the card behind (its two strips)
+    int clip[4]; gfxClipGet(clip);
+    gfxClipAnd(15 + 66 - 12, 34 + 3 - 1, 15 + 66 + 3 + 1, 34 + 66 - 12); rrFill(18, 37, 66, 66, 12, solidFill(HEXC(0x604030))); gfxClipSet(clip);
+    gfxClipAnd(15 + 3 - 1, 34 + 66 - 12, 15 + 66 + 3 + 1, 34 + 66 + 3 + 1); rrFill(18, 37, 66, 66, 12, solidFill(HEXC(0x604030))); gfxClipSet(clip); });
+  run("pcard", 0, 30, 96, 90, [] { Fill f = solidFill(HEXC(0xc08060)); f.top = HEXC(0xd09070); rrFill(15, 34, 66, 66, 12, f); });
+  {   // sqrtf: what an antialiased corner pixel pays
+    volatile float acc = 0;
+    uint32_t t0 = micros();
+    for (int i = 0; i < 1000; i++) acc += sqrtf(1.0f + i * 0.37f);
+    Con.printf("rbench %-10s %5u us\n", "sqrt x1000", (unsigned)(micros() - t0));
+  }
+  run("pring", 0, 30, 96, 90, [] { rrRing(15.5f, 34.5f, 65, 65, 11.5f, 1.4f, HEXC(0x302010), 200); });
   pressed = 0; press0 = now - 300;
   run("pressed", 0, 30, 96, 90, [&] { drawCell(0, now); });
   pressed = -1;
@@ -2214,6 +2303,10 @@ static void applyTheme(int i) {
 
 // ---------------------------------------------------------------- public: lifecycle
 void uiBegin() {
+  tileMux = xSemaphoreCreateMutex();
+  helperGo = xSemaphoreCreateBinary();
+  helperIdle = xSemaphoreCreateBinary();
+  xTaskCreatePinnedToCore(helperLoop, "render", 4096, nullptr, 1, &helper, 0);   // it uses ~2.4 KB (`render` stack:)
   Preferences p;
   p.begin("kp", true);
   brightness = p.getUChar("bright", 200);

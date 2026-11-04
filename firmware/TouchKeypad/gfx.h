@@ -47,6 +47,7 @@ void gfxGround();                                   // the screen's vertical gra
 void gfxFill(const C3 &c);                          // whole clip, one colour
 void fillRect(int x, int y, int w, int h, C3 c, int alpha = 255);
 void groundBlend(int x, int y, int w, int h, int alpha);   // fade a region back toward the ground
+void gfxDarken(int x, int y, int w, int h, int alpha);     // fade a region toward black: fillRect(.., black, alpha), faster
 
 // ---- shapes (antialiased)
 struct Fill {

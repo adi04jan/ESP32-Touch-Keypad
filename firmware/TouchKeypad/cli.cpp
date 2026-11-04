@@ -312,6 +312,8 @@ static bool runCommand(char *s) {
                    "settime <epoch> <tzmin> setled <id> <r> <g> <b> setidle <name> setbrightness <0-255> setdim <s> autogen busy|done|fail <text> notify <json>|list|clear shade [close] "
                    "quickbar [set <json>|clear] panel [0-4] suggest [0-16] ble list|forget <n>|pair|cancel | debug: shot touch <x> <y> [ms] hold <x> <y> [ms] "
                    "swipe <x1> <y1> <x2> <y2> [ms] hid dry on|off heap log on|off lcd calibrate");
+  } else if (cmd == "render") {
+    uiRenderCores(atoi(arg));
   } else if (cmd == "motion") {
     uiMotionCmd(arg);
   } else if (cmd == "status") {
