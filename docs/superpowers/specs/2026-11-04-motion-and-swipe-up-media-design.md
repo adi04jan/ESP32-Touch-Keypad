@@ -154,9 +154,14 @@ Mockups (not committed; `.superpowers/` is git-ignored), in
 
   The key area's 227 KB takes about 23 ms over SPI, and the chunk renderer overlaps that
   transfer with drawing. So a slide is bound by drawing, and 30 fps needs key drawing about
-  20 % faster. The obvious levers:
-  - the glass fill: solid interior spans, with antialiasing only at the edges
-  - drawing on both of the ESP32's cores; Bluetooth runs on core 0
+  20 % faster. The levers:
+  - **Profile first.** `rrFill` already fills a key's interior in solid dithered spans, so the
+    glass's 1 ms is in its edge band (a distance per pixel), the per-row colour maths and
+    the dithering. The glyph and the label come next.
+  - **Draw on both of the ESP32's cores.** Bluetooth runs on core 0.
+  - **Draw each key once per frame.** Mark the moving key area as rects aligned to the
+    cells. A 420-wide dirty rect is cut into 20-row chunks, so each cell would be drawn
+    about five times.
 - **Hardware scroll was tried and dropped.** The ST7796's vertical scroll (VSCRDEF 0x33,
   VSCSAD 0x37) runs along the panel's 480-line axis, which is screen x in this rotation.
   - **Results** (2026-11-04, bc:f0, throwaway branch `spike/hw-scroll`, `spike_scroll.cpp`,
