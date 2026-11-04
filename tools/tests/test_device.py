@@ -155,6 +155,11 @@ def d(dev):
     if "page:1 " not in dev.cmd("status")[0]:
         dev.ok("page 1")
     time.sleep(0.5)
+    for _ in range(20):                           # a page change slides (about 0.6 s): let it land
+        st = dev.cmd("status")[0]
+        if " slide:" not in st or " slide:0 " in st:
+            break
+        time.sleep(0.05)
     dev.listen(0.2)
     dev.clear_events()
     return dev
