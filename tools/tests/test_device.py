@@ -874,6 +874,47 @@ def test_a_flick_turns_the_page(d):
     d.swipe(300, 160, 210, 160, 80); d.wait_event(r"^EVT:PAGE 2$", 1.5)
 
 
+def swipe_bent(d, a, b, c, ms1, ms2):
+    """A swipe that turns at b: a to b over ms1, then b to c over ms2, the finger down throughout. The first
+    leg is sent twice as long and cut halfway by the second (a `swipe` while one runs carries the touch on)."""
+    far = (2 * b[0] - a[0], 2 * b[1] - a[1])
+    swipe_held(d, *a, *far, 2 * ms1); time.sleep(ms1 / 1000)
+    d.write_line(f"swipe {b[0]} {b[1]} {c[0]} {c[1]} {ms2}")   # not d.swipe: its drain waits for a quiet line
+
+
+# A quick swipe counts wherever the spring would land (the owner flicks; frames run ~35 ms, so a flick
+# gives the drag one or two samples): 3.13's swipe (44 px up/down, 86 px sideways) inside QUICK_MS.
+def test_a_quick_short_swipe_up_opens_media_and_down_closes_it(d):
+    set_qb(d); since = len(d.events)
+    d.swipe(210, 290, 210, 240, 250); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)   # 50 px in 250 ms
+    time.sleep(0.8); d.swipe(210, 100, 210, 150, 250); d.wait_event(r"^EVT:PANEL 0$", 1.5, since)
+    time.sleep(0.8); assert field(d, "rise") == 0
+
+
+def test_a_quick_short_swipe_turns_the_page(d):
+    d.swipe(300, 160, 210, 160, 250); d.wait_event(r"^EVT:PAGE 2$", 1.5)   # 90 px in 250 ms
+
+
+def test_a_quick_short_swipe_down_closes_settings(d):
+    since = len(d.events)
+    d.touch(*BAR["settings"]); d.wait_event(r"^EVT:UI sheet$", 1, since); time.sleep(0.8)
+    d.swipe(60, 120, 60, 170, 250); d.wait_event(r"^EVT:UI home$", 1.5, since)
+
+
+def test_a_quick_swipe_up_that_sets_off_sideways_opens_media(d):
+    set_qb(d); since = len(d.events)
+    swipe_bent(d, (200, 280), (220, 276), (225, 176), 120, 100)        # locks sideways at 14 px, then goes up
+    d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)
+    assert not evts(d, since, "EVT:PAGE")
+
+
+def test_a_quick_swipe_sideways_that_sets_off_up_turns_the_page(d):
+    set_qb(d); since = len(d.events)
+    swipe_bent(d, (300, 200), (298, 180), (178, 176), 120, 100)        # locks upward at 14 px, then goes left
+    d.wait_event(r"^EVT:PAGE 2$", 1.5, since); time.sleep(0.8)
+    assert not evts(d, since, "EVT:PANEL") and field(d, "rise") == 0
+
+
 def test_a_slow_short_drag_springs_back(d):
     since = len(d.events)
     d.swipe(300, 160, 220, 160, 800); time.sleep(1.6)

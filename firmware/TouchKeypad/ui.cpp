@@ -155,6 +155,7 @@ static int16_t ry[6];                               // the finger's latest y and
 static uint32_t rt[6];
 static uint8_t rn;
 static uint32_t riseLast;
+static uint32_t touchAt;   // when this touch went down: a quick swipe (QUICK_MS) goes where it went
 static Layer *topLayer() { return media.btn && mediaRise.to > 0.5f ? &media : panel.btn ? &panel : nullptr; }
 static __thread int8_t viewForce = -1;   // drawing one layer: 0 the home page, 1 Media, 2 the panel; -1 the top one (per core)
 static Layer *viewLayer() {     // the layer being drawn
@@ -1090,7 +1091,7 @@ static bool slideGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t 
   int dx = x1 - x0, dy = y1 - y0;
   if (kind == G_MOVE) {
     if (!slide.drag) {
-      if (abs(dx) <= LOCK_PX || abs(dx) <= abs(dy)) return false;
+      if (mediaDrag || abs(dx) <= LOCK_PX || abs(dx) <= abs(dy)) return false;   // Media has the touch: it keeps it
       slideCancelPress();
       slideQuiet();
       slide.on = slide.drag = true;
@@ -1120,13 +1121,16 @@ static bool slideGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t 
     float raw = -dx / (float)KEYS_W;
     slide.s.x = constrain(slide.other >= 0 ? raw : raw * 0.35f, -1.0f, 1.0f);
   }
+  bool quick = slide.st[slide.n - 1] - touchAt <= QUICK_MS;
+  if (quick && (kind == G_SWIPE_U || kind == G_SWIPE_D)) { slideEnd(); return false; }   // set off sideways, went up or down: that swipe
   float v = 0;
   if (slide.n > 1 && slide.st[slide.n - 1] != slide.st[0])
     v = -(slide.sx[slide.n - 1] - slide.sx[0]) * 1000.0f / KEYS_W / (float)(slide.st[slide.n - 1] - slide.st[0]);
   float lo = 0, hi = 0;
   if (slide.other > viewPage()) hi = 1;
   else if (slide.other >= 0) lo = -1;
-  if (flickTarget(slide.s.x, v, lo, hi) != 0) slideCommit();
+  float t = quick && (kind == G_SWIPE_L || kind == G_SWIPE_R) ? (slide.s.x > 0 ? hi : lo) : flickTarget(slide.s.x, v, lo, hi);
+  if (t != 0) slideCommit();
   slide.s.v = v;
   slide.s.to = 0;
   slide.s.k = pageK;
@@ -1261,11 +1265,14 @@ static bool riseGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t n
     float f = (y0 - y1) / (float)(SCR_H - STATUS_H);
     mediaRise.x = constrain(mediaDragOpen ? f : 1 + f, 0.0f, 1.0f);
   }
-  float v = riseVelocity(), t = flickTarget(mediaRise.x, v, 0, 1);
+  bool quick = rt[rn - 1] - touchAt <= QUICK_MS, side = quick && (kind == G_SWIPE_L || kind == G_SWIPE_R);
+  float v = side ? 0 : riseVelocity(), t = flickTarget(mediaRise.x, v, 0, 1);
+  if (side) t = mediaDragOpen ? 0 : 1;   // set off up or down, went sideways: back where it was, and the swipe turns the page
+  else if (quick && kind == (mediaDragOpen ? G_SWIPE_U : G_SWIPE_D)) t = mediaDragOpen ? 1 : 0;
   riseGo(mediaRise, t, v);
   if ((t == 1) == mediaDragOpen) emitPanel();   // it opened (Media on top) or closed (the layer under it is)
   markBar();
-  return true;
+  return !side;
 }
 
 // The saved hosts, cheaply (no file system walk): true when something shown changed.
@@ -3044,6 +3051,7 @@ static void runKey(int c, bool hold) {
 
 void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
   uint32_t now = millis();
+  if (kind == G_DOWN) touchAt = now;
   if (mode == M_CAL) { if (kind == G_TAP || kind >= G_SWIPE_L && kind <= G_SWIPE_D) calTap(x1, y1); return; }
   if (mode == M_PAIR) {
     if (kind == G_DOWN && inRect(x0, y0, 198, 262, 84, 44)) { pressedBtn = 2; mark(190, 256, 100, 56); }
@@ -3067,7 +3075,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       sheetDrag = false;
       if (rn && ry[rn - 1] != y1) { riseSample(y1, now); sheetRise.x = constrain(1 - (y1 - y0) / (float)(SCR_H - STATUS_H), 0.0f, 1.0f); }
       float v = riseVelocity();
-      if (flickTarget(sheetRise.x, v, 0, 1) == 0) { sheetClosing = true; dragSlider = -1; riseGo(sheetRise, 0, v); }
+      if (flickTarget(sheetRise.x, v, 0, 1) == 0 || (kind == G_SWIPE_D && rt[rn - 1] - touchAt <= QUICK_MS)) { sheetClosing = true; dragSlider = -1; riseGo(sheetRise, 0, v); }
       else riseGo(sheetRise, 1, v);
       return;
     }
