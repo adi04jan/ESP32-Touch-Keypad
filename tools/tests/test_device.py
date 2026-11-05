@@ -26,7 +26,7 @@ G_LINE = 310                      # page stations
 THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"]
 FPS_FLOOR = 50                    # every animation, measured by the firmware's `perf`
 SLIDE_FLOOR = 25                  # a page slide (redrawn in software every frame); the goal is 30
-RISE_FLOOR = 25                   # Media or Settings rising (redrawn every frame): likewise
+RISE_FLOOR = 22                   # Media or Settings rising: ~24-27 fps, the owner kept the look over a faster rise (2026-11-05)
 
 
 def cell_xy(cell):
