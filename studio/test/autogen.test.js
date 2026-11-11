@@ -123,6 +123,22 @@ test("Generate on a new app: Claude once, saved to a free slot, mapped, loaded, 
   r.link.disconnect();
 });
 
+test("an empty or foreign `ls /` reply is an error: no slot looks free, profile 1 is not overwritten", async () => {
+  const r = rig();
+  await r.dev.connect("SIM1");
+  r.ag.usage.focus("bruno", "Bruno");
+  const before = r.sim.files.get("/profile1.json").toString();
+  const cmd = r.sim._command.bind(r.sim);
+  for (const reply of ["", "Profile:1 loaded:1 model:touch"]) {   // a timeout; another command's late reply
+    r.sim._command = (s) => (s === "ls /" ? (reply ? r.sim.println(reply) : undefined) : cmd(s));
+    const res = await r.ag.run(true);
+    assert.equal(res.ok, false);
+    assert.match(res.error, /list the keypad/);
+  }
+  assert.equal(r.sim.files.get("/profile1.json").toString(), before);
+  r.link.disconnect();
+});
+
 test("a rejected answer is retried once with the errors; no app yet and a missing CLI fail politely", async () => {
   const r = rig("bad");
   await r.dev.connect("SIM1");

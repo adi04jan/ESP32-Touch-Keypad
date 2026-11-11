@@ -99,25 +99,32 @@ class Device extends EventEmitter {
   }
 
   // ---- profiles ----
+  // One profile file: the profile, null for an empty slot (`ERR no such file`), and a throw when the
+  // keypad gave no readable answer (a timeout, a garbled reply): an editor that took that for an
+  // empty slot would autosave a blank or stale copy over the owner's profile.
+  async readProfile(slot, quiet = false) {
+    const raw = await this.link.readFile(`profile${slot}.json`, quiet);
+    if (/^ERR no such file/.test(raw)) return null;
+    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) {}
+    throw new Error(`could not read profile ${slot} from the keypad${raw ? "" : " (no answer)"}`);
+  }
+
   async loadProfile(slot) {
-    if (!this.link.isOpen()) return null;
+    if (!this.link.isOpen()) throw new Error("not connected");
     if (this._save.has(slot)) await this.flush();     // never read back a file with edits still pending
     await this.link.command(`setprofile ${slot}`);
     this.activeSlot = slot;
     this.devicePage = 1;
-    const raw = await this.link.readFile(`profile${slot}.json`);
-    let p = null;
-    try { p = schema.repairProfile(JSON.parse(raw)); } catch (_) {}
-    if (p) this.profiles[slot] = p;
     this.emit("state", this.state());
+    const p = await this.readProfile(slot);
+    if (p) this.profiles[slot] = p;
     return p;
   }
 
   // Read a profile without switching the keypad to it (the slot strip's names). null = empty slot.
   async peekProfile(slot) {
-    if (!this.link.isOpen()) return null;
-    const raw = await this.link.readFile(`profile${slot}.json`, true);
-    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) { return null; }
+    if (!this.link.isOpen()) throw new Error("not connected");
+    return this.readProfile(slot, true);
   }
 
   async showPage(slot, page) {

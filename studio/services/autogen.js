@@ -167,8 +167,10 @@ class Autogen {
   say(state, text) { return this.link.isOpen() ? this.link.command(`autogen ${state} ${text}`, undefined, true) : Promise.resolve(""); }
 
   async usedSlots() {
-    const ls = await this.link.command("ls /", undefined, true);
-    return new Set([...ls.matchAll(/^profile(\d+)\.json\t/gm)].map((m) => +m[1]));   // not backups/profileN.json-*.bak
+    const lines = (await this.link.command("ls /", undefined, true)).split("\n").filter((l) => l.trim());
+    // A timeout or another command's late reply would make every slot look free, and slot 1 would be overwritten.
+    if (!lines.length || !lines.every((l) => /^[^\t]+\t\d+\s*$/.test(l))) throw new Error("Could not list the keypad's files");
+    return new Set(lines.map((l) => l.match(/^profile(\d+)\.json\t/)).filter(Boolean).map((m) => +m[1]));   // not backups/profileN.json-*.bak
   }
   // A slot for this app: the one it is mapped to, else the first slot with no profile.
   async pickSlot(key) {

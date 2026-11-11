@@ -74,13 +74,14 @@ const isPlayerPage = (page) => !!(page.keys[0] && page.keys[0].widget);
 // Profiles live on the keypad: without it Studio only previews (an offline edit would be
 // replaced by the keypad's profile on connect, or overwrite it with a blank one).
 // While a slot loads from the keypad its editor waits: an edit made then was replaced by the arriving copy.
-const editable = () => !!(state.conn.connected || state.conn.smoke) && !state.loading;
+// A slot the keypad didn't answer for stays read-only: autosave would write a blank or stale copy over it.
+const editable = () => !!(state.conn.connected || state.conn.smoke) && !state.loading && !state.unreadable[state.slot];
 const newer = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 
 /* ============ state ============ */
 const state = {
   slots: Object.fromEntries(Array.from({ length: NUM_PROFILES }, (_, i) => [i + 1, blankProfile(i + 1)])),
-  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight", empty: {}, loading: null,
+  slot: 1, page: 0, sel: 0, mode: "actions", view: "editor", iconFilter: "", theme: "daylight", empty: {}, unreadable: {}, loading: null,
   conn: { connected: false }, settings: {}, np: { title: "", album: "", artist: "", app: "", pos: 0, len: 0, playing: false }, art: null,
 };
 const prof = () => state.slots[state.slot];
@@ -291,6 +292,13 @@ function renderSide() {
   const page = pg();
   if (state.loading) {
     side.innerHTML = `<div class="field"><span>Keys</span><h2>Loading profile ${state.loading}…</h2></div><p class="hint">Reading it from the keypad.</p>`;
+    return;
+  }
+  if (state.conn.connected && state.unreadable[state.slot]) {
+    side.innerHTML = `<div class="field"><span>Keys</span><h2>Profile ${state.slot} did not read</h2></div>
+      <p class="hint">The keypad gave no readable answer, so Studio won't save over this profile. Its keys still work on the keypad.</p>
+      <button class="primary" id="rd-again">${ico("refresh-cw")} Read it again</button>`;
+    $("rd-again").onclick = () => loadSlot(state.slot);
     return;
   }
   if (!editable()) {
@@ -521,7 +529,7 @@ document.addEventListener("keydown", (e) => {
 function changed(kinds, fromInput = false) {
   if (!editable()) {
     if (hist.base[state.slot]) state.slots[state.slot] = JSON.parse(hist.base[state.slot]);
-    cli("sys", "! Connect the keypad to edit its profiles.");
+    cli("sys", state.unreadable[state.slot] ? `! Profile ${state.slot} did not read; read it again before editing.` : "! Connect the keypad to edit its profiles.");
     renderStudio();
     return;
   }
@@ -537,7 +545,8 @@ function setSave(cls, text) { const el = $("save-ind"); el.className = `save-ind
 async function peekSlots() {
   for (let n = 1; n <= NUM_PROFILES; n++) {
     if (!state.conn.connected || n === state.slot) continue;
-    const p = await api.peekProfile(n);
+    let p;
+    try { p = await api.peekProfile(n); } catch (_) { continue; }   // no answer: neither empty nor known
     state.empty[n] = !p;
     if (p) { state.slots[n] = p; hist.base[n] = JSON.stringify(p); }
   }
@@ -547,13 +556,16 @@ async function peekSlots() {
 async function loadSlot(n) {
   state.loading = n;
   if (n === state.slot) renderStudio();
-  let p = null;
-  try { p = await api.loadProfile(n); } finally { state.loading = null; }
-  if (!p) { cli("sys", `! Could not read profile${n}.json; editing a local copy.`); if (n === state.slot) renderStudio(); return; }
-  state.slots[n] = p;
-  state.empty[n] = false;
-  hist.base[n] = JSON.stringify(p);
-  if (n === state.slot) { state.page = Math.min(state.page, p.pages.length - 1); renderStudio(); }
+  let p;
+  try { p = await api.loadProfile(n); state.unreadable[n] = false; }
+  catch (_) { state.unreadable[n] = true; cli("sys", `! Profile ${n} did not read from the keypad. Studio won't save over it until it reads.`); }
+  state.loading = null;
+  if (p !== undefined) {   // null: an empty slot, and editing it creates the profile
+    state.slots[n] = p || blankProfile(n);
+    state.empty[n] = !p;
+    hist.base[n] = JSON.stringify(state.slots[n]);
+  }
+  if (n === state.slot) { state.page = Math.min(state.page, prof().pages.length - 1); renderStudio(); }
   renderTop();
 }
 

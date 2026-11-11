@@ -136,6 +136,20 @@ test("invalid profiles are not written; offline saves still back up", async () =
   link.disconnect();
 });
 
+test("a profile read that fails is an error, never an empty slot", async () => {
+  const { sim, link, dev } = rig();
+  await dev.connect("SIM1");
+  assert.equal(await dev.peekProfile(6), null, "no such file: an empty slot");
+  sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
+  const cmd = sim._command.bind(sim);
+  sim._command = (s) => (s.startsWith("cat ") ? sim.println("") : cmd(s));   // no answer, as after a timeout
+  await assert.rejects(dev.peekProfile(2), /could not read profile 2/);
+  await assert.rejects(dev.loadProfile(2), /could not read profile 2/);
+  sim._command = (s) => (s.startsWith("cat ") ? sim.println("Profile:1 loaded:1 model:touch") : cmd(s));   // a reply meant for another command
+  await assert.rejects(dev.loadProfile(2), /could not read profile 2/);
+  link.disconnect();
+});
+
 test("autosave re-uploads tiles the device lost, from the PC cache", async () => {
   const { sim, link, dev } = rig();
   await dev.connect("SIM1");

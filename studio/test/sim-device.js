@@ -158,8 +158,8 @@ class SimDevice extends EventEmitter {
         return;
       }
       case "cat": {
-        const f = this.files.get(arg.startsWith("/") ? arg : "/" + arg);
-        return this.println(f ? f.toString("utf8").replace(/\n$/, "") : "");
+        const name = arg.startsWith("/") ? arg : "/" + arg, f = this.files.get(name);
+        return this.println(f ? f.toString("utf8").replace(/\n$/, "") : `ERR no such file: ${name}`);
       }
       case "setprofile": {
         const n = parseInt(arg, 10);
