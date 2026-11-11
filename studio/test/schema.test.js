@@ -43,6 +43,15 @@ test("repair normalizes aliases and drops the unfixable", () => {
   assert.ok(schema.isValidActions(r));
 });
 
+test("a new profile has no brightness: the keypad applies one on every switch, over the owner's own", () => {
+  assert.equal("brightness" in schema.blankProfile("New"), false);
+  assert.equal("brightness" in schema.repairProfile({ profile_name: "X", pages: [] }), false);
+  const kept = schema.repairProfile({ ...schema.blankProfile(), brightness: 300 });   // an explicit value is still clamped and kept
+  assert.equal(kept.brightness, 255);
+  assert.ok(schema.validateProfile({ ...schema.blankProfile(), brightness: 0 }).ok);
+  assert.equal(schema.validateProfile({ ...schema.blankProfile(), brightness: 256 }).ok, false);
+});
+
 test("repeat nesting deeper than 4 is rejected and repaired away", () => {
   let a = { type: "key", value: "A" };
   for (let i = 0; i < 5; i++) a = { type: "repeat", count: 1, actions: [a] };

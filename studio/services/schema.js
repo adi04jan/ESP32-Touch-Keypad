@@ -398,8 +398,9 @@ function repairProfile(p) {
   return out;
 }
 
+// No brightness: the keypad applies a profile's on every switch, over the owner's Settings brightness.
 function blankProfile(name = "Profile") {
-  return { schema_version: SCHEMA_VERSION, profile_name: name, default_delay: 20, brightness: 200,
+  return { schema_version: SCHEMA_VERSION, profile_name: name, default_delay: 20,
     pages: [{ name: "Main", keys: Array.from({ length: CELLS }, () => null) }] };
 }
 
