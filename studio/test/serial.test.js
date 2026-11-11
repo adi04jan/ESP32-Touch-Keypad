@@ -146,6 +146,24 @@ test("a reply that arrives after its command timed out never answers the next co
   assert.equal(await link.command("cat /profile6.json", 200), '{"profile_name":"P6"}');
 });
 
+test("two connects at once share one open: no orphaned port holds the COM port", async () => {
+  const { EventEmitter } = require("events");
+  let held = null;
+  class OnePort extends EventEmitter {   // like Windows: a second open of a held port is denied
+    constructor(_o, cb) { super(); this.isOpen = false; setTimeout(() => { if (held) return cb(new Error("Access denied")); held = this; this.isOpen = true; cb(null); }, 30); }
+    static async list() { return []; }
+    write(_d, cb) { if (cb) cb(); } set() {}
+    close() { this.isOpen = false; if (held === this) held = null; }
+  }
+  const link = new SerialLink({ SerialPort: OnePort });
+  const [a, b] = await Promise.all([link.connect("COM5"), link.connect("COM5")]);
+  assert.deepEqual([a, b, link.isOpen()], [true, true, true]);
+  assert.equal(link.port, held, "the link holds the one open port");
+  link.disconnect();
+  assert.equal(held, null);
+  assert.equal(await link.connect("COM5"), true);
+});
+
 test("firmware installs only on a live USB link that answers model:touch", async () => {
   const { targetPort } = require("../services/flasher");
   const { BLE_PATH } = require("../services/bleport");

@@ -42,7 +42,7 @@ const INDEX_HTML = path.join(__dirname, "renderer", "index.html");
 let win = null, tray = null, link = null, device = null, bridge = null, autogen = null, winNotify = null;
 let micmute = null;   // the `mic toggle` host key: every mic on the PC (services/micmute.js)
 let suggest = null, suggestFile = "", suggestSaveTimer = null;   // the quick bar's suggested profile (services/suggest.js)
-let manualDisconnect = false, connecting = false, pollTimer = null, currentContext = "global";
+let manualDisconnect = false, connecting = null, pollTimer = null, currentContext = "global";   // connecting: the connect in flight
 
 function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send("evt", { type, data }); }
 const log = (text) => send("log", text);
@@ -130,14 +130,16 @@ function simPort() {
   return makeSimPort(sim);
 }
 
+// One connect at a time: the 3 s search, Find keypad and the reconnect after a flash share it.
+function connectOnce(portPath) {
+  if (!connecting) connecting = device.connect(portPath).finally(() => { connecting = null; });
+  return connecting;
+}
 // Auto-connect: look for the keypad every 3 s while not connected (unless the user disconnected).
 async function tryAutoConnect() {
   if (NO_SERIAL || connecting || manualDisconnect || link.isOpen() || !store.load().auto_connect) return;
-  connecting = true;
-  try {
-    const r = await device.connect();
-    if (r.ok) { log(`Touch Keypad found on ${r.path} (fw ${r.status.ver || "?"}).\n`); send("connected", r); }
-  } finally { connecting = false; }
+  const r = await connectOnce();
+  if (r.ok) { log(`Touch Keypad found on ${r.path} (fw ${r.status.ver || "?"}).\n`); send("connected", r); }
 }
 function schedulePoll() {
   clearInterval(pollTimer);
@@ -280,8 +282,7 @@ handle("device:connect", async (_e, portPath) => {
   if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
   manualDisconnect = false;
   if (link.isOpen()) return { ok: true, ...device.state() };
-  connecting = true;
-  try { return await device.connect(portPath || undefined); } finally { connecting = false; }
+  return connectOnce(portPath || undefined);
 });
 handle("device:disconnect", () => { manualDisconnect = true; device.disconnect(); return true; });
 handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null, appVersion: app.getVersion(), smoke: SMOKE }));
@@ -367,10 +368,6 @@ handle("flash:run", async () => {
   const r = await flasher.flash(port, fwResources(), (p) => send("flash", p));
   log(r.ok ? `Firmware installed on ${port}.\n` : `Firmware install failed: ${r.error}\n${r.log.slice(-1500)}\n`);
   manualDisconnect = false;
-  setTimeout(async () => {
-    if (link.isOpen() || connecting) return;
-    connecting = true;
-    try { await device.connect(port); } finally { connecting = false; }
-  }, 3500);
+  setTimeout(() => { if (!link.isOpen()) connectOnce(port); }, 3500);
   return { ok: r.ok, error: r.error };
 });

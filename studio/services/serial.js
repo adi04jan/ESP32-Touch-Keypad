@@ -86,16 +86,23 @@ class SerialLink extends EventEmitter {
 
   isOpen() { return !!(this.port && this.port.isOpen); }
 
+  // One open at a time: a second connect while one is opening gets that one's result (a second
+  // open of the same COM port is denied, and used to null the port the first had just opened).
   connect(path, baud = DEFAULT_BAUD) {
+    if (this.isOpen()) return Promise.resolve(true);
+    if (!this._opening) this._opening = this._open(path, baud).finally(() => { this._opening = null; });
+    return this._opening;
+  }
+
+  _open(path, baud) {
     return new Promise((resolve) => {
-      if (this.isOpen()) return resolve(true);
       const Impl = this._impl();
       const port = new Impl({ path, baudRate: baud }, (err) => {
         if (err) {
           // The 3 s search retries Bluetooth while the keypad is away: say each reason once.
           if (err.message !== this._lastError) this.emit("log", `Connection error: ${err.message}\n`);
           this._lastError = err.message;
-          this.port = null;
+          if (this.port === port) this.port = null;
           return resolve(false);
         }
         this._lastError = null;
