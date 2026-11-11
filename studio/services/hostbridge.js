@@ -21,13 +21,29 @@ function comboForSlot(slot) {
   return { slot, label: `${set.label}+${f}`, accelerator: `${set.accel}+${f}`, keys: [...set.keys, f] };
 }
 
-// Give every distinct host cmd in `profiles` a slot, reusing `slots` ({ "n": cmd }).
+// The keypad's own table: { "n": cmd } from the slot each host action in its profiles carries
+// ({ n: profile|null }). A slot two different commands claim keeps the first and is reported.
+function slotsFromProfiles(profiles) {
+  const slots = {}, owner = {}, conflicts = [];
+  for (const [n, p] of Object.entries(profiles)) for (const a of schema.hostActions(p)) {
+    if (!Number.isInteger(a.slot)) continue;
+    const s = String(a.slot);
+    if (!(s in slots)) { slots[s] = a.cmd; owner[s] = +n; }
+    else if (slots[s] !== a.cmd && !conflicts.some((c) => c.slot === a.slot && c.profiles.includes(+n))) conflicts.push({ slot: a.slot, profiles: [owner[s], +n] });
+  }
+  return { slots, conflicts };
+}
+
+// Give every distinct host cmd in `profiles` a slot, reusing `slots` ({ "n": cmd }). A host action
+// keeps the slot it carries when that slot is free or already its own command's.
 // Mutates the actions' `slot`; returns { slots, errors }.
 function assignSlots(profiles, slots = {}) {
   const out = { ...slots }, errors = [];
   const byCmd = new Map(Object.entries(out).map(([s, c]) => [c, +s]));
   for (const p of profiles) for (const a of schema.hostActions(p)) {
-    let s = byCmd.get(a.cmd);
+    const own = Number.isInteger(a.slot) && a.slot >= 0 && a.slot < schema.HOST_SLOTS && (!(String(a.slot) in out) || out[a.slot] === a.cmd);
+    let s = own ? a.slot : byCmd.get(a.cmd);
+    if (own) { out[String(s)] = a.cmd; if (!byCmd.has(a.cmd)) byCmd.set(a.cmd, s); }
     if (s === undefined) {
       s = [...Array(schema.HOST_SLOTS).keys()].find((n) => !(String(n) in out));
       if (s === undefined) { errors.push(`all ${schema.HOST_SLOTS} host slots are in use; '${a.cmd}' has none`); delete a.slot; continue; }
@@ -154,4 +170,4 @@ class HostBridge {
   dispose() { this.apply({}); }
 }
 
-module.exports = { MOD_SETS, comboForSlot, assignSlots, findActionConflicts, parseCommand, obsAuth, obsRequest, HostBridge };
+module.exports = { MOD_SETS, comboForSlot, slotsFromProfiles, assignSlots, findActionConflicts, parseCommand, obsAuth, obsRequest, HostBridge };

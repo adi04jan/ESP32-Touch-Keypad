@@ -328,6 +328,7 @@ handle("bridge:state", (_e, profile) => ({
   combos: Object.keys(store.load().host_slots).map((s) => hostbridge.comboForSlot(+s)),
   failed: bridge.failed,
   conflicts: profile ? hostbridge.findActionConflicts(profile) : [],
+  shared: device.hostConflicts,   // one host slot, two commands, in the keypad's profiles
 }));
 handle("bridge:test", (_e, slot) => bridge.fire(parseInt(slot, 10)));   // a saved slot only: the page never sends a command line
 handle("notify:test", () => device.notify({ app: "Studio", title: "Test notification", body: "Swipe down on the keypad to read it", icon: "bell" }));

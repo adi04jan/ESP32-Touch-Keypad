@@ -137,16 +137,46 @@ test("invalid profiles are not written; offline saves still back up", async () =
 });
 
 test("a profile read that fails is an error, never an empty slot", async () => {
-  const { sim, link, dev } = rig();
-  await dev.connect("SIM1");
-  assert.equal(await dev.peekProfile(6), null, "no such file: an empty slot");
+  const { sim, link, dev, store } = rig();
   sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
+  store.save({ host_slots: { 3: "open kept" } });
   const cmd = sim._command.bind(sim);
-  sim._command = (s) => (s.startsWith("cat ") ? sim.println("") : cmd(s));   // no answer, as after a timeout
+  let reply = "";   // "": no answer, as after a timeout; else a reply meant for another command
+  sim._command = (s) => (s === "cat /profile2.json" && reply !== null ? sim.println(reply) : cmd(s));
+  await dev.connect("SIM1");
+  assert.deepEqual(store.load().host_slots, { 3: "open kept" }, "an unread profile leaves the host table as it was");
+  assert.equal(await dev.peekProfile(6), null, "no such file: an empty slot");
   await assert.rejects(dev.peekProfile(2), /could not read profile 2/);
   await assert.rejects(dev.loadProfile(2), /could not read profile 2/);
-  sim._command = (s) => (s.startsWith("cat ") ? sim.println("Profile:1 loaded:1 model:touch") : cmd(s));   // a reply meant for another command
+  reply = "Profile:1 loaded:1 model:touch";
   await assert.rejects(dev.loadProfile(2), /could not read profile 2/);
+  reply = null;
+  assert.equal((await dev.loadProfile(2)).profile_name, "Code");
+  link.disconnect();
+});
+
+test("on connect the host table follows the keypad's profiles: stale slots dropped, shared slots flagged", async () => {
+  const { sim, link, dev, store, reg } = rig();
+  const host = (cmd, slot) => [{ type: "host", cmd, slot }];
+  const mk = (name, keys) => { const p = schema.blankProfile(name); keys.forEach((a, i) => { p.pages[0].keys[i] = { id: i + 1, name: `K${i}`, led_color: [1, 2, 3], actions: a }; }); return p; };
+  sim.files.set("/profile1.json", Buffer.from(JSON.stringify(mk("Daily", [host("open spotify:", 0), host("open https://github.com", 1)]))));
+  sim.files.set("/profile3.json", Buffer.from(JSON.stringify(mk("Stream", [host("obs.scene Live", 9), host("open other", 0)]))));
+  store.save({ host_slots: { 0: "open stale", 5: "run leftover" } });   // Studio's table from before
+  await dev.connect("SIM1");
+  assert.deepEqual(store.load().host_slots, { 0: "open spotify:", 1: "open https://github.com", 9: "obs.scene Live" });
+  assert.deepEqual(dev.hostConflicts, [{ slot: 0, profiles: [1, 3] }]);
+  assert.ok(reg.has(hb.comboForSlot(9).accelerator) && !reg.has(hb.comboForSlot(5).accelerator));
+  assert.equal((await dev.peekProfile(3)).profile_name, "Stream", "peeks come from the connect's read");
+
+  // Saving Stream gives "open other" a slot of its own.
+  const r3 = await dev.save(3, mk("Stream", [host("obs.scene Live", 9), host("open other", 0)]));
+  assert.equal(r3.profile.pages[0].keys[1].actions[0].slot, 2);
+  assert.deepEqual(dev.hostConflicts, []);
+  // Daily without GitHub frees slot 1, and the next new host key takes it.
+  await dev.save(1, mk("Daily", [host("open spotify:", 0)]));
+  assert.deepEqual(store.load().host_slots, { 0: "open spotify:", 2: "open other", 9: "obs.scene Live" });
+  const r2 = await dev.save(2, mk("New", [[{ type: "host", cmd: "open new" }]]));
+  assert.equal(r2.profile.pages[0].keys[0].actions[0].slot, 1);
   link.disconnect();
 });
 
@@ -167,6 +197,7 @@ test("autosave re-uploads tiles the device lost, from the PC cache", async () =>
 
 test("device panel: status, BLE slots, forget, profile switch, events, now playing", async () => {
   const { sim, link, dev } = rig();
+  sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
   await dev.connect("SIM1");
   assert.equal(dev.status.ver, "3.0.0");
   const ble = await dev.bleList();
@@ -182,7 +213,6 @@ test("device panel: status, BLE slots, forget, profile switch, events, now playi
   assert.equal(sim.ble[0].name, "MacBook-Air");
   assert.deepEqual(events, [{ slot: 0, up: false }]);
 
-  sim.files.set("/profile2.json", Buffer.from(JSON.stringify(schema.blankProfile("Code"))));
   const before = sim.profileN;
   assert.equal((await dev.peekProfile(2)).profile_name, "Code");   // read in place:
   assert.equal(sim.profileN, before, "peeking does not switch the keypad");
