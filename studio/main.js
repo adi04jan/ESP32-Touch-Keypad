@@ -30,12 +30,14 @@ const chat = require("./services/chat");
 const { WinNotify } = require("./services/winnotify");
 const { Suggest } = require("./services/suggest");
 const { MicMute } = require("./services/micmute");
+const { isAppFrame, openKind } = require("./services/guard");
 
 const SIM = process.env.STUDIO_SIM === "1";
 const NO_SERIAL = process.env.STUDIO_NO_SERIAL === "1" && !SIM;
 const SMOKE = process.env.STUDIO_SMOKE === "1";
 const BLE_ONLY = process.env.STUDIO_BLE_ONLY === "1";   // hides USB ports: tests the Bluetooth link with the cable in
 const ICON = path.join(__dirname, "assets", "icon.ico");
+const INDEX_HTML = path.join(__dirname, "renderer", "index.html");
 
 let win = null, tray = null, link = null, device = null, bridge = null, autogen = null, winNotify = null;
 let micmute = null;   // the `mic toggle` host key: every mic on the PC (services/micmute.js)
@@ -45,10 +47,12 @@ let manualDisconnect = false, connecting = false, pollTimer = null, currentConte
 function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send("evt", { type, data }); }
 const log = (text) => send("log", text);
 
-function openTarget(target) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(target) && !/^[a-z]:[\\/]/i.test(target)) return shell.openExternal(target);
-  // apps on PATH, files, folders: let `start` resolve them
-  spawn("cmd.exe", ["/c", "start", '""', target], { detached: true, windowsHide: true, stdio: "ignore" }).unref();
+// URLs to their app; files, folders and app names to the shell's association (ShellExecute, no cmd:
+// an & or ^ in a path stays part of the path).
+async function openTarget(target) {
+  if (openKind(target) === "url") return shell.openExternal(target);
+  const err = await shell.openPath(target);
+  if (err) throw new Error(err);
 }
 // Not detached: a detached shell has no console, so console programs it starts (cmd /c, git,
 // python ...) open their own and their output never reaches a redirect. Hidden is enough.
@@ -187,6 +191,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.removeMenu();
+  win.webContents.on("will-navigate", (e) => e.preventDefault());   // a dropped file or a link never replaces Studio's page
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: "deny" }; });
   win.webContents.on("console-message", (e) => {
     const { level, message, lineNumber, sourceId } = e;
@@ -200,7 +205,7 @@ function createWindow() {
     e.preventDefault();          // keep running in the tray so host shortcuts stay live
     win.hide();
   });
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  win.loadFile(INDEX_HTML);
 }
 
 function createTray() {
@@ -250,7 +255,17 @@ app.on("before-quit", () => { app.isQuitting = true; cleanup(); });
 app.on("window-all-closed", () => { if (app.isQuitting || SMOKE) { if (link) link.disconnect(); app.quit(); } });
 
 // ---- IPC --------------------------------------------------------------------
-ipcMain.on("app:ready", async (_e, info) => {
+// Every channel answers Studio's own page only (services/guard.js); anything else is refused and logged.
+function fromApp(e, ch) {
+  const url = e.senderFrame && e.senderFrame.url;
+  if (isAppFrame(url, INDEX_HTML)) return true;
+  console.error(`[ipc] refused ${ch} from ${url}`);
+  return false;
+}
+function handle(ch, fn) { ipcMain.handle(ch, (e, ...a) => { if (!fromApp(e, ch)) throw new Error(`${ch}: not from Studio`); return fn(e, ...a); }); }
+function on(ch, fn) { ipcMain.on(ch, (e, ...a) => { if (fromApp(e, ch)) fn(e, ...a); }); }
+
+on("app:ready", async (_e, info) => {
   if (process.env.STUDIO_SCREENSHOT) {
     await new Promise((r) => setTimeout(r, +process.env.STUDIO_SHOT_DELAY || 3000));
     fs.writeFileSync(process.env.STUDIO_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
@@ -260,33 +275,33 @@ ipcMain.on("app:ready", async (_e, info) => {
   setTimeout(() => smokeExit(0), 200);
 });
 
-ipcMain.handle("ports:list", () => (NO_SERIAL ? [] : link.listPorts()));
-ipcMain.handle("device:connect", async (_e, portPath) => {
+handle("ports:list", () => (NO_SERIAL ? [] : link.listPorts()));
+handle("device:connect", async (_e, portPath) => {
   if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
   manualDisconnect = false;
   if (link.isOpen()) return { ok: true, ...device.state() };
   connecting = true;
   try { return await device.connect(portPath || undefined); } finally { connecting = false; }
 });
-ipcMain.handle("device:disconnect", () => { manualDisconnect = true; device.disconnect(); return true; });
-ipcMain.handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null, appVersion: app.getVersion(), smoke: SMOKE }));
-ipcMain.handle("device:status", () => device.refreshStatus());
-ipcMain.handle("device:fsinfo", () => device.fsinfo());
-ipcMain.handle("device:command", (_e, cmd) => link.command(String(cmd)));
-ipcMain.handle("device:loadProfile", (_e, slot) => device.loadProfile(slot));
-ipcMain.handle("device:peekProfile", (_e, slot) => device.peekProfile(slot));
-ipcMain.handle("device:setActive", (_e, slot) => device.setActiveProfile(slot));
-ipcMain.handle("device:showPage", (_e, slot, page) => device.showPage(slot, page));
-ipcMain.handle("device:save", (_e, slot, profile) => device.save(slot, profile));
-ipcMain.on("device:edit", (_e, payload) => device.edit(payload));
-ipcMain.handle("device:bleList", () => device.bleList());
-ipcMain.handle("device:bleForget", (_e, n) => device.bleForget(n));
-ipcMain.handle("device:bleUse", (_e, n) => device.bleUse(n));
-ipcMain.handle("device:look", () => device.look());
+handle("device:disconnect", () => { manualDisconnect = true; device.disconnect(); return true; });
+handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null, appVersion: app.getVersion(), smoke: SMOKE }));
+handle("device:status", () => device.refreshStatus());
+handle("device:fsinfo", () => device.fsinfo());
+handle("device:command", (_e, cmd) => link.command(String(cmd)));
+handle("device:loadProfile", (_e, slot) => device.loadProfile(slot));
+handle("device:peekProfile", (_e, slot) => device.peekProfile(slot));
+handle("device:setActive", (_e, slot) => device.setActiveProfile(slot));
+handle("device:showPage", (_e, slot, page) => device.showPage(slot, page));
+handle("device:save", (_e, slot, profile) => device.save(slot, profile));
+on("device:edit", (_e, payload) => device.edit(payload));
+handle("device:bleList", () => device.bleList());
+handle("device:bleForget", (_e, n) => device.bleForget(n));
+handle("device:bleUse", (_e, n) => device.bleUse(n));
+handle("device:look", () => device.look());
 
-ipcMain.handle("backup:list", () => { try { return backup.listBackups(); } catch (_) { return []; } });
-ipcMain.handle("backup:read", (_e, id) => { try { return { ok: true, profile: schema.repairProfile(backup.readBackup(id)) }; } catch (e) { return { ok: false, error: e.message }; } });
-ipcMain.handle("backup:all", async () => {
+handle("backup:list", () => { try { return backup.listBackups(); } catch (_) { return []; } });
+handle("backup:read", (_e, id) => { try { return { ok: true, profile: schema.repairProfile(backup.readBackup(id)) }; } catch (e) { return { ok: false, error: e.message }; } });
+handle("backup:all", async () => {
   if (!link.isOpen()) return { ok: false, error: "not connected" };
   const profiles = {};
   for (let n = 1; n <= schema.NUM_PROFILES; n++) {
@@ -295,10 +310,10 @@ ipcMain.handle("backup:all", async () => {
   return backup.manualBackupAll(profiles);
 });
 
-ipcMain.handle("settings:get", () => store.load());
-ipcMain.handle("suggest:rows", () => suggest.rows());
-ipcMain.handle("suggest:clear", (_e, appId, slot) => { suggest.clear(appId, slot); suggest.save(suggestFile); pushSuggest(); return suggest.rows(); });
-ipcMain.handle("settings:set", (_e, patch) => {
+handle("settings:get", () => store.load());
+handle("suggest:rows", () => suggest.rows());
+handle("suggest:clear", (_e, appId, slot) => { suggest.clear(appId, slot); suggest.save(suggestFile); pushSuggest(); return suggest.rows(); });
+handle("settings:set", (_e, patch) => {
   const before = store.load(), s = store.save(patch || {});
   if (before.auto_switch_enabled !== s.auto_switch_enabled) currentContext = "global";   // the next focus change applies
   if (before.nowplaying_enabled !== s.nowplaying_enabled) { if (s.nowplaying_enabled) startNowPlaying(); else feeds.stopNowPlaying(); }
@@ -307,40 +322,40 @@ ipcMain.handle("settings:set", (_e, patch) => {
   if (patch && patch.auto_connect) { manualDisconnect = false; tryAutoConnect(); }
   return s;
 });
-ipcMain.handle("bridge:state", (_e, profile) => ({
+handle("bridge:state", (_e, profile) => ({
   slots: store.load().host_slots,
   combos: Object.keys(store.load().host_slots).map((s) => hostbridge.comboForSlot(+s)),
   failed: bridge.failed,
   conflicts: profile ? hostbridge.findActionConflicts(profile) : [],
 }));
-ipcMain.handle("bridge:test", (_e, cmd) => bridge.execute(cmd));
-ipcMain.handle("notify:test", () => device.notify({ app: "Studio", title: "Test notification", body: "Swipe down on the keypad to read it", icon: "bell" }));
-ipcMain.handle("contexts:list", () => {
+handle("bridge:test", (_e, slot) => bridge.fire(parseInt(slot, 10)));   // a saved slot only: the page never sends a command line
+handle("notify:test", () => device.notify({ app: "Studio", title: "Test notification", body: "Swipe down on the keypad to read it", icon: "bell" }));
+handle("contexts:list", () => {
   const known = ["global", ...CONTEXT_MATCH.map(([id]) => id)];
   return [...known, ...Object.keys(store.load().context_profiles || {}).filter((k) => !known.includes(k))];   // + generated apps
 });
-ipcMain.handle("autogen:run", (_e, force) => autogen.run(!!force));
-ipcMain.handle("chat:send", (_e, req) => chat.chatTurn(req));
-ipcMain.handle("tiles:put", (_e, list) => device.putTiles(list));
-ipcMain.handle("tile:get", (_e, name) => device._tileBytes(String(name)) || null);   // RGB565 for the preview
-ipcMain.handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
+handle("autogen:run", (_e, force) => autogen.run(!!force));
+handle("chat:send", (_e, req) => chat.chatTurn(req));
+handle("tiles:put", (_e, list) => device.putTiles(list));
+handle("tile:get", (_e, name) => device._tileBytes(String(name)) || null);   // RGB565 for the preview
+handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
 
-ipcMain.handle("dialog:import", async () => {
+handle("dialog:import", async () => {
   const r = await dialog.showOpenDialog(win, { filters: [{ name: "JSON", extensions: ["json"] }], properties: ["openFile"] });
   if (r.canceled || !r.filePaths[0]) return null;
   try { return { ok: true, profile: schema.repairProfile(JSON.parse(fs.readFileSync(r.filePaths[0], "utf8"))) }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle("dialog:export", async (_e, profile) => {
+handle("dialog:export", async (_e, profile) => {
   const r = await dialog.showSaveDialog(win, { defaultPath: "profile.json", filters: [{ name: "JSON", extensions: ["json"] }] });
   if (r.canceled || !r.filePath) return null;
   try { fs.writeFileSync(r.filePath, JSON.stringify(schema.repairProfile(profile), null, 2)); return { ok: true, path: r.filePath }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
 const fwResources = () => (app.isPackaged ? process.resourcesPath : null);
-ipcMain.handle("flash:info", () => flasher.info(fwResources()));
+handle("flash:info", () => flasher.info(fwResources()));
 // Install firmware: release the port, run esptool, then reconnect to the same port.
-ipcMain.handle("flash:run", async () => {
+handle("flash:run", async () => {
   if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
   const target = await flasher.targetPort(link);   // the live USB link, checked to be the keypad
   if (target.error) return { ok: false, error: target.error };

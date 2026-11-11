@@ -451,6 +451,10 @@ stScreen.addEventListener("drop", (e) => {
   state.sel = i; changed(["structure"]);
 });
 
+// A file dropped anywhere but a drop zone does nothing (Chromium would open it in place of Studio).
+document.addEventListener("dragover", (e) => { if (!e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = "none"; } });
+document.addEventListener("drop", (e) => e.preventDefault());
+
 /* ============ slots, pages, names ============ */
 document.addEventListener("click", async (e) => {
   const s = e.target.closest("[data-stslot]");
@@ -732,7 +736,7 @@ async function renderSettings() {
   el.innerHTML = `
     <div class="book wide"><h2>Host bridge</h2>
       <p class="hint">A <b>Host Action</b> key sends a reserved F13–F24 combo over Bluetooth; Studio catches it and runs the command. Commands: <code>open &lt;url, file or app&gt;</code>, <code>run &lt;command line&gt;</code>, <code>obs.scene &lt;scene&gt;</code>, <code>mic toggle</code> (mutes every mic on the PC, like a laptop's mic key). Studio must be running (it stays in the tray).</p>
-      ${Object.keys(br.slots).length ? `<table><thead><tr><th>Slot</th><th>Combo</th><th>Command</th><th>Status</th><th></th></tr></thead><tbody>${br.combos.map((c) => `<tr><td>${c.slot}</td><td><code>${esc(c.label)}</code></td><td><code>${esc(br.slots[c.slot])}</code></td><td>${failed.has(c.slot) ? `<span class="pill warn">taken by another app</span>` : `<span class="pill ok">listening</span>`}</td><td><button data-test="${esc(br.slots[c.slot])}">Test</button></td></tr>`).join("")}</tbody></table>`
+      ${Object.keys(br.slots).length ? `<table><thead><tr><th>Slot</th><th>Combo</th><th>Command</th><th>Status</th><th></th></tr></thead><tbody>${br.combos.map((c) => `<tr><td>${c.slot}</td><td><code>${esc(c.label)}</code></td><td><code>${esc(br.slots[c.slot])}</code></td><td>${failed.has(c.slot) ? `<span class="pill warn">taken by another app</span>` : `<span class="pill ok">listening</span>`}</td><td><button data-test="${c.slot}">Test</button></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">No host actions saved yet.</p>`}
       ${br.conflicts.length ? `<p><b>Conflicts in this profile:</b></p><ul class="errors">${br.conflicts.map((x) => `<li>${esc(x.where)} sends ${esc(x.label)}, which is reserved for host actions</li>`).join("")}</ul>` : ""}
     </div>
@@ -777,7 +781,7 @@ async function renderSettings() {
       state.settings = await api.setSettings({ context_profiles: map });
     });
   });
-  el.querySelectorAll("[data-test]").forEach((b) => { b.onclick = async () => { const r = await api.bridgeTest(b.dataset.test); cli("host", r.ok ? `host: ran ${b.dataset.test}` : `! host: ${r.error}`); }; });
+  el.querySelectorAll("[data-test]").forEach((b) => { b.onclick = async () => { const r = await api.bridgeTest(+b.dataset.test); cli("host", r.ok ? `host: ran slot ${b.dataset.test}` : `! host: ${r.error}`); }; });
   const ag = await api.autogenState();
   $("ag-app").textContent = ag.last ? `${ag.last.proc}${ag.last.title ? ` · ${ag.last.title}` : ""}` : "none yet: switch to an app";
   const gen = async (force) => {
