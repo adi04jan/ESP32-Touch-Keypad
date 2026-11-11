@@ -127,6 +127,25 @@ test("commands time out cleanly and offline commands resolve empty", async () =>
   link.disconnect();
 });
 
+test("a reply that arrives after its command timed out never answers the next command", async () => {
+  const { EventEmitter } = require("events");
+  class SlowPort extends EventEmitter {   // profile 4 answers after 300 ms (a slow Bluetooth read), the rest after 60 ms
+    constructor(_o, cb) { super(); this.isOpen = true; setImmediate(() => cb(null)); }
+    static async list() { return []; }
+    set() {} close() {}
+    write(d, cb) {
+      if (cb) cb();
+      const cmd = String(d).trim(), m = cmd.match(/^cat \/profile(\d+)\.json$/);
+      setTimeout(() => this.emit("data", Buffer.from(`${m ? `{"profile_name":"P${m[1]}"}` : `ok ${cmd}`}\nmacropad:$ `)), m && m[1] === "4" ? 300 : 60);
+    }
+  }
+  const link = new SerialLink({ SerialPort: SlowPort });
+  await link.connect("X");
+  assert.equal(await link.command("cat /profile4.json", 200), "");   // timed out
+  assert.equal(await link.command("cat /profile5.json", 200), '{"profile_name":"P5"}');
+  assert.equal(await link.command("cat /profile6.json", 200), '{"profile_name":"P6"}');
+});
+
 test("a dropped port releases the in-flight command", async () => {
   const { sim, link } = await rig();
   await link.connect("SIM1");

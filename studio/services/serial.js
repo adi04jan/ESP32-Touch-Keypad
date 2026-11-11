@@ -14,6 +14,7 @@ const { BLE_PATH } = require("./bleport");
 
 const PROMPT = "macropad:$";
 const CAPTURE_TIMEOUT_MS = 4000;
+const DRAIN_QUIET_MS = 500, DRAIN_MAX_MS = 5000;   // after a timeout: how long a silent line means the late reply is done
 const CH340 = { vendorId: "1A86", productId: "7523" };
 const DEFAULT_BAUD = 921600;
 
@@ -58,6 +59,8 @@ class SerialLink extends EventEmitter {
     this._readResolve = null;
     this._readTimer = null;
     this._chain = null;
+    this._stale = false;   // a command timed out: drain its late reply before the next
+    this._lastRx = 0;
   }
 
   _impl() {
@@ -97,6 +100,7 @@ class SerialLink extends EventEmitter {
         }
         this._lastError = null;
         this._partial = "";
+        this._stale = false;
         this.path = path;
         // Release DTR/RTS: on the CH340 auto-reset circuit DTR alone pulls IO0 (BOOT) low,
         // and the keypad reads a 2 s BOOT hold as "open touch calibration".
@@ -148,13 +152,37 @@ class SerialLink extends EventEmitter {
   // Send a command; resolve with its output once the prompt returns ("" on timeout / offline).
   // quiet: Studio's own readouts, kept out of the console's tx echo.
   command(cmd, timeoutMs = CAPTURE_TIMEOUT_MS, quiet = false) {
-    return this._runExclusive(() => new Promise((resolve) => {
-      if (!this.isOpen()) return resolve("");
-      this._readResolve = resolve;
-      this._capture(timeoutMs, () => this.emit("log", `Device did not answer '${cmd.split(" ")[0]}' in time.\n`));
-      if (!quiet) this.emit("tx", cmd);
-      this.send(cmd);
-    }));
+    return this._runExclusive(async () => {
+      if (this._stale) await this._drain();
+      return new Promise((resolve) => {
+        if (!this.isOpen()) return resolve("");
+        this._readResolve = resolve;
+        this._capture(timeoutMs, () => { this._stale = true; this.emit("log", `Device did not answer '${cmd.split(" ")[0]}' in time.\n`); });
+        if (!quiet) this.emit("tx", cmd);
+        this.send(cmd);
+      });
+    });
+  }
+
+  // A command that timed out may still be answered. Before the next one, wait for that late reply's
+  // prompt, or for the line to go quiet, so the late reply is never taken for the next command's.
+  // ponytail: a reply that starts after DRAIN_QUIET_MS of silence still slips through; a per-command
+  // echo token in the firmware's replies would close that.
+  _drain() {
+    this._stale = false;
+    return new Promise((resolve) => {
+      const end = Date.now() + DRAIN_MAX_MS;
+      this._reading = true;
+      this._readLines = [];
+      this._readResolve = () => resolve();   // the late prompt ends it (_handleLine)
+      const check = () => {
+        const idle = Date.now() - this._lastRx;
+        if (!this.isOpen() || idle >= DRAIN_QUIET_MS || Date.now() >= end) return this._finishRead();
+        this._readTimer = setTimeout(check, DRAIN_QUIET_MS - idle);
+      };
+      clearTimeout(this._readTimer);
+      this._readTimer = setTimeout(check, DRAIN_QUIET_MS);
+    });
   }
 
   _finishRead() {
@@ -184,13 +212,13 @@ class SerialLink extends EventEmitter {
   // SYNC_EVERY bytes it sends ###SYNC### and waits for the keypad's ACK: the keypad compares or writes
   // that chunk to flash then, and can't take bytes while it does.
   _upload(label, lines) {
-    return this._runExclusive(() => new Promise((resolve) => {
+    return this._runExclusive(async () => { if (this._stale) await this._drain(); return new Promise((resolve) => {
       if (!this.isOpen()) return resolve({ ok: false, reply: "not connected" });
       const bytes = lines.reduce((n, l) => n + l.length + 1, 0);
       const rate = this.uploadRate;
       this._readResolve = (reply) => resolve({ ok: uploadOk(reply), reply });
       this._capture(8000 + (Number.isFinite(rate) ? (bytes / rate) * 1000 : 0),
-        () => this.emit("log", `Upload of ${label} timed out; device did not acknowledge.\n`));
+        () => { this._stale = true; this.emit("log", `Upload of ${label} timed out; device did not acknowledge.\n`); });
       this.emit("tx", `${lines[0]}  (${lines.length - 2} lines, ${bytes} B)`);
       const t0 = Date.now();
       let i = 0, sent = 0, sinceSync = 0;
@@ -212,7 +240,7 @@ class SerialLink extends EventEmitter {
         if (i < lines.length) setTimeout(pump, 4);
       };
       pump();
-    }));
+    }); });
   }
 
   uploadJson(filename, obj) {
@@ -268,6 +296,7 @@ class SerialLink extends EventEmitter {
   // look for it in the accumulated tail, not in the latest chunk.
   _feed(text) {
     if (!text) return;
+    this._lastRx = Date.now();
     let s = this._partial + text;
     if (this._afterPrompt) { if (s[0] === " ") s = s.slice(1); this._afterPrompt = false; }   // the prompt's trailing space
     const parts = s.split("\n");
