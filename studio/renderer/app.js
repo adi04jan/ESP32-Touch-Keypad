@@ -595,6 +595,7 @@ async function renderDevice() {
   const dis = c.connected ? "" : "disabled";
   const pct = (v) => (look ? `${Math.round(v / 2.55)}%` : "—");
   const pw = look && look.power, onBle = c.path === "BLE";
+  const canFlash = c.connected && !onBle && st.model === "touch";   // main checks again before it releases the port
   const power = !pw ? "—" : pw.usb ? (pw.pct < 0 ? "USB" : pw.charging ? `USB · charging, ${pw.pct}%` : "USB · battery full") : `Battery · ${pw.pct}%`;
   el.innerHTML = `
     <div class="book"><h2>Connection</h2>
@@ -622,8 +623,10 @@ async function renderDevice() {
       <div class="row"><button id="d-pair" ${dis}>${ico("link")} Pair a new host</button></div>
       <p class="hint">Pairing shows a six-digit code on the keypad; type it on the computer. The keypad remembers three hosts. Forgetting removes the bond on the keypad; remove it on the computer too.</p></div>
     <div class="book"><h2>Firmware</h2>
-      <p>${esc(flash.note)}</p>${onBle ? `<p class="hint">Connected over Bluetooth. Installing firmware needs the USB cable.</p>` : ""}
-      ${flash.available ? `<div class="row"><button class="primary" id="d-flash">${ico("download")} Install firmware ${esc(flash.version || "")}</button></div><div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
+      <p>${esc(flash.note)}</p>
+      ${flash.available ? `<div class="row"><button class="primary" id="d-flash" aria-describedby="flash-why" ${canFlash ? "" : "disabled"}>${ico("download")} Install firmware ${esc(flash.version || "")}</button></div>
+        <p class="hint" id="flash-why">${canFlash ? "" : onBle ? "Connected over Bluetooth. Installing firmware needs the USB cable: plug it in, Disconnect, then Find keypad." : "Connect the keypad with a USB cable first. Studio checks that it is the Touch Keypad before installing."}</p>
+        <div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
     <div class="book wide"><h2>Backups</h2>
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>

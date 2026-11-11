@@ -23,7 +23,7 @@ const flasher = require("./services/flasher");
 const hostbridge = require("./services/hostbridge");
 const { CONTEXT_MATCH } = require("./services/contexts");
 const { SerialLink } = require("./services/serial");
-const { withBluetooth, BLE_PATH } = require("./services/bleport");
+const { withBluetooth } = require("./services/bleport");
 const { Device } = require("./services/device");
 const { Autogen, appKey } = require("./services/autogen");
 const chat = require("./services/chat");
@@ -342,9 +342,10 @@ ipcMain.handle("flash:info", () => flasher.info(fwResources()));
 // Install firmware: release the port, run esptool, then reconnect to the same port.
 ipcMain.handle("flash:run", async () => {
   if (NO_SERIAL) return { ok: false, error: "serial disabled (STUDIO_NO_SERIAL)" };
-  // esptool needs the cable: over Bluetooth, flash the keypad on USB if one is plugged in too.
-  const port = (link.path !== BLE_PATH && link.path) || ((await link.listPorts()).find((p) => p.ch340) || {}).path;
-  if (!port) return { ok: false, error: "connect the keypad with a USB cable to install firmware" };
+  const target = await flasher.targetPort(link);   // the live USB link, checked to be the keypad
+  if (target.error) return { ok: false, error: target.error };
+  const port = target.port;
+  await device.flush();   // a pending autosave goes to the keypad first
   manualDisconnect = true;
   device.disconnect();
   await new Promise((r) => setTimeout(r, 400));

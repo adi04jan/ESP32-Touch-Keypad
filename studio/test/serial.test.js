@@ -146,6 +146,23 @@ test("a reply that arrives after its command timed out never answers the next co
   assert.equal(await link.command("cat /profile6.json", 200), '{"profile_name":"P6"}');
 });
 
+test("firmware installs only on a live USB link that answers model:touch", async () => {
+  const { targetPort } = require("../services/flasher");
+  const { BLE_PATH } = require("../services/bleport");
+  const { link } = await rig();
+  assert.match((await targetPort(link)).error, /USB cable/);           // never connected
+  await link.connect("SIM1");
+  assert.deepEqual(await targetPort(link), { port: "SIM1" });
+  link.disconnect();
+  assert.match((await targetPort(link)).error, /USB cable/, "a stale path is never used");
+  const other = await rig({ model: "s2" });
+  await other.link.connect("SIM1");
+  assert.match((await targetPort(other.link)).error, /did not answer as a Touch Keypad/);
+  const ble = await rig({ ports: [{ path: BLE_PATH }, { path: "SIM1", vendorId: "1a86", productId: "7523" }] });
+  await ble.link.connect(BLE_PATH);
+  assert.match((await targetPort(ble.link)).error, /Bluetooth/, "never a guessed CH340 port");
+});
+
 test("a dropped port releases the in-flight command", async () => {
   const { sim, link } = await rig();
   await link.connect("SIM1");

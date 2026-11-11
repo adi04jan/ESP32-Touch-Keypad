@@ -11,6 +11,8 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { parseStatus } = require("./serial");
+const { BLE_PATH } = require("./bleport");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const CORE = path.join(process.env.LOCALAPPDATA || "", "Arduino15", "packages", "esp32");
@@ -49,6 +51,15 @@ function info(resourcesPath) {
   return { available: true, version: l.version, note: `Installs firmware ${l.version || ""} over USB. Profiles, Bluetooth pairings and touch calibration are kept.` };
 }
 
+// The port to install on: the live USB link, once it answers `status` with model:touch. Never a stale
+// path or a guessed CH340 port: esptool overwrites whatever board answers there.
+async function targetPort(link) {
+  if (!link.isOpen()) return { error: "Connect the keypad with a USB cable first." };
+  if (link.path === BLE_PATH) return { error: "Connected over Bluetooth: installing firmware needs the USB cable. Plug it in, Disconnect, then Find keypad." };
+  const st = parseStatus(await link.command("status", undefined, true));
+  return st.model === "touch" ? { port: link.path } : { error: `${link.path} did not answer as a Touch Keypad.` };
+}
+
 /* Runs esptool on `port`. onProgress({pct, msg}). Resolves { ok, error?, log }.
  * The caller must close its own handle on the port first. */
 function flash(port, resourcesPath, onProgress = () => {}) {
@@ -78,4 +89,4 @@ function flash(port, resourcesPath, onProgress = () => {}) {
   });
 }
 
-module.exports = { locate, info, flash, IMAGES };
+module.exports = { locate, info, flash, targetPort, IMAGES };
