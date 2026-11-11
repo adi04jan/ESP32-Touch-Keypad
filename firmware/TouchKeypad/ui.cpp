@@ -74,7 +74,7 @@ enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL, M_SHADE, M_MENU };   // sh
 static Mode mode = M_HOME;
 static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal", "shade", "menu" };
 
-struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame; uint32_t sig0; int16_t sig; const IconDef *sigIc; uint32_t waveAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen, sigIc the icon it holds; waveAt: its turn in a wave
+struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame, fiNow; uint32_t fiAt; uint32_t sig0; int16_t sig; const IconDef *sigIc; uint32_t waveAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen, sigIc the icon it holds; waveAt: its turn in a wave
 static CellAnim ca[NUM_CELLS];
 static int pressed = -1, released = -1;
 static uint32_t press0 = 0, release0 = 0;
@@ -89,12 +89,18 @@ static uint32_t offArmedAt = 0;      // Settings › Device › Turn off, tapped
 static int brightness = 200, dimAfterS = DIM_DEFAULT_S, dimState = 0;   // 0 lit, 1 dim, 2 off
 static uint32_t lastAct = 0;
 static uint32_t timeEpoch = 0, timeBase = 0;
-static int litLevel() { return powerOnUsb() ? brightness : min(brightness, 160); }   // battery: about 60 % at most
+static int litPick = -1;   // a profile's own brightness, in force until the owner moves the slider
+// The lit screen, for every path that lights it: never below 8 (the screen is the only way back), and on
+// battery about 60 % at most.
+static int litLevel() {
+  int b = max(8, litPick >= 0 ? litPick : brightness);
+  return powerOnUsb() ? b : min(b, 160);
+}
 static int tzMin = 0, lastMinute = -1;
 
 static struct { char title[65], album[65], artist[65], app[33]; int pos, len; bool playing; uint32_t at; bool have; } np;
 static uint16_t *art = nullptr;
-static bool artOk = false;
+static bool artOk = false, artBad = false;   // artBad: this JPEG failed to decode; the next one gets a try
 static uint8_t *artJpg = nullptr;   // the cover as a JPEG: the 32 KB image is made from it only while a player shows
 static size_t artJpgLen = 0;
 static uint32_t artMs = 0;          // the last decode, for `art`
@@ -266,7 +272,7 @@ static int npPos() {
   int p = np.pos + (np.playing ? (int)((millis() - np.at) / 1000) : 0);
   return np.len > 0 && p > np.len ? np.len : p;
 }
-static void clockStr(char *b, int s) { if (s < 0) s = 0; sprintf(b, "%d:%02d", s / 60, s % 60); }
+static void clockStr(char *b, size_t n, int s) { if (s < 0) s = 0; snprintf(b, n, "%d:%02d", s / 60, s % 60); }
 
 static int luma(C3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
 static C3 inkOn(C3 fill) { return luma(fill) > 150 ? TXT : T->ks == KS_PIXEL ? T->g1 : WHITE; }   // readable ink on a filled shape
@@ -506,6 +512,23 @@ static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
   return img != nullptr;
 }
 
+// The GIF frame cell c shows this frame, decided once per frame: its two halves may draw on different cores
+// and must show the same one. One flash read per frame for all GIF keys: a key whose next frame isn't cached
+// keeps its last one this frame (still cached) and gets its turn on the next.
+static int frameIndex(JsonVariant k, uint32_t now);
+static int cellFrame(int c, JsonVariant k, uint32_t now) {
+  if (tileMux) xSemaphoreTake(tileMux, portMAX_DELAY);
+  if (ca[c].fiAt != (now | 1)) {
+    int fi = frameIndex(k, now);
+    if (fi >= 0 && fi != ca[c].frame && ca[c].frame >= 0 && tileLoads > 0 && !tileCached(k["frames"][fi] | "")) fi = ca[c].frame;
+    ca[c].fiNow = fi;
+    ca[c].fiAt = now | 1;
+  }
+  int fi = ca[c].fiNow;
+  if (tileMux) xSemaphoreGive(tileMux);
+  return fi;
+}
+
 static void eqBars(float cx, float cy, float s, C3 ink, C3 sh, bool drop, int alpha, uint32_t now) {
   static const float speed[4] = { 0.0063f, 0.0090f, 0.0070f, 0.0105f }, phase[4] = { 0, 1.7f, 3.1f, 4.4f };
   for (int i = 0; i < 4; i++) {
@@ -705,10 +728,7 @@ static void drawCell(int c, uint32_t now) {
     }
     C3 gc = (!strcmp(anim, "rec") && on && (now / 600) % 2) ? (th.ks == KS_PIXEL ? th.track : RED) : ink;
     const char *icon = k["icon"] | "", *tile = k["tile"] | "";
-    int fi = frameIndex(k, now);
-    // One flash read per frame for all GIF keys: a key whose next frame isn't cached keeps its
-    // last one this frame (still cached) and gets its turn on the next.
-    if (fi >= 0 && fi != ca[c].frame && ca[c].frame >= 0 && tileLoads > 0 && !tileCached(k["frames"][fi] | "")) fi = ca[c].frame;
+    int fi = cellFrame(c, k, now);
     if (fi >= 0 && drawTile(k["frames"][fi] | "", x, y + sink, sz, A)) ca[c].frame = fi;   // a frame missing on the keypad falls back to the icon
     else if (*icon && iconFind(icon, false)) {   // at native size, in its animation frame while it plays
       const IconDef *ic = iconFind(icon, false);
@@ -929,9 +949,9 @@ static void drawPlayer(uint32_t now) {
   circle(SEEK_X + SEEK_W * p, 156, 7, T->knob);
   if (T->light && luma(T->knob) > 200) ringC(SEEK_X + SEEK_W * p, 156, 7, 1, HAIR, 80);
   char a[12], b[13];
-  clockStr(a, npPos());
+  clockStr(a, sizeof a, npPos());
   b[0] = 0;
-  clockStr(b + 3, np.len - npPos());
+  clockStr(b + 3, sizeof b - 3, np.len - npPos());
   memcpy(b, "\xe2\x88\x92", 3);   // U+2212 minus
   text(fLabel, SEEK_X, 190, a, TXT2);
   text(fLabel, SEEK_X + SEEK_W, 190, b, TXT2, 255, AL_R);
@@ -1003,7 +1023,6 @@ static void slideEnd() {   // the page in place at once
   slideMark();
 }
 
-static void slideAbort() { slideEnd(); slide.ignore = true; }   // and the rest of this touch is ignored
 
 // The page beside the view's: page idx of the view's profile; out of range: none.
 static bool slideLoad(int idx) {
@@ -1265,7 +1284,7 @@ static bool riseGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t n
     float f = (y0 - y1) / (float)(SCR_H - STATUS_H);
     mediaRise.x = constrain(mediaDragOpen ? f : 1 + f, 0.0f, 1.0f);
   }
-  bool quick = rt[rn - 1] - touchAt <= QUICK_MS, side = quick && (kind == G_SWIPE_L || kind == G_SWIPE_R);
+  bool quick = (rn ? rt[rn - 1] : now) - touchAt <= QUICK_MS, side = quick && (kind == G_SWIPE_L || kind == G_SWIPE_R);
   float v = side ? 0 : riseVelocity(), t = flickTarget(mediaRise.x, v, 0, 1);
   if (side) t = mediaDragOpen ? 0 : 1;   // set off up or down, went sideways: back where it was, and the swipe turns the page
   else if (quick && kind == (mediaDragOpen ? G_SWIPE_U : G_SWIPE_D)) t = mediaDragOpen ? 1 : 0;
@@ -1273,6 +1292,23 @@ static bool riseGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t n
   if ((t == 1) == mediaDragOpen) emitPanel();   // it opened (Media on top) or closed (the layer under it is)
   markBar();
   return !side;
+}
+
+// The host took the touch from the finger (a profile, a sheet opened or closed from the PC, pairing,
+// calibration): what the finger held lets go where it stands, a pressed key reports its release, and the
+// rest of this touch is ignored. A new touch runs it too, for a drag whose release never came.
+static void touchTaken() {
+  slideCancelPress();
+  slideEnd();
+  slide.ignore = true;
+  if (mediaDrag) {
+    mediaDrag = false;
+    float t = roundf(mediaRise.x);
+    riseGo(mediaRise, t, 0);
+    if ((t == 1) == mediaDragOpen) emitPanel();
+    markBar();
+  }
+  if (sheetDrag) { sheetDrag = false; riseGo(sheetRise, sheetClosing ? 0 : 1, 0); }
 }
 
 // The saved hosts, cheaply (no file system walk): true when something shown changed.
@@ -1488,7 +1524,7 @@ static void drawPair() {
   rrFill(150, 210, 220, 4, 2, solidFill(TRACK));
   rrFill(150, 210, 220.0f * left / PAIR_WINDOW_MS, 4, 2, solidFill(MAG));
   char s[8];
-  clockStr(s, (left + 999) / 1000);
+  clockStr(s, sizeof s, (left + 999) / 1000);
   text(fBody, 382, 216, s, MAG);
   button(198, 262, 84, 44, "Cancel", nullptr, 0, pressedBtn == 2);
 }
@@ -2166,12 +2202,13 @@ static void artSync() {
   if (!artJpgLen) return;   // a raw cover (or none) is kept as it is
   static bool dropped;   // the tile cache, given up once per player visit: not every loop pass if RAM stays short
   bool want = playerPage() || (media.btn && mediaPlayer());
-  if (want && !artOk) {
+  if (want && !artOk && !artBad) {
     if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
     if (!art && !dropped) { dropped = true; uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }
     if (!art) return;   // no room: the player shows its placeholder
     uint32_t t = millis();
     artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 128);
+    artBad = !artOk;   // a JPEG that won't decode is tried once, not on every loop pass
     artMs = millis() - t;
     mark(0, STATUS_H, 160, 160);
   } else if (!want && art) {
@@ -2328,7 +2365,8 @@ void uiBegin() {
   applyTheme(themeIdx);
   fontsBegin();
   lastAct = millis();
-  displaySetBacklight(profileBrightness >= 0 ? profileBrightness : brightness);
+  litPick = profileBrightness;
+  displaySetBacklight(litLevel());
   markScreen();
   if (!touchCalibrated()) uiCalibrate();
 }
@@ -2367,6 +2405,7 @@ void uiPowerChanged() {
 
 void uiSetBrightness(int level) {
   brightness = constrain(level, 8, 255);     // never fully dark: the screen is the only way back
+  litPick = -1;                              // the owner's own level from now on, until a profile sets one
   Preferences p;
   p.begin("kp", false);
   p.putUChar("bright", brightness);
@@ -2456,6 +2495,7 @@ void uiGoPage(int idx, bool push, bool slides) {
   int from = currentPage;
   bool wasPlayer = playerPage();
   slides = slides && idx != from && !topLayer();   // the page on screen: it slides in, the old one beside it
+  slideCancelPress();   // a key held as its page goes (a hold action, the host): released on its own page
   slideEnd();
   if (slides) swap(pageDoc, slide.doc);
   if (!loadPage(idx)) {
@@ -2511,6 +2551,7 @@ static void layerClose(Layer &L) {
 // 1: Media (entry 1), over whatever is open; 2-4: a bar panel (Media goes); 0: both go.
 void uiPanel(int btn) {
   if (btn < 0 || btn > QB_BUTTONS) return;
+  slideCancelPress();
   slideEnd();
   if (btn == 0) {
     if (!panel.btn && !media.btn) return;
@@ -2615,13 +2656,14 @@ void uiAutogen(int state, const char *text) {
 
 void uiSetProfile(int n, const char *how) {
   int from = currentProfile, fromPage = currentPage;
-  slideAbort();   // a new profile: no slide, and the touch in progress can't start one on it
+  touchTaken();   // a new profile: no slide or rise, and the touch in progress can't start one on it
   if (how) uiPanel(0);   // the owner picked a profile: show it, not a panel over it
   macroEngine.abort();
   backDepth = 0;
   memset(toggles, 0, sizeof toggles);
   loadProfileSafe(n);
-  if (!dimState) displaySetBacklight(profileBrightness >= 0 ? profileBrightness : brightness);
+  litPick = profileBrightness;
+  if (!dimState) displaySetBacklight(litLevel());
   if (mode == M_SHEET) { loadSlots(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
   if (mode == M_SHADE) markShade();
   char t[48];
@@ -2666,7 +2708,12 @@ void uiSetTime(uint32_t epoch, int tz) {
 // ---------------------------------------------------------------- public: media
 void uiNowPlaying(JsonObjectConst o) {
   bool wasPlaying = np.playing;
-  if (strcmp(np.title, o["title"] | "")) artOk = false;   // new track: the old cover is wrong until Studio sends one
+  if (strcmp(np.title, o["title"] | "")) {   // new track: the old cover is wrong until Studio sends one
+    artOk = false;
+    free(artJpg);   // or artSync would decode the old one again
+    artJpg = nullptr;
+    artJpgLen = 0;
+  }
   strlcpy(np.title, o["title"] | "", sizeof np.title);
   strlcpy(np.album, o["album"] | "", sizeof np.album);
   strlcpy(np.artist, o["artist"] | "", sizeof np.artist);
@@ -2722,7 +2769,7 @@ uint8_t *uiArtJpgBuffer(size_t size) {
 void uiArtJpgDone(bool ok, size_t len) {
   artJpgLen = ok && artJpg ? len : 0;
   if (!artJpgLen) { free(artJpg); artJpg = nullptr; }
-  artOk = false;   // decoded on the next frame if a player shows
+  artOk = artBad = false;   // decoded on the next frame if a player shows
   if (playerPage()) mark(0, STATUS_H, 160, 160);
 }
 void uiArtPrint() { Con.printf("art jpg:%u decoded:%d ms:%u\n", (unsigned)artJpgLen, artJpgLen && artOk ? 1 : 0, (unsigned)artMs); }
@@ -2735,6 +2782,7 @@ void uiArtDone(bool ok) {
 void uiPairShow(uint32_t key) {
   pairKey = key;
   if (mode == M_CAL) return;
+  touchTaken();
   mode = M_PAIR;
   sheetClosing = false;
   uiWake();
@@ -2759,13 +2807,14 @@ void uiOpenSheet(int tab) {
   sheetClosing = false;
   if (!was) sheetRise = { 0, 0, 0, sheetK, sheetZ, false };
   riseGo(sheetRise, 1, was ? sheetRise.v : 0);
-  pressed = -1;
+  touchTaken();
   emitMode();
 }
 
 void uiCloseSheet() {
   if (mode != M_SHEET || sheetClosing) return;
   sheetClosing = true;
+  touchTaken();
   riseGo(sheetRise, 0, 0);
   dragSlider = -1;
 }
@@ -2861,7 +2910,7 @@ void uiCalibrate() {
   calStep = 0;
   calNote = 0;
   calDotN = 0;
-  pressed = -1;
+  touchTaken();
   uiWake();
   Con.println("EVT:CAL start");
   emitMode();
@@ -2974,7 +3023,7 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
     for (int i = 0; i < bleBondCount() && i < 3; i++) {
       int ry = 92 + i * 58;
       if (inRect(x, y, PANE_X + PANE_W - 86, ry + 6, 80, 40)) return 20 + i;
-      if (!bleHostUp(i) && inRect(x, y, PANE_X + PANE_W - 156, ry + 6, 62, 40)) return 10 + i;
+      if (!bleHostUp(i) && inRect(x, y, PANE_X + PANE_W - 172, ry + 6, 62, 40)) return 10 + i;
     }
     if (inRect(x, y, PANE_X, 266, PANE_W, 44)) return 30;
   }
@@ -3051,7 +3100,7 @@ static void runKey(int c, bool hold) {
 
 void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
   uint32_t now = millis();
-  if (kind == G_DOWN) touchAt = now;
+  if (kind == G_DOWN) { touchAt = now; if (mediaDrag || sheetDrag) touchTaken(); }   // a release lost: it lets go
   if (mode == M_CAL) { if (kind == G_TAP || kind >= G_SWIPE_L && kind <= G_SWIPE_D) calTap(x1, y1); return; }
   if (mode == M_PAIR) {
     if (kind == G_DOWN && inRect(x0, y0, 198, 262, 84, 44)) { pressedBtn = 2; mark(190, 256, 100, 56); }
@@ -3075,7 +3124,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       sheetDrag = false;
       if (rn && ry[rn - 1] != y1) { riseSample(y1, now); sheetRise.x = constrain(1 - (y1 - y0) / (float)(SCR_H - STATUS_H), 0.0f, 1.0f); }
       float v = riseVelocity();
-      if (flickTarget(sheetRise.x, v, 0, 1) == 0 || (kind == G_SWIPE_D && rt[rn - 1] - touchAt <= QUICK_MS)) { sheetClosing = true; dragSlider = -1; riseGo(sheetRise, 0, v); }
+      if (flickTarget(sheetRise.x, v, 0, 1) == 0 || (kind == G_SWIPE_D && (rn ? rt[rn - 1] : now) - touchAt <= QUICK_MS)) { sheetClosing = true; dragSlider = -1; riseGo(sheetRise, 0, v); }
       else riseGo(sheetRise, 1, v);
       return;
     }

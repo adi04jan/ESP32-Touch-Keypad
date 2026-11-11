@@ -100,7 +100,10 @@ void displayBegin() {
 // A dark backlight puts the panel to sleep too (about 14 mA, measured): its memory and our drawing
 // carry on. The ST7796 takes a wake 120 ms after a sleep at the soonest, and a command 5 ms after it.
 static uint32_t sleptAt = 0;   // 0: awake
+static uint8_t blNow = 0;
+uint8_t displayBacklight() { return blNow; }
 void displaySetBacklight(uint8_t level) {
+  blNow = level;
   if (level && sleptAt) {
     while ((int32_t)(millis() - sleptAt) < 120) delay(1);   // signed: sleptAt is millis() | 1
     lcd.wakeup();

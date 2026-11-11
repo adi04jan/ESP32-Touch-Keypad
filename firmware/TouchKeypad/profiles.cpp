@@ -115,10 +115,17 @@ static bool migrateV1(const String &path, JsonDocument &v1) {
   return writeFileStr(path.c_str(), out);
 }
 
+static bool loadNoMem;   // the last load failed for want of heap, not because the file is broken
+
 bool loadProfile(int id) {
   if (id < 1 || id > NUM_PROFILES) return false;
+  loadNoMem = false;
   String path = profilePath(id);
-  if (!LittleFS.exists(path)) writeDefault(id);
+  if (!LittleFS.exists(path)) {   // a save cut short before its rename leaves the new file whole in .tmp
+    String tmp = path + ".tmp", err;
+    if (LittleFS.exists(tmp) && validateProfile(tmp.c_str(), err)) commitTmp(path.c_str(), false);
+    else writeDefault(id);
+  }
 
   JsonDocument filter, meta;
   filter["schema_version"] = true;
@@ -135,6 +142,7 @@ bool loadProfile(int id) {
   f.close();
   if (err) {
     Con.printf("Profile %d parse error: %s\n", id, err.c_str());
+    loadNoMem = err == DeserializationError::NoMemory;
     return false;
   }
   if ((meta["schema_version"] | 1) < 2 && meta["keys"].is<JsonArray>()) {
@@ -166,8 +174,17 @@ bool loadProfile(int id) {
   return true;
 }
 
+// A profile is replaced by its default only when its file is broken. Short of heap (a cover, the tile cache,
+// icon animations), the file is fine: it stays as it is and the profile on screen stays.
 bool loadProfileSafe(int id) {
+  int was = currentProfile;
   if (loadProfile(id)) return true;
+  if (loadNoMem) {
+    Con.printf("Profile %d: not enough memory to load it; left as it is.\n", id);
+    if (was != id && loadProfile(was)) return false;
+    profileLoaded = false;
+    return false;
+  }
   Con.printf("Profile %d unreadable; restoring default.\n", id);
   writeDefault(id);
   if (loadProfile(id)) return true;
@@ -216,6 +233,7 @@ bool loadPageInto(int profile, int idx, JsonDocument &doc) {
                                       : deserializeJson(doc, r, DeserializationOption::Filter(skip), NEST);
     int c = 0;
     if (!e && i < idx) while ((c = r.read()) >= 0 && c != ',' && c != ']') {}   // to the next page; ']': none
+    if (e == DeserializationError::NoMemory) loadNoMem = true;
     ok = !e && (i == idx || c == ',');
   }
   f.close();

@@ -599,7 +599,8 @@ String ellipsize(const Font &f, const char *s, int maxW) {
   if (textW(f, s) <= maxW) return s;
   String t = s;
   while (t.length()) {
-    do t.remove(t.length() - 1); while (t.length() && (t[t.length() - 1] & 0xC0) == 0x80);   // whole UTF-8 codepoints
+    while (t.length() && (t[t.length() - 1] & 0xC0) == 0x80) t.remove(t.length() - 1);   // a codepoint's tail,
+    if (t.length()) t.remove(t.length() - 1);                                             // then its first byte
     while (t.endsWith(" ")) t.remove(t.length() - 1);
     String e = t + "…";
     if (textW(f, e.c_str()) <= maxW) return e;

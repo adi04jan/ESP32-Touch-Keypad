@@ -16,6 +16,7 @@ extern LGFX lcd;
 
 void displayBegin();             // init panel, backlight, NVS knobs (invert/bgr/spi MHz)
 void displaySetBacklight(uint8_t level);
+uint8_t displayBacklight();         // the level last set (0: off, the panel asleep)
 void displayShot();              // stream the screen as ###SHOT### + base64 lines + ###END###
 bool displayDecodeJpg(const uint8_t *jpg, size_t len, uint16_t *out, int w, int h);   // into big-endian RGB565
 void displayLcdCmd(const char *arg);   // `lcd` CLI: show/set invert, bgr, mhz

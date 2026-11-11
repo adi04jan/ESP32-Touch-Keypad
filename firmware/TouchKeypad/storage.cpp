@@ -70,8 +70,7 @@ bool commitTmp(const char *path, bool backup) {
   storageCommits++;
   String tmp = String(path) + ".tmp";
   if (backup && LittleFS.exists(path)) backupFile(path);
-  LittleFS.remove(path);
-  return LittleFS.rename(tmp, path);
+  return LittleFS.rename(tmp, path);   // LittleFS replaces the old file in one step: no moment without either
 }
 
 void catFile(const char *path) {

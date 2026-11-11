@@ -479,8 +479,9 @@ static bool runCommand(char *s) {
     float ms = 0;
     int lat = -1;
     bleLinkParams(&ms, &lat);
-    Con.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f link:%.2f/%d cpu:%d screen:%s\n", powerOnUsb(), powerBatteryMv(),
-                  powerBatteryPct(), powerCharging(), powerSleepMin(), powerSimMode(), powerDivider(), ms, lat, (int)getCpuFrequencyMhz(), uiScreenState());
+    Con.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f link:%.2f/%d cpu:%d screen:%s bl:%d\n", powerOnUsb(), powerBatteryMv(),
+                  powerBatteryPct(), powerCharging(), powerSleepMin(), powerSimMode(), powerDivider(), ms, lat, (int)getCpuFrequencyMhz(), uiScreenState(),
+                  displayBacklight());
   } else if (cmd == "theme") {
     if (!strcmp(arg, "default")) uiThemeReset();
     int t = *arg && strcmp(arg, "default") ? uiThemeFind(arg) : uiTheme();

@@ -8,6 +8,7 @@ and the HID dry-run state back exactly as they found them, so the suite can
 run on a keypad that is in use.
 """
 import json
+import os
 import re
 import socket
 import sys
@@ -98,34 +99,50 @@ def dev():
     qb0 = d.cmd("quickbar")[0]                # the owner's quick bar, put back at the end
     old = None if not old or old[0].startswith("ERR") else "\n".join(old)
     owned0 = owner_profiles(d)                # slots 1-15: checked untouched at the end
-    d.ok("setdim 0")
-    d.ok("hid dry on")
-    ianim = d.cmd("iconanim")[0]                  # pixel tests want still icons; put the owner's choice back after
-    d.ok("iconanim off")
-    r = d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
-    assert any(l.startswith("SAVED") for l in r), r
-    r = d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
-    assert any(l.startswith("SAVED") for l in r), r
-    d.ok(f"setprofile {SLOT}")
-    yield d
-    d.cmd("calibrate cancel")
+    ianim = d.cmd("iconanim")[0]              # pixel tests want still icons; put the owner's choice back after
+    dim = d.cmd("setdim")[0].split()[-1]
+    click = d.cmd("click")[0].split()[-1]
+    motion = re.search(r"page k:(\S+) z:(\S+) sheet k:(\S+) z:(\S+)", d.cmd("motion")[0])
+    sleep = re.search(r" sleep:(\d+)", next(l for l in d.cmd("power") if l.startswith("power")))
     m = re.match(r"cal:(\d) (.*)", cal)
-    d.cmd(f"touchcal set {m.group(2)}" if m and m.group(1) == "1" else "touchcal clear")
-    d.cmd(f"led {led.group(1)} {led.group(2)}" if led else "led rainbow")
-    if led:
-        d.cmd(f"ledbright {led.group(3)}")
-    d.cmd(f"theme {theme.group(1) if theme else 'daylight'}")
-    d.cmd(f"setprofile {profile.group(1) if profile else 1}")
-    if old: d.upload_text(f"profile{SLOT}.json", old)
-    else: d.cmd(f"rm /profile{SLOT}.json")   # and its tile goes with it
-    d.cmd(f"hid dry {'on' if dry and dry.group(1) == '1' else 'off'}")
-    d.cmd("power sim off")
-    d.cmd("setdim 120")
-    d.cmd("iconanim on" if ianim.endswith("on") else "iconanim off")
-    if qb0.startswith("quickbar "):
-        d.cmd("quickbar set " + qb0.split(" ", 1)[1])
-    owned = owner_profiles(d)
-    d.close()
+    put_back = [                              # each runs whatever the others did: one failure can't strand the rest
+        lambda: d.cmd("calibrate cancel"),
+        lambda: d.cmd(f"touchcal set {m.group(2)}" if m and m.group(1) == "1" else "touchcal clear"),
+        lambda: d.cmd(f"led {led.group(1)} {led.group(2)}" if led else "led rainbow"),
+        lambda: led and d.cmd(f"ledbright {led.group(3)}"),
+        lambda: d.cmd(f"theme {theme.group(1) if theme else 'daylight'}"),
+        lambda: d.cmd(f"setprofile {profile.group(1) if profile else 1}"),
+        lambda: d.upload_text(f"profile{SLOT}.json", old) if old else d.cmd(f"rm /profile{SLOT}.json"),
+        lambda: d.cmd(f"hid dry {'on' if dry and dry.group(1) == '1' else 'off'}"),
+        lambda: d.cmd("power sim off"),
+        lambda: sleep and d.cmd(f"power sleep {sleep.group(1)}"),
+        lambda: d.cmd(f"setdim {dim}"),
+        lambda: d.cmd(f"click {click}"),
+        lambda: motion and d.cmd("motion page {} {}".format(*motion.group(1, 2))),
+        lambda: motion and d.cmd("motion sheet {} {}".format(*motion.group(3, 4))),
+        lambda: d.cmd("iconanim on" if ianim.endswith("on") else "iconanim off"),
+        lambda: qb0.startswith("quickbar ") and d.cmd("quickbar set " + qb0.split(" ", 1)[1]),
+    ]
+    failed = []
+    try:
+        d.ok("setdim 0")
+        d.ok("hid dry on")
+        d.ok("iconanim off")
+        r = d.upload_bin(f"/t/{TILE_CRC}.565", TILE)
+        assert any(l.startswith("SAVED") for l in r), r
+        r = d.upload_text(f"profile{SLOT}.json", json.dumps(PROFILE))
+        assert any(l.startswith("SAVED") for l in r), r
+        d.ok(f"setprofile {SLOT}")
+        yield d
+    finally:
+        for step in put_back:
+            try:
+                step()
+            except Exception as e:   # noqa: BLE001 - reported below, after every other step ran
+                failed.append(repr(e))
+        owned = owner_profiles(d)
+        d.close()
+    assert not failed, f"putting the owner's keypad back: {failed}"
     assert owned == owned0, f"a test changed the owner's profiles: {owned0} -> {owned}"
 
 
@@ -140,6 +157,8 @@ def owner_profiles(d):
 def d(dev):
     """Each test starts on page 1 of the test profile, home screen, clean events."""
     st = dev.cmd("status")[0]
+    if " dry:0 " in st:                           # a reboot test on release firmware: keys would reach the PC
+        dev.ok("hid dry on")
     if f"Profile:{SLOT} " not in st:
         dev.ok(f"setprofile {SLOT}")
     if "ui:home" not in st:
@@ -692,6 +711,14 @@ def test_jpeg_cover_decodes_when_the_player_opens_and_frees_after(d):
     assert art_state(d)["decoded"] == "0" and heap_free(d) >= free0 - 1024
 
 
+def test_a_new_track_drops_the_old_cover(d):                       # review 2026-11-11: it decoded again
+    np = lambda t: d.ok('widget now_playing {"title":"%s","album":"A","artist":"B","app":"Spotify","pos":1,"len":200,"playing":false}' % t)
+    np("One"); d.upload_bin("ram:artj", make_jpg()); time.sleep(0.3)
+    assert art_state(d)["jpg"] != "0"
+    np("Two"); time.sleep(0.3)
+    assert art_state(d)["jpg"] == "0"                             # Studio sends Two's cover when it has one
+
+
 # ---------------------------------------------------------------- screen
 def test_screen_layout(d):
     img = d.shot()
@@ -913,6 +940,55 @@ def test_a_quick_swipe_sideways_that_sets_off_up_turns_the_page(d):
     swipe_bent(d, (300, 200), (298, 180), (178, 176), 120, 100)        # locks upward at 14 px, then goes left
     d.wait_event(r"^EVT:PAGE 2$", 1.5, since); time.sleep(0.8)
     assert not evts(d, since, "EVT:PANEL") and field(d, "rise") == 0
+
+
+@pytest.mark.skipif(os.environ.get("KP_ALLOW_UNPAIR") != "1", reason="if Forget regressed, this would unpair the owner's PC")
+def test_forget_asks_first(d):                                     # review 2026-11-11: one tap, 8 px from Use
+    hosts = lambda: [l.split()[1] for l in d.cmd("ble list") if re.match(r"\d+ ", l)]
+    before = hosts()
+    if not before:
+        pytest.skip("no saved host to try it on")
+    try:
+        d.ok("sheet"); time.sleep(0.8)
+        d.touch(60, 168); time.sleep(0.4)                             # Bluetooth
+        d.touch(420, 118); time.sleep(0.4)                            # Forget on the first host, once
+        assert hosts() == before
+    finally:
+        time.sleep(3.3)                                               # it disarms by itself
+        d.cmd("sheet close")
+
+
+def backlight(d):
+    return int(re.search(r"\bbl:(\d+)", next(l for l in d.cmd("power") if l.startswith("power"))).group(1))
+
+
+def test_a_profile_cannot_put_the_screen_out(d):                   # review 2026-11-11: 0 slept the panel for good
+    try:
+        d.upload_text(f"profile{SLOT}.json", json.dumps({**PROFILE, "brightness": 0}))
+        d.ok(f"setprofile {SLOT}"); time.sleep(0.3)
+        assert backlight(d) >= 8
+    finally:
+        put_back_profile(d); d.ok(f"setprofile {SLOT}")
+
+
+# A host command can land mid-drag (Studio's auto-switch, a sheet closed from the PC): what the finger was
+# dragging still lands, and the next touch is a touch (review 2026-11-11).
+def test_a_profile_switch_mid_drag_lets_media_land(d):
+    set_qb(d)
+    swipe_held(d, 210, 280, 210, 140, 900); time.sleep(0.45)            # Media part way up, on the finger
+    d.write_line(f"setprofile {SLOT}"); time.sleep(1.5)                  # the finger lifts at 900 ms
+    d.drain(); assert field(d, "rise") in (0, 290)
+    d.ok("panel 0"); time.sleep(0.6); since = len(d.events)
+    tap(d, 1); d.wait_event(r"^EVT:KEY 1 1 1$", 1, since)
+
+
+def test_a_sheet_closed_by_the_host_mid_drag_frees_the_touch(d):
+    since = len(d.events)
+    d.touch(*BAR["settings"]); d.wait_event(r"^EVT:UI sheet$", 1, since); time.sleep(0.8)
+    swipe_held(d, 60, 100, 60, 220, 900); time.sleep(0.45)              # Settings coming down on the finger
+    d.write_line("sheet close"); time.sleep(1.5)
+    d.drain(); assert "ui:home" in d.cmd("status")[0]
+    since = len(d.events); tap(d, 1); d.wait_event(r"^EVT:KEY 1 1 1$", 1, since)
 
 
 def test_a_slow_short_drag_springs_back(d):
@@ -1240,18 +1316,18 @@ def test_sheet_theme_chip_switches_the_theme(d):
 # ---------------------------------------------------------------- power
 def test_power_readout_and_battery_policy(d):
     p = d.cmd("power")[0]
-    assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ sim:-1 .*cpu:240 screen:lit$", p), p
+    assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ sim:-1 .*cpu:240 screen:lit bl:\d+$", p), p
     try:
         d.ok("setdim 2")                                   # on battery the dim time is min(setdim, 20 s)
         time.sleep(3)
-        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])   # on USB the screen stays lit
+        assert re.search(r"cpu:240 screen:lit bl:\d+$", d.cmd("power")[0])   # on USB the screen stays lit
         d.ok("power sim battery")
         assert re.search(r"pwr:bat bat:\d+$", d.cmd("status")[0])
         time.sleep(3)
         assert d.cmd("theme") == ["theme glass"]           # a readout leaves the screen dark
-        assert re.search(r"cpu:80 screen:dim$", d.cmd("power")[0])   # dim on battery: the CPU slows
+        assert re.search(r"cpu:80 screen:dim bl:\d+$", d.cmd("power")[0])   # dim on battery: the CPU slows
         d.ok("theme glass")                                # an edit from Studio lights it
-        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])
+        assert re.search(r"cpu:240 screen:lit bl:\d+$", d.cmd("power")[0])
     finally:
         d.cmd("power sim off")
         d.ok("setdim 0")
@@ -1269,7 +1345,7 @@ def test_dark_screen_wakes_drawing(d):
             assert time.time() - t < 75, "the screen never went off"
             time.sleep(2)
         d.ok("theme glass")
-        assert re.search(r"cpu:240 screen:lit$", d.cmd("power")[0])
+        assert re.search(r"cpu:240 screen:lit bl:\d+$", d.cmd("power")[0])
         assert len(d.shot().getcolors(1 << 20)) > 50
     finally:
         d.cmd("power sim off")

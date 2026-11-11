@@ -92,7 +92,7 @@ static uint32_t txAt = 0;
 
 class NusRx : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &info) override {
-    if (!info.isEncrypted()) return;
+    if (!info.isAuthenticated()) return;   // the passkey was used, not just encryption
     NimBLEAttValue v = c->getValue();
     for (size_t i = 0; i < v.length(); i++) {
       uint16_t next = (rxHead + 1) % sizeof rxRing;
@@ -105,7 +105,7 @@ class NusRx : public NimBLECharacteristicCallbacks {
 class NusTx : public NimBLECharacteristicCallbacks {
   void onSubscribe(NimBLECharacteristic *c, NimBLEConnInfo &info, uint16_t subValue) override {
     nusChunk = min((int)sizeof txBuf, max(20, (int)info.getMTU() - 3));
-    nusOn = subValue && info.isEncrypted();
+    nusOn = subValue && info.isAuthenticated();
   }
 };
 
@@ -157,7 +157,10 @@ class ServerCb : public NimBLEServerCallbacks {
   }
   void onAuthenticationComplete(NimBLEConnInfo &info) override {
     bool newBond = NimBLEDevice::getNumBonds() > bondsAtConnect;
-    if (!info.isEncrypted()) {
+    // Encrypted is not enough: a peer with no keyboard or display pairs "Just Works", with or without
+    // bonding, and never sees the passkey. Only a pairing that used it (MITM-authenticated) is a host.
+    if (!info.isEncrypted() || !info.isAuthenticated()) {
+      if (newBond) NimBLEDevice::deleteBond(info.getIdAddress());
       server->disconnect(info);
       post(EV_FAIL);
       return;
@@ -212,6 +215,10 @@ void hidBegin() {
 }
 
 // ---------------------------------------------------------------- reports
+static uint8_t pend[RID_TEL + 1][8], pendLen[RID_TEL + 1];   // per report id: one the link refused
+
+static NimBLECharacteristic *reportChr(uint8_t id) { return id == RID_KB ? inKb : id == RID_CONS ? inCons : id == RID_MOUSE ? inMouse : inTel; }
+
 static bool sendReport(uint8_t id, const uint8_t *data, size_t len) {
   if (dryRun) {
     char hex[2 * 8 + 1];
@@ -219,16 +226,19 @@ static bool sendReport(uint8_t id, const uint8_t *data, size_t len) {
     Con.printf("EVT:HID %u %s\n", id, hex);
   }
   if (!linkUp) return dryRun;
-  NimBLECharacteristic *c = id == RID_KB ? inKb : id == RID_CONS ? inCons : id == RID_MOUSE ? inMouse : inTel;
+  NimBLECharacteristic *c = reportChr(id);
   c->setValue(data, len);
   // Each report in its own buffer: a bare notify() sends whatever the value is when the link
   // gets to it, so a key's press was overwritten by its release 8 ms later and letters vanished.
   // A full controller queue refuses the buffer; give the link a moment and try again.
   for (int tries = 0; tries < 40; tries++) {
-    if (c->notify(data, len)) return true;
+    if (c->notify(data, len)) { pendLen[id] = 0; return true; }
     delay(3);
   }
   Con.printf("HID report %u dropped: the link is not draining\n", id);
+  // Every report but a mouse move carries the whole state, so the latest refused one goes again from
+  // blePoll() until the link takes it: a lost release can't leave a key (or volume) held on the host.
+  if (id != RID_MOUSE || !(data[1] | data[2] | data[3])) { memcpy(pend[id], data, len); pendLen[id] = len; }
   return false;
 }
 
@@ -361,6 +371,28 @@ static void pairClose(const char *why) {
   uiPairClose();
 }
 
+// A link that never authenticates (a stranger's scanner, an app that connects and sits) is dropped after
+// 15 s: advertising stops while one is connected, so it would keep the owner's host from coming back.
+// Not while pairing: a new host's owner may take most of the window to type the passkey.
+static void dropStrangers() {
+  static uint16_t sh[4];
+  static uint32_t sat[4];
+  static uint8_t sn = 0;
+  uint16_t nh[4];
+  uint32_t nat[4], now = millis();
+  uint8_t nn = 0;
+  for (uint16_t h : server->getPeerDevices()) {
+    if (pairOpen || server->getPeerInfoByHandle(h).isAuthenticated()) continue;
+    uint32_t at = now;
+    for (uint8_t i = 0; i < sn; i++) if (sh[i] == h) at = sat[i];
+    if (now - at > 15000) { server->disconnect(h); continue; }
+    if (nn < 4) { nh[nn] = h; nat[nn++] = at; }
+  }
+  memcpy(sh, nh, sizeof sh);
+  memcpy(sat, nat, sizeof sat);
+  sn = nn;
+}
+
 void blePoll() {
   if (txLen && millis() - txAt > 30) txSend();   // a partial console line (a prompt) goes out
   BleEvt e;
@@ -394,10 +426,14 @@ void blePoll() {
     }
   }
   if (pairOpen && millis() - pairStart > PAIR_WINDOW_MS) pairClose("timeout");
+  if (!linkUp) memset(pendLen, 0, sizeof pendLen);   // a host that left released everything itself
+  for (uint8_t id = 1; id <= RID_TEL; id++)
+    if (pendLen[id] && reportChr(id)->notify(pend[id], pendLen[id])) pendLen[id] = 0;
   // Keep advertising while there is room for a host (or a pairing window).
   static uint32_t lastAdvCheck = 0;
   if (millis() - lastAdvCheck > 1000) {
     lastAdvCheck = millis();
+    dropStrangers();
     NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
     bool want = pairOpen || server->getConnectedCount() == 0;
     if (want && !adv->isAdvertising()) adv->start();
