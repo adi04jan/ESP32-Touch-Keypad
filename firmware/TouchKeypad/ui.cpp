@@ -282,6 +282,23 @@ static int npPos() {
 static void clockStr(char *b, size_t n, int s) { if (s < 0) s = 0; snprintf(b, n, "%d:%02d", s / 60, s % 60); }
 
 static int luma(C3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+
+// WCAG relative luminance and contrast, for the few words set in a state colour (not a hot path).
+static float relLum(C3 c) {
+  auto ch = [](uint8_t v) { float s = v / 255.0f; return s <= 0.03928f ? s / 12.92f : powf((s + 0.055f) / 1.055f, 2.4f); };
+  return 0.2126f * ch(c.r) + 0.7152f * ch(c.g) + 0.0722f * ch(c.b);
+}
+static float contrast(C3 a, C3 b) { float x = relLum(a), y = relLum(b); return (max(x, y) + 0.05f) / (min(x, y) + 0.05f); }
+// A state colour set as text ("Connected", "Clear all", the calibration's notes): moved toward the theme's
+// text ink just far enough to read (4.5:1) on the sheet, a card and the ground alike. Fills keep the pure
+// colour; the themes' palettes stay as the owner set them.
+static C3 legible(C3 c) {
+  for (int a = 0; a < 256; a += 32) {
+    C3 m = mix(c, T->txt, a);
+    if (contrast(m, T->ply) >= 4.5f && contrast(m, T->card) >= 4.5f && contrast(m, T->g1) >= 4.5f) return m;
+  }
+  return T->txt;
+}
 static C3 inkOn(C3 fill) { return luma(fill) > 150 ? TXT : T->ks == KS_PIXEL ? T->g1 : WHITE; }   // readable ink on a filled shape
 static C3 litHi() { return T->ks == KS_PIXEL ? T->g1 : WHITE; }                                   // "white" in this theme's palette
 // The ground of theme th at row y, from its stops (themes need it before their table is live).
@@ -318,7 +335,7 @@ static void button(int x, int y, int w, int h, const char *label, const char *ic
   rrFill(x, y, w, h, T->crisp ? 4 : 12, f, alpha);
   if (kind == 2) rrRing(x + 0.5f, y + 0.5f, w - 1, h - 1, T->crisp ? 4 : 11.5f, T->crisp ? 2 : 1, T->crisp ? RED : mix(PLY, RED, 102), alpha);
   if (kind == 1 && T->crisp) rrRing(x + 1, y + 1, w - 2, h - 2, 3, 2, TXT, alpha);
-  C3 ink = kind == 2 ? RED : kind == 1 ? (T->ks == KS_GLASS ? WHITE : inkOn(CYAN)) : TXT;
+  C3 ink = kind == 2 ? legible(RED) : kind == 1 ? (T->ks == KS_GLASS ? WHITE : inkOn(CYAN)) : TXT;
   int tw = textW(fBodyB, label), gw = icon ? 18 + 7 : 0, x0 = x + (w - tw - gw) / 2;
   if (icon) glyph(iconFind(icon, true), true, x0 + 9, y + h / 2, 18, ink, alpha);
   text(fBodyB, x0 + gw, y + h / 2 + 5, label, ink, alpha);
@@ -831,7 +848,7 @@ static void drawStatus() {
   hostChipX = right - 2 - hostChipW;
   rrFill(hostChipX, 2, hostChipW, 24, 12, ctlFill());
   glyph(iconFind(pairing ? "bluetooth-searching" : up ? "bluetooth" : "bluetooth-off", true), true, hostChipX + 16, 14, 18, hc);
-  text(fRead, hostChipX + 28, 19, host.c_str(), hc);
+  text(fRead, hostChipX + 28, 19, host.c_str(), legible(hc));
   glyph(iconFind("chevron-down", true), true, hostChipX + hostChipW - 12, 14, 14, TXT2);
   int left = hostChipX - 8;
   if (hidDry()) { tag(left, 6, "DRY", RED, false, RED, inkOn(RED), 255); left -= 38; }
@@ -944,7 +961,7 @@ static void drawPlayer(uint32_t now) {
   if (np.have && np.app[0]) {
     bool spotify = strcasestr(np.app, "spotify") != nullptr;
     if (spotify) { glyph(iconFind("spotify", false), false, x + 7, base - 5, 14, GREEN); x += 18; }
-    text(fBody, x, base, np.app, GREEN);
+    text(fBody, x, base, np.app, legible(GREEN));
     x += textW(fBody, np.app) + 8;
     if (np.playing) for (int i = 0; i < 3; i++) {
       float h = 4 + 8 * (0.5f + 0.5f * sinf(now * (0.008f + i * 0.003f) + i * 2));
@@ -1418,7 +1435,7 @@ static void drawPane() {
         if (slots[i].ok) {
           rrFill(x, y, CARD_W, CARD_H, T->crisp ? 4 : 10, cardFill());
           rrFill(x + 8, y + 7, 18, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
-          cardName(x, y, slots[i].name, cur ? ACCENT : TXT);
+          cardName(x, y, slots[i].name, cur ? legible(ACCENT) : TXT);
         } else {
           rrRing(x + 0.5f, y + 0.5f, CARD_W - 1, CARD_H - 1, 9.5f, 1, mix(PLY, HAIR, 20));
           sprintf(v, "%d", i + 1);
@@ -1436,7 +1453,7 @@ static void drawPane() {
           rrFill(PANE_X, y, PANE_W, 52, T->crisp ? 4 : 12, cardFill());
           glyph(iconFind("bluetooth", true), true, PANE_X + 22, y + 26, 20, TXT);
           text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, info.names[i], up ? 196 : 116).c_str(), TXT);
-          text(fRead, PANE_X + 42, y + 40, up ? "Connected" : "Saved", up ? GREEN : TXT2);
+          text(fRead, PANE_X + 42, y + 40, up ? "Connected" : "Saved", up ? legible(GREEN) : TXT2);
           button(PANE_X + PANE_W - 86, y + 6, 80, 40, forgetArmed == i ? "Tap again" : "Forget", nullptr, 2, pressedBtn == 20 + i);
           if (!up) button(PANE_X + PANE_W - 172, y + 6, 62, 40, "Use", nullptr, 0, pressedBtn == 10 + i);   // 24 px clear of Forget
         } else {
@@ -1466,7 +1483,7 @@ static void drawPane() {
         else if (i == 2) circle(cx, 122, 14, lc);
         else if (i == 3) { circle(cx, 122, 14, T->light ? SEG_OFF : HEXC(0x0b1a20)); circle(cx, 122, 5, CYAN); }
         else circle(cx, 122, 14, SEG_OFF);
-        text(fBodyB, (int)cx, 158, PAT[i], cur ? ACCENT : TXT2, 255, AL_C);
+        text(fBodyB, (int)cx, 158, PAT[i], cur ? legible(ACCENT) : TXT2, 255, AL_C);
       }
       sprintf(v, "%d%%", (ledsBrightness() * 100 + 127) / 255);
       text(fBody, PANE_X, 192, "LED brightness", TXT);
@@ -1554,7 +1571,7 @@ static void drawPair() {
   rrFill(150, 210, 220.0f * left / PAIR_WINDOW_MS, 4, 2, solidFill(MAG));
   char s[8];
   clockStr(s, sizeof s, (left + 999) / 1000);
-  text(fBody, 382, 216, s, MAG);
+  text(fBody, 382, 216, s, legible(MAG));
   button(198, 262, 84, 44, "Cancel", nullptr, 0, pressedBtn == 2);
 }
 
@@ -1578,7 +1595,7 @@ static void drawCal() {
     snprintf(t, sizeof t, "Calibrated, off by %d px", calErr);
     int w = textW(fTitle, t) + 26, x = 240 - w / 2;
     glyph(iconFind("check", true), true, x + 10, 57, 20, GREEN);
-    text(fTitle, x + 26, 64, t, GREEN);
+    text(fTitle, x + 26, 64, t, legible(GREEN));
     text(fBody, 240, 92, "Tap anywhere: each dot is where", TXT2, 255, AL_C);
     text(fBody, 240, 114, "the screen feels you.", TXT2, 255, AL_C);
     for (int i = 0; i < calDotN; i++) circle(calDots[i][0], calDots[i][1], 4, CYAN);
@@ -1593,11 +1610,11 @@ static void drawCal() {
   if (calStep == 4) reticle(CAL_VX, CAL_VY, CYAN);
   text(fTitle, 240, 116, "Touch calibration", TXT, 255, AL_C);
   if (calNote == 1) {
-    text(fBody, 240, 142, "Those taps did not line up.", AMBER, 255, AL_C);
-    text(fBody, 240, 164, "Once more, a little slower.", AMBER, 255, AL_C);
+    text(fBody, 240, 142, "Those taps did not line up.", legible(AMBER), 255, AL_C);
+    text(fBody, 240, 164, "Once more, a little slower.", legible(AMBER), 255, AL_C);
   } else if (calNote == 2) {
-    text(fBody, 240, 142, "That check missed the centre.", AMBER, 255, AL_C);
-    text(fBody, 240, 164, "Let us run the corners again.", AMBER, 255, AL_C);
+    text(fBody, 240, 142, "That check missed the centre.", legible(AMBER), 255, AL_C);
+    text(fBody, 240, 164, "Let us run the corners again.", legible(AMBER), 255, AL_C);
   } else if (calStep == 4) {
     text(fBody, 240, 142, "Now tap the centre target", TXT2, 255, AL_C);
     text(fBody, 240, 164, "to check the fit.", TXT2, 255, AL_C);
@@ -1607,7 +1624,7 @@ static void drawCal() {
   }
   char s[12];
   if (calStep < 4) snprintf(s, sizeof s, "%d of 4", calStep + 1); else strcpy(s, "Check");
-  text(fRead, 240, 190, s, CYAN, 255, AL_C);
+  text(fRead, 240, 190, s, legible(CYAN), 255, AL_C);
 }
 
 // ---------------------------------------------------------------- overlays
@@ -1726,7 +1743,7 @@ static void noteCard(const Note &n, int x, int y, int w, int h, float r, Fill f)
   text(fBodyB, x + 42, ty, ellipsize(fBodyB, n.title[0] ? n.title : n.app, w - 62 - vw).c_str(), TXT);
   String app = ellipsize(fRead, n.app, 110);
   int ax = x + 42 + textW(fRead, app.c_str()) + 6;
-  text(fRead, x + 42, by, app.c_str(), CYAN);
+  text(fRead, x + 42, by, app.c_str(), legible(CYAN));
   if (n.body[0]) text(fRead, ax, by, ellipsize(fRead, n.body, x + w - 10 - ax).c_str(), TXT2);
 }
 
@@ -1755,7 +1772,7 @@ static void drawShade(int bot) {
       if (up) rrRing(x + 1, y + 1, 146, 44, T->crisp ? 3 : 11, 2, GREEN);
       glyph(iconFind("bluetooth", true), true, x + 18, y + 23, 18, up ? GREEN : TXT2);
       text(fBodyB, x + 32, y + 21, ellipsize(fBodyB, info.names[i], 108).c_str(), TXT);
-      text(fRead, x + 32, y + 38, up ? "Connected" : "Tap to use", up ? GREEN : TXT2);
+      text(fRead, x + 32, y + 38, up ? "Connected" : "Tap to use", up ? legible(GREEN) : TXT2);
     } else if (i == info.bonds) button(x, y, 148, 46, "Pair new", "link", 0, pressedBtn == 120);
     else {
       rrRing(x + 0.5f, y + 0.5f, 147, 45, T->crisp ? 4 : 11.5f, 1, mix(PLY, HAIR, 20));
@@ -1766,7 +1783,7 @@ static void drawShade(int bot) {
   char v[28];
   snprintf(v, sizeof v, noteN ? "Notifications \xc2\xb7 %d" : "Notifications", noteN);
   text(fRead, 14, SH_LIST - 9, v, TXT2);
-  if (noteN) text(fBodyB, 466, SH_LIST - 8, "Clear all", pressedBtn == 130 ? TXT : CYAN, 255, AL_R);
+  if (noteN) text(fBodyB, 466, SH_LIST - 8, "Clear all", pressedBtn == 130 ? TXT : legible(CYAN), 255, AL_R);
   else text(fBody, 240, SH_LIST + 25, "No notifications", TXT3, 255, AL_C);
   for (int k = 0; k < shadeRows(); k++)
     noteCard(notes[k], 8, SH_LIST + k * SH_ROWH, 464, 42, T->crisp ? 4 : 12, pressedBtn == 140 + k ? ctlFill() : cardFill());
@@ -1797,11 +1814,11 @@ static void drawMenu(uint32_t now) {
       bool up = info.up[i];
       glyph(iconFind("bluetooth", true), true, x + 22, y + 23, 18, up ? GREEN : TXT2);
       text(fBodyB, x + 40, y + 21, ellipsize(fBodyB, info.names[i], MENU_W - 76).c_str(), TXT);
-      text(fRead, x + 40, y + 38, up ? "Connected" : "Saved \xc2\xb7 tap to use", up ? GREEN : TXT2);
+      text(fRead, x + 40, y + 38, up ? "Connected" : "Saved \xc2\xb7 tap to use", up ? legible(GREEN) : TXT2);
       if (up) glyph(iconFind("check", true), true, x + MENU_W - 22, y + 23, 18, GREEN);
     } else {
       glyph(iconFind("link", true), true, x + 22, y + 23, 18, CYAN);
-      text(fBodyB, x + 40, y + 28, "Pair new host", CYAN);
+      text(fBodyB, x + 40, y + 28, "Pair new host", legible(CYAN));
     }
   }
   gfxUnclip();
@@ -2165,7 +2182,10 @@ static bool animate(uint32_t now) {
       live = true;
     }
     if (mode == M_SHADE && (shadeRise.on || shadeDrag)) {
-      if (!shadeDrag && springStep(shadeRise, dt, eps) && shadeClosing) { shadeClosing = false; mode = M_HOME; emitMode(); }
+      bool settled = !shadeDrag && springStep(shadeRise, dt, eps);
+      // Closing ends once the edge is at the band, not at the spring's last fraction of a pixel: the keys
+      // under it take touches again at once (a tail of ~0.3 s would eat a tap, or a banner).
+      if (shadeClosing && (settled || shadeBot(now) <= STATUS_H)) { shadeRise.on = false; shadeClosing = false; mode = M_HOME; emitMode(); }
       live = true;
     }
   }
