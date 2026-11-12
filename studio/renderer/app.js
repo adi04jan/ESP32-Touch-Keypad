@@ -19,20 +19,39 @@ const ACTION_META = {
   mouse_click: { label: "Mouse Click",    cat: "Mouse",    icon: "mouse-pointer-click", color: "#2fbf9a", field: "button", def: { button: "LEFT" } },
   mouse_move:  { label: "Mouse Move",     cat: "Mouse",    icon: "mouse",               color: "#2fbf9a", field: "xyw",    def: { x: 0, y: 0, wheel: -5 } },
   media:       { label: "Media",          cat: "System",   icon: "volume-2",            color: "#3fc6e0", field: "value",  def: { value: "PLAY_PAUSE" } },
-  telephony:   { label: "Telephony",      cat: "System",   icon: "phone",               color: "#3fc6e0", field: "value",  def: { value: "MIC_MUTE" } },
+  telephony:   { label: "Calls and mic",  cat: "System",   icon: "phone",               color: "#3fc6e0", field: "value",  def: { value: "MIC_MUTE" } },
   profile:     { label: "Switch Profile", cat: "System",   icon: "layers",              color: "#f2b746", field: "value",  def: { value: 2 } },
   led:         { label: "LED Tint",       cat: "Lighting", icon: "lightbulb",           color: "#ff6fae", field: "color",  def: { color: [255, 110, 199] } },
   led_anim:    { label: "LED Animation",  cat: "Lighting", icon: "sparkles",            color: "#d86ce8", field: "value",  def: { value: "breathe" } },
   page:        { label: "Go to Page",     cat: "Screen",   icon: "layout-grid",         color: "#e56fd6", field: "value",  def: { value: 1 } },
   back:        { label: "Back",           cat: "Screen",   icon: "arrow-left",          color: "#e56fd6", field: null,     def: {} },
-  host:        { label: "Host Action",    cat: "Screen",   icon: "monitor",             color: "#f2b746", field: "cmd",    def: { cmd: "open https://github.com" } },
+  host:        { label: "PC command",     cat: "Screen",   icon: "monitor",             color: "#f2b746", field: "cmd",    def: { cmd: "open https://github.com" } },
 };
 const CATS = ["Keyboard", "Mouse", "Timing", "System", "Lighting", "Screen"];
 const ENUMS = { media: ["PLAY_PAUSE", "STOP", "NEXT", "PREVIOUS", "MUTE", "VOLUME_UP", "VOLUME_DOWN"], mouse_click: ["LEFT", "RIGHT", "MIDDLE"], telephony: ["MIC_MUTE", "ANSWER", "DECLINE"], led_anim: ["flash", "breathe"] };
-const ALIASES = { CTRL: "LEFT_CTRL", SHIFT: "LEFT_SHIFT", ALT: "LEFT_ALT", GUI: "LEFT_GUI", WIN: "LEFT_GUI", CMD: "LEFT_GUI", UP: "UP_ARROW", DOWN: "DOWN_ARROW", LEFT: "LEFT_ARROW", RIGHT: "RIGHT_ARROW", RETURN: "ENTER" };
+// What the owner reads; the JSON keeps the keypad's names.
+const ENUM_LABEL = { PLAY_PAUSE: "Play or pause", STOP: "Stop", NEXT: "Next track", PREVIOUS: "Previous track", MUTE: "Mute the sound", VOLUME_UP: "Volume up", VOLUME_DOWN: "Volume down",
+  MIC_MUTE: "Mute the microphone", ANSWER: "Answer a call", DECLINE: "Decline a call", LEFT: "Left button", RIGHT: "Right button", MIDDLE: "Middle button", flash: "Flash", breathe: "Breathe" };
+const KEY_LABEL = { LEFT_CTRL: "Ctrl", LEFT_SHIFT: "Shift", LEFT_ALT: "Alt", LEFT_GUI: "Win", RIGHT_CTRL: "Right Ctrl", RIGHT_SHIFT: "Right Shift", RIGHT_ALT: "Right Alt", RIGHT_GUI: "Right Win",
+  UP_ARROW: "Up", DOWN_ARROW: "Down", LEFT_ARROW: "Left", RIGHT_ARROW: "Right", PAGEUP: "Page Up", PAGEDOWN: "Page Down", ESC: "Esc", CAPS_LOCK: "Caps Lock", BACKSPACE: "Backspace",
+  ENTER: "Enter", TAB: "Tab", SPACE: "Space", DELETE: "Delete", INSERT: "Insert", HOME: "Home", END: "End", MINUS: "-", EQUAL: "=", LEFT_BRACE: "[", RIGHT_BRACE: "]",
+  BACKSLASH: "\\", SEMICOLON: ";", QUOTE: "'", TILDE: "`", COMMA: ",", DOT: ".", SLASH: "/" };
+const LABEL_KEY = Object.fromEntries(Object.entries(KEY_LABEL).map(([k, l]) => [l.toUpperCase(), k]));
+const keyLabel = (k) => KEY_LABEL[k] || k;
+const ALIASES = { CTRL: "LEFT_CTRL", SHIFT: "LEFT_SHIFT", ALT: "LEFT_ALT", GUI: "LEFT_GUI", WIN: "LEFT_GUI", CMD: "LEFT_GUI", RETURN: "ENTER", ESCAPE: "ESC", PGUP: "PAGEUP", PGDN: "PAGEDOWN" };
+// A keydown's code -> the keypad's key name (Record shortcut).
+function codeKey(code) {
+  let m;
+  if ((m = code.match(/^Key([A-Z])$/)) || (m = code.match(/^(?:Digit|Numpad)(\d)$/)) || (m = code.match(/^(F\d{1,2})$/))) return m[1];
+  return { Enter: "ENTER", NumpadEnter: "ENTER", Escape: "ESC", Backspace: "BACKSPACE", Tab: "TAB", Space: "SPACE", Minus: "MINUS", Equal: "EQUAL", BracketLeft: "LEFT_BRACE",
+    BracketRight: "RIGHT_BRACE", Backslash: "BACKSLASH", Semicolon: "SEMICOLON", Quote: "QUOTE", Backquote: "TILDE", Comma: "COMMA", Period: "DOT", Slash: "SLASH", CapsLock: "CAPS_LOCK",
+    Insert: "INSERT", Home: "HOME", PageUp: "PAGEUP", Delete: "DELETE", End: "END", PageDown: "PAGEDOWN", ArrowRight: "RIGHT_ARROW", ArrowLeft: "LEFT_ARROW", ArrowDown: "DOWN_ARROW", ArrowUp: "UP_ARROW" }[code] || null;
+}
 const ICON_NAMES = window.KEY_ICON_NAMES || [];
 // The twelve glass tints of firmware/DESIGN.md.
 const TINTS = [[79, 140, 255], [63, 198, 224], [47, 191, 154], [82, 214, 143], [168, 214, 74], [242, 183, 70], [255, 138, 61], [255, 95, 87], [255, 111, 174], [216, 108, 232], [155, 123, 255], [138, 152, 171]];
+const TINT_NAMES = ["Cobalt", "Cyan", "Teal", "Green", "Lime", "Amber", "Orange", "Red", "Pink", "Magenta", "Violet", "Slate"];   // tools/gen_defaults.py's names
+const tintName = (c) => TINT_NAMES[TINTS.findIndex((t) => t.join() === (c || []).join())] || "Custom colour";
 const ANIMS = [["", "None"], ["eq", "Equalizer while playing"], ["pulse", "Pulse while off"], ["rec", "Blink red while on"]];
 const LED_PATTERNS = ["rainbow", "breathe", "solid", "status", "off"];
 // The keypad's themes (firmware/TouchKeypad/themes.h); the preview draws the chosen one.
@@ -50,7 +69,8 @@ function kicon(name, px = 24) {   // a glyph from the shared icon map (the devic
   return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" ${paint} aria-hidden="true">${g.d}</svg>`;
 }
 const ico = (name) => (document.getElementById(`i-${name}`) ? `<svg class="lc" aria-hidden="true"><use href="#i-${name}"/></svg>` : kicon(name, 16));
-const norm = (k) => { const u = String(k).trim().toUpperCase(); return ALIASES[u] || (u.length === 1 ? String(k).trim() : u); };
+// "Ctrl", "Page Up", "-", "LEFT_CTRL", "ctrl" -> the keypad's name; one other character stays as typed.
+const norm = (k) => { const s = String(k).trim(), u = s.toUpperCase(); return LABEL_KEY[u] || ALIASES[u] || (u.length === 1 ? s : u.replace(/\s+/g, "_")); };
 const blankKeys = () => Array.from({ length: 15 }, () => null);
 const blankProfile = (n) => ({ schema_version: 2, profile_name: `Profile ${n}`, color: [138, 152, 171], default_delay: 20, pages: [{ name: "Main", keys: blankKeys() }] });
 const K = (id, name, icon, led_color, actions) => ({ id, name, icon, led_color, actions });
@@ -166,13 +186,24 @@ async function loadTileUrls(p) {
   }
   renderStudio(true);
 }
-setInterval(() => {   // GIF keys in the preview: every one on the same clock, as on the keypad
+// GIF keys in the preview: every one on the same clock, as on the keypad. The clock runs only while
+// GIF keys are on screen in the editor and the window is visible.
+let gifTimer = null;
+function gifClock() {
+  const imgs = state.view === "editor" && !document.hidden ? document.querySelectorAll("img.tile[data-frames]") : [];
+  if (!imgs.length) { clearInterval(gifTimer); gifTimer = null; return; }
+  if (!gifTimer) gifTimer = setInterval(gifTick, 40);
+}
+function gifTick() {
+  const imgs = state.view === "editor" && !document.hidden ? document.querySelectorAll("img.tile[data-frames]") : [];
+  if (!imgs.length) return gifClock();
   const now = Date.now();
-  document.querySelectorAll("img.tile[data-frames]").forEach((img) => {
+  imgs.forEach((img) => {
     const f = img.dataset.frames.split(","), url = state.frameUrls[f[Math.floor(now / +img.dataset.ms) % f.length]];
     if (url && img.getAttribute("src") !== url) img.src = url;
   });
-}, 40);
+}
+document.addEventListener("visibilitychange", gifClock);
 
 // The keypad draws a label in B612 13 when it fits its 84 px cell, else in B612 11 (ui.cpp drawCell).
 let labelCtx = null;
@@ -196,7 +227,7 @@ function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
   if (!k) return `<div class="cell${sel}" data-k="${i}" role="button" tabindex="0" aria-label="Empty key ${i + 1}"><div class="well"></div></div>`;
   const host = (k.actions || []).some((a) => a.type === "host");
-  const tag = host ? `<span class="tag pc">PC</span>` : k.hold_actions?.length ? `<span class="tag hold">HOLD</span>` : k.toggle ? `<span class="tag on">ON</span>` : "";
+  const tag = host ? `<span class="tag pc">PC</span>` : k.hold_actions?.length || k.hold_to_fire ? `<span class="tag hold">HOLD</span>` : k.toggle ? `<span class="tag on">ON</span>` : "";
   const anim = k.anim ? `<span class="tag anim">${k.anim.toUpperCase()}</span>` : "";
   const face = tileFace(k) || (k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`);
   const folder = (k.actions || []).length === 1 && k.actions[0].type === "page";   // drawn as a stack, like the keypad
@@ -229,16 +260,42 @@ function devHTML() {
     ${qbarHTML()}</div>`;
 }
 
+// The slot strip: the profiles the keypad holds (and the one open here), then New profile.
+const SLOT_NUMS = Array.from({ length: NUM_PROFILES }, (_, i) => i + 1);
 function renderTop() {
-  $("st-slots").innerHTML = Array.from({ length: NUM_PROFILES }, (_, i) => i + 1).map((n) => {
-    const empty = state.conn.connected && state.empty[n];
-    return `<button aria-pressed="${n === state.slot}" data-stslot="${n}" class="${empty ? "empty" : ""}" title="${n === state.conn.activeSlot ? "Active on the keypad" : empty ? "Empty slot: edit it to create a profile" : ""}">${n} · ${empty ? "Empty" : esc(state.slots[n].profile_name)}${n === state.conn.activeSlot && state.conn.connected ? " ●" : ""}</button>`;
-  }).join("");
-  const c = state.conn, pill = $("conn-pill");
+  const c = state.conn, free = SLOT_NUMS.find((n) => state.empty[n] === true && n !== state.slot);
+  const strip = $("st-slots");
+  strip.innerHTML = SLOT_NUMS.filter((n) => n === state.slot || state.empty[n] === false).map((n) => {
+    const fresh = state.empty[n] === true, live = c.connected && n === c.activeSlot;
+    return `<button aria-pressed="${n === state.slot}" data-stslot="${n}" class="${fresh ? "empty" : ""}" title="${live ? "Showing on the keypad" : ""}">${n} · ${fresh ? "New" : esc(state.slots[n].profile_name)}${live ? `<span class="live" aria-label="showing on the keypad"></span>` : ""}</button>`;
+  }).join("") + `<button class="new" data-newslot="${free || ""}" ${c.connected && free ? "" : "disabled"} title="${!c.connected ? "Connect the keypad to add a profile" : free ? `Starts profile ${free}` : "All 16 profiles are in use"}">${ico("plus")} New profile</button>`;
+  const cur = strip.querySelector('[aria-pressed="true"]');
+  if (cur) cur.scrollIntoView({ block: "nearest", inline: "nearest" });
+  slotFade();
+  const pill = $("conn-pill");
   pill.className = `pill ${c.connected ? "ok" : "off"}`;
   pill.lastElementChild.textContent = c.connected
     ? `Touch Keypad · ${c.path === "BLE" ? "Bluetooth" : c.path} · fw ${(c.status && c.status.ver) || "?"}`
     : c.noSerial ? "Serial disabled" : "Offline · looking for the keypad";
+  if (c.connected) connMsg("");
+}
+// The strip scrolls sideways (the wheel too); a fade marks the side with more profiles.
+function slotFade() {
+  const s = $("st-slots"), max = s.scrollWidth - s.clientWidth;
+  s.classList.toggle("more-r", s.scrollLeft < max - 1);
+  s.classList.toggle("more-l", s.scrollLeft > 1);
+}
+$("st-slots").addEventListener("scroll", slotFade);
+$("st-slots").addEventListener("wheel", (e) => { if (e.deltaY && !e.deltaX) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+window.addEventListener("resize", slotFade);
+// Find and Connect say what went wrong beside the connection pill, not in the folded console.
+function connMsg(text) { $("conn-msg").textContent = text; $("conn-msg").hidden = !text; }
+async function connectTo(port) {
+  connMsg("");
+  const r = await api.connect(port);
+  cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`);
+  if (!r.ok) connMsg(r.error);
+  return r;
 }
 
 function renderStudio(keepSide = false) {
@@ -255,8 +312,9 @@ function renderStudio(keepSide = false) {
   if (document.activeElement !== $("p-name")) $("p-name").value = p.profile_name;
   if (document.activeElement !== $("pg-name")) $("pg-name").value = page.name;
   $("pg-del").disabled = !ed || p.pages.length < 2;
-  $("p-color").innerHTML = TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${(p.color || []).join() === c.join()}" data-pcolor="${c.join(",")}" aria-label="Line colour ${c.join(",")}" ${ed ? "" : "disabled"}></button>`).join("");
+  $("p-color").innerHTML = TINTS.map((c, i) => `<button style="background:${rgb(c)}" aria-pressed="${(p.color || []).join() === c.join()}" data-pcolor="${c.join(",")}" aria-label="${TINT_NAMES[i]}" title="${TINT_NAMES[i]}" ${ed ? "" : "disabled"}></button>`).join("");
   if (!keepSide) renderSide();
+  gifClock();
 }
 
 /* ============ notices: first run, calibration, firmware ============ */
@@ -272,21 +330,31 @@ function renderNotices() {
     if (st.cal === "0" || st.ui === "cal")
       out.push(`<div class="notice caution">${ico("crosshair")}<p><b>Touch is not calibrated yet.</b> The keypad shows its calibration screen: press and hold each lit target, then the centre check.</p></div>`);
     if (state.fwBundled && st.ver && newer(state.fwBundled, st.ver))
-      out.push(`<div class="notice">${ico("download")}<p><b>Firmware ${esc(state.fwBundled)} is ready to install.</b> The keypad has ${esc(st.ver)}. Profiles, pairings and calibration are kept.</p><button data-goview="device">Open Device</button></div>`);
+      out.push(`<div class="notice">${ico("download")}<p><b>Firmware ${esc(state.fwBundled)} is ready to install.</b> The keypad has ${esc(st.ver)}. Profiles, pairings and calibration are kept.</p><button data-gofw>Open Device</button></div>`);
   }
   $("st-notice").innerHTML = out.join("");
 }
 $("st-notice").addEventListener("click", async (e) => {
-  if (e.target.closest("[data-find]")) { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); }
-  if (e.target.closest("[data-goview]")) showView("device");
+  if (e.target.closest("[data-find]")) connectTo();
+  if (e.target.closest("[data-gofw]")) {   // straight to the Firmware card, its install button focused
+    showView("device");
+    await state.devRender;
+    const fw = $("fw-book"), go = $("d-flash");
+    if (!fw) return;
+    fw.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    (go && !go.disabled ? go : fw.querySelector("h2")).focus({ preventScroll: true });
+  }
 });
 
 /* ============ inspector + ActionBuilder ============ */
 const side = $("st-side");
-function iconGrid(k) {
-  const f = state.iconFilter.trim().toLowerCase();
+// The icon grid of a picker (the key inspector's, a quick-bar button's): attr carries the pick.
+const iconTitle = (n) => n.replace(/-/g, " ");
+function iconGrid(current, attr = "data-ic", filter = state.iconFilter, none = false) {
+  const f = filter.trim().toLowerCase();
   const names = ICON_NAMES.filter((n) => !f || n.includes(f));
-  return names.map((n) => `<button aria-pressed="${n === k.icon}" data-ic="${n}" aria-label="${n}" title="${n}">${kicon(n, 20)}</button>`).join("") || `<p class="hint" style="grid-column:1/-1; padding:8px">No icon matches.</p>`;
+  return (none ? `<button class="none" aria-pressed="${!current}" ${attr}="" aria-label="No icon" title="No icon">${ico("x")}</button>` : "")
+    + (names.map((n) => `<button aria-pressed="${n === current}" ${attr}="${n}" aria-label="${iconTitle(n)}" title="${iconTitle(n)}">${kicon(n, 20)}</button>`).join("") || `<p class="hint" style="grid-column:1/-1; padding:8px">No icon matches.</p>`);
 }
 function renderSide() {
   const page = pg();
@@ -328,13 +396,26 @@ function renderSide() {
     };
     return;
   }
-  const modes = [["actions", "On tap"], ["hold", "On hold"], ...(k.toggle ? [["off", "Turning off"]] : [])];
-  if (!modes.some(([m]) => m === state.mode)) state.mode = "actions";
+  stopRecord();
+  const htf = !!k.hold_to_fire;
+  const modes = [["actions", htf ? "When held" : "On tap"], ["hold", "On hold"], ...(k.toggle ? [["off", "Turning off"]] : [])];
+  if (!modes.some(([m]) => m === state.mode) || (htf && state.mode === "hold")) state.mode = "actions";
   side.innerHTML = `
-    <div class="two"><label class="field"><span>Label</span><input id="k-name" value="${esc(k.name)}" maxlength="14"></label>
-      <div class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${tileFace(k) || (k.icon ? kicon(k.icon, 36) : "")}</span></div></div>
-    <div class="field"><span>Colour</span><div class="swatches">${TINTS.map((c) => `<button style="background:${rgb(c)}" aria-pressed="${c.join() === k.led_color.join()}" data-sw="${c.join(",")}" aria-label="Colour ${c.join(",")}"></button>`).join("")}</div></div>
-    <div class="field iconbox"><span>Icon · ${ICON_NAMES.length} built in</span><input id="ic-filter" placeholder="Search icons: play, mic, git, spotify…" value="${esc(state.iconFilter)}" aria-label="Search icons"><div class="icons" id="icons">${iconGrid(k)}</div></div>
+    <label class="field"><span>Label</span><input id="k-name" value="${esc(k.name)}" maxlength="14"></label>
+    <div class="field"><span id="acts-h">What it does</span>
+      <span class="mode" role="group" aria-labelledby="acts-h">${modes.map(([m, l]) => `<button aria-pressed="${state.mode === m}" data-mode2="${m}" ${htf && m === "hold" ? `disabled title="Hold to fire uses the hold for the key's own actions"` : ""}>${l}</button>`).join("")}</span></div>
+    <div class="acts" id="acts"></div>
+    ${addSelect()}
+    <label class="check"><input type="checkbox" id="k-htf" aria-describedby="k-htf-h" ${htf ? "checked" : ""}> Hold to fire</label>
+    <p class="hint" id="k-htf-h">For keys that type passwords or do something you can't undo: a tap does nothing, and holding the key for half a second fires it.</p>
+    <details class="pick" id="k-look" ${state.lookOpen ? "open" : ""}>
+      <summary><span class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${tileFace(k) || (k.icon ? kicon(k.icon, 36) : "")}</span></span>
+        <span class="pick-sum"><b>Icon and colour</b><span class="hint">${k.icon ? esc(iconTitle(k.icon)) : "No icon"} on ${tintName(k.led_color).toLowerCase()}</span></span></summary>
+      <div class="pick-body">
+        <div class="swatches" role="group" aria-label="Colour">${TINTS.map((c, i) => `<button style="background:${rgb(c)}" aria-pressed="${c.join() === k.led_color.join()}" data-sw="${c.join(",")}" aria-label="${TINT_NAMES[i]}" title="${TINT_NAMES[i]}"></button>`).join("")}</div>
+        <input id="ic-filter" placeholder="Search ${ICON_NAMES.length} icons: play, mic, git, spotify…" value="${esc(state.iconFilter)}" aria-label="Search icons">
+        <div class="icons" id="icons">${state.lookOpen ? iconGrid(k.icon) : ""}</div></div>
+    </details>
     <div class="field"><span>Image or GIF · plays on the key instead of the icon</span>
       <div class="row"><button id="k-gif">${ico("image")} ${k.frames || k.tile ? "Replace…" : "Choose a GIF or image…"}</button>${k.frames || k.tile ? `<button class="ghost" id="k-gif-x">Remove</button>` : ""}<input type="file" id="k-gif-in" accept="image/gif,image/webp,image/png,image/jpeg" hidden></div>
       <span class="hint" id="k-gif-msg">${k.frames ? `${k.frames.length} frames · ${k.frame_ms} ms each · ${Math.round(k.frames.length * 10.4)} KB on the keypad` : k.tile ? "A still image · 10 KB on the keypad" : "Up to 16 frames at 72 × 72. Each frame takes 10 KB of the keypad's 2 MB."}</span></div>
@@ -342,13 +423,20 @@ function renderSide() {
     <div class="two"><label class="field"><span>Animation</span><select id="k-anim">${ANIMS.map(([v, l]) => `<option value="${v}" ${(k.anim || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="check" style="padding-bottom:8px"><input type="checkbox" id="k-toggle" ${k.toggle ? "checked" : ""}> Toggle</label></div>
     <p class="hint">${k.toggle ? "A toggle remembers on and off and shows ON. Without “Turning off” actions it runs the same actions both ways." : "Animations play on the keypad: the equalizer while media plays, pulse or blink on toggles."}</p>
-    <span class="mode" role="group" aria-label="Trigger">${modes.map(([m, l]) => `<button aria-pressed="${state.mode === m}" data-mode2="${m}">${l}</button>`).join("")}</span>
-    <div class="acts" id="acts"></div>
-    ${addSelect()}
     <button class="ghost" id="k-clear">${ico("trash-2")} Clear key</button>`;
   renderActs(curList());
   $("k-name").oninput = (e) => { k.name = e.target.value; changed(["title"], true); };
-  $("ic-filter").oninput = (e) => { state.iconFilter = e.target.value; $("icons").innerHTML = iconGrid(k); };
+  $("k-look").ontoggle = (e) => { state.lookOpen = e.target.open; if (state.lookOpen && !$("icons").firstChild) $("icons").innerHTML = iconGrid(k.icon); };
+  $("ic-filter").oninput = (e) => { state.iconFilter = e.target.value; $("icons").innerHTML = iconGrid(k.icon); };
+  $("k-htf").onchange = (e) => {
+    if (e.target.checked) {
+      const n = (k.hold_actions || []).length;
+      if (n && !confirm(`Hold to fire uses the hold for this key's own actions, so its ${n} hold action${n > 1 ? "s go" : " goes"}. Turn it on?`)) { e.target.checked = false; return; }
+      k.hold_to_fire = true;
+      delete k.hold_actions;
+    } else delete k.hold_to_fire;
+    changed(["structure", "hold"]);
+  };
   $("k-gif").onclick = () => $("k-gif-in").click();
   $("k-gif-in").onchange = async (e) => {
     const file = e.target.files[0];
@@ -383,14 +471,15 @@ function onAdd(e) {
 }
 function fieldVal(a) {
   const f = ACTION_META[a.type].field;
-  if (f === "keys") return (a.keys || []).join(" + ");
+  if (f === "keys") return (a.keys || []).map(keyLabel).join(" + ");
+  if (a.type === "key") return keyLabel(a.value);
   if (f === "xyw") return `${a.x}, ${a.y}, ${a.wheel ?? 0}`;
   if (f === "color") return (a.color || []).join(", ");
   return f ? String(a[f] ?? "").replace(/\n/g, "\\n") : "";
 }
 function setField(a, v) {
   const f = ACTION_META[a.type].field;
-  if (f === "keys") a.keys = v.split("+").map((s) => s.trim()).filter(Boolean).map(norm);
+  if (f === "keys") a.keys = v.split(/\s*\+\s*/).filter(Boolean).map(norm);
   else if (f === "xyw") { const [x, y, w] = v.split(",").map((n) => parseInt(n, 10) || 0); Object.assign(a, { x: Math.max(-127, Math.min(127, x)), y: Math.max(-127, Math.min(127, y)), wheel: Math.max(-127, Math.min(127, w || 0)) }); }
   else if (f === "color") a.color = v.split(",").map((n) => Math.max(0, Math.min(255, parseInt(n, 10) || 0))).slice(0, 3);
   else if (f === "count") a.count = Math.max(1, Math.min(50, parseInt(v, 10) || 1));
@@ -404,8 +493,9 @@ function renderActs(list) {
   if (!list.length) { el.innerHTML = `<p class="hint">No actions yet. Add one below.</p>`; return; }
   el.innerHTML = list.map((a, i) => {
     const m = ACTION_META[a.type] || { label: a.type, icon: "square", color: "#8a98ab", field: null };
-    const input = ENUMS[a.type] ? `<select data-af="${i}" aria-label="${m.label}">${ENUMS[a.type].map((v) => `<option ${v === a[m.field] ? "selected" : ""}>${v}</option>`).join("")}</select>`
-      : m.field ? `<input data-af="${i}" value="${esc(fieldVal(a))}" aria-label="${m.label} value">` : `<span class="hint">No settings</span>`;
+    const keyish = a.type === "keycombo" || a.type === "key";
+    const input = ENUMS[a.type] ? `<select data-af="${i}" aria-label="${m.label}">${ENUMS[a.type].map((v) => `<option value="${v}" ${v === a[m.field] ? "selected" : ""}>${ENUM_LABEL[v] || v}</option>`).join("")}</select>`
+      : m.field ? `<span class="in-row"><input data-af="${i}" value="${esc(fieldVal(a))}" aria-label="${m.label}" ${keyish ? `placeholder="Ctrl + Shift + T"` : ""}>${keyish ? `<button class="ghost rec" data-rec="${i}" aria-pressed="false" title="Press the keys to record them">${ico("circle-dot")} Record</button>` : ""}</span>` : `<span class="hint">No settings</span>`;
     return `<div class="act" draggable="true" data-ai="${i}"><span class="ti" style="background:${m.color}">${kicon(m.icon, 16)}</span>
       <span class="bd"><b>${m.label}</b>${input}</span>
       <span class="ops"><button data-up="${i}" aria-label="Move up">${ico("arrow-up")}</button><button data-down="${i}" aria-label="Move down">${ico("arrow-down")}</button><button data-del="${i}" aria-label="Delete">${ico("x")}</button></span></div>`;
@@ -413,8 +503,35 @@ function renderActs(list) {
 }
 side.addEventListener("input", (e) => { const i = e.target.dataset.af; if (i === undefined || e.target.tagName === "SELECT") return; setField(curList()[+i], e.target.value); changed([listKind()], true); });
 side.addEventListener("change", (e) => { const i = e.target.dataset.af; if (i === undefined || e.target.tagName !== "SELECT") return; setField(curList()[+i], e.target.value); changed([listKind()], true); });
+// Record shortcut: the next key pressed (with its modifiers) becomes the action's keys.
+let rec = null;
+function stopRecord() {
+  if (!rec) return;
+  window.removeEventListener("keydown", onRecordKey, true);
+  if (rec.btn.isConnected) { rec.btn.setAttribute("aria-pressed", "false"); rec.btn.lastChild.textContent = " Record"; }
+  rec = null;
+}
+function startRecord(i, btn) {
+  stopRecord();
+  rec = { i, btn, key: selKey(), list: curList() };
+  btn.setAttribute("aria-pressed", "true");
+  btn.lastChild.textContent = " Press keys…";
+  window.addEventListener("keydown", onRecordKey, true);
+}
+function onRecordKey(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;   // wait for the key itself
+  const mods = [e.ctrlKey && "LEFT_CTRL", e.shiftKey && "LEFT_SHIFT", e.altKey && "LEFT_ALT", e.metaKey && "LEFT_GUI"].filter(Boolean);
+  const k = codeKey(e.code), a = rec.list[rec.i];
+  if (e.code === "Escape" && !mods.length) return stopRecord();   // Esc alone cancels
+  if (!k || !a || rec.key !== selKey()) return stopRecord();
+  if (mods.length) { a.type = "keycombo"; delete a.value; a.keys = [...mods, k]; } else if (a.type === "key") a.value = k; else a.keys = [k];
+  stopRecord();
+  changed([listKind()]);
+}
 side.addEventListener("click", (e) => {
   const t = e.target.closest("button"); if (!t) return;
+  if (t.dataset.rec !== undefined) { if (rec && rec.btn === t) stopRecord(); else startRecord(+t.dataset.rec, t); return; }
   if (t.dataset.up) { const i = +t.dataset.up, l = curList(); if (i > 0) [l[i - 1], l[i]] = [l[i], l[i - 1]]; changed([listKind()]); }
   if (t.dataset.down) { const i = +t.dataset.down, l = curList(); if (i < l.length - 1) [l[i + 1], l[i]] = [l[i], l[i + 1]]; changed([listKind()]); }
   if (t.dataset.del) {
@@ -457,9 +574,9 @@ document.addEventListener("drop", (e) => e.preventDefault());
 
 /* ============ slots, pages, names ============ */
 document.addEventListener("click", async (e) => {
-  const s = e.target.closest("[data-stslot]");
-  if (s) {
-    state.slot = +s.dataset.stslot; state.page = 0; state.sel = 0;
+  const s = e.target.closest("[data-stslot], [data-newslot]");
+  if (s && !s.disabled) {   // New profile opens the first empty slot; editing it creates the profile
+    state.slot = +(s.dataset.stslot || s.dataset.newslot); state.page = 0; state.sel = 0;
     renderStudio();
     if (state.conn.connected) await loadSlot(state.slot);
   }
@@ -576,12 +693,15 @@ async function loadSlot(n) {
 /* ============ views ============ */
 const TITLES = { editor: "Editor", device: "Device", settings: "Settings" };
 function showView(v) {
+  const moved = state.view !== v;
   state.view = v;
   document.querySelectorAll(".rail2 [data-view]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.view === v)));
   document.querySelectorAll("section.view").forEach((s) => { s.hidden = s.dataset.view !== v; });
   $("view-title").textContent = TITLES[v];
-  if (v === "device") renderDevice();
+  if (moved) $("view-title").focus();   // a screen reader hears where it landed; Tab starts from the top
+  if (v === "device") state.devRender = renderDevice();
   if (v === "settings") renderSettings();
+  gifClock();
 }
 
 /* ---- Device page ---- */
@@ -601,7 +721,8 @@ async function renderDevice() {
   const pw = look && look.power, onBle = c.path === "BLE";
   const canFlash = c.connected && !onBle && st.model === "touch";   // main checks again before it releases the port
   const power = !pw ? "—" : pw.usb ? (pw.pct < 0 ? "USB" : pw.charging ? `USB · charging, ${pw.pct}%` : "USB · battery full") : `Battery · ${pw.pct}%`;
-  el.innerHTML = `
+  // Three lanes of cards, then the quick bar across: the link and its firmware, the screen, the hosts and backups.
+  el.innerHTML = `<div class="lane">
     <div class="book"><h2>Connection</h2>
       <label class="field"><span>Port</span><select id="d-port">${ports.map((p) => `<option value="${esc(p.path)}" ${p.path === c.path ? "selected" : ""}>${esc(p.label)}${p.ch340 ? " (CH340)" : ""}</option>`).join("") || "<option value=''>No serial ports</option>"}</select></label>
       <div class="row"><button class="primary" id="d-detect">${ico("search")} Find keypad</button><button id="d-connect">${ico("plug")} Connect to port</button><button class="ghost" id="d-disc" ${dis}>${ico("unplug")} Disconnect</button></div>
@@ -610,37 +731,36 @@ async function renderDevice() {
         <dt>Bluetooth</dt><dd>${+st.ble > 0 ? "host connected" : c.connected ? "advertising" : "—"}</dd><dt>Touch</dt><dd>${st.cal === "1" ? "calibrated" : c.connected ? "not calibrated" : "—"}</dd>
         <dt>Storage</dt><dd>${fs ? `${Math.round(fs.used / 1024)} KB of ${Math.round(fs.total / 1024)} KB` : "—"}</dd></dl>
       <div class="row"><button id="d-refresh" ${dis}>${ico("refresh-cw")} Refresh</button><button id="d-cal" ${dis}>${ico("crosshair")} Calibrate touch</button></div></div>
-    <div class="book"><h2>Screen and light</h2>
+    <div class="book" id="fw-book"><h2 tabindex="-1">Firmware</h2>
+      <p>${esc(flash.note)}</p>
+      ${flash.available ? `<div class="row"><button class="primary" id="d-flash" aria-describedby="flash-why" ${canFlash ? "" : "disabled"}>${ico("download")} Install firmware ${esc(flash.version || "")}</button></div>
+        <p class="hint" id="flash-why">${canFlash ? "" : onBle ? "Connected over Bluetooth. Installing firmware needs the USB cable: plug it in, Disconnect, then Find keypad." : "Connect the keypad with a USB cable first. Studio checks that it is the Touch Keypad before installing."}</p>
+        <div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div></div>
+    <div class="lane"><div class="book"><h2>Screen and light</h2>
       <div class="field"><span>Theme${c.connected ? "" : " · preview only while offline"}</span><div class="themes" role="group" aria-label="Theme">${THEMES.map(([id, title]) => `<button data-theme-set="${id}" aria-pressed="${state.theme === id}"><span class="dev chip" data-theme="${id}"><span class="key" style="--t:#4f8cff"></span></span>${title}</button>`).join("")}</div></div>
       <label class="field"><span>Screen brightness · ${pct(look && look.brightness)}</span><input type="range" id="d-bright" min="13" max="255" value="${look ? look.brightness : 200}" ${dis}></label>
       <div class="field"><span>Status LED</span><div class="seg" role="group" aria-label="LED pattern">${LED_PATTERNS.map((p) => `<button data-led="${p}" aria-pressed="${!!look && look.led === p}" ${dis}>${p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div></div>
-      <div class="field"><span>LED colour · solid and breathe</span><div class="swatches">${TINTS.map((t) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="LED colour ${t.join(",")}" ${dis}></button>`).join("")}</div></div>
+      <div class="field"><span>LED colour · solid and breathe</span><div class="swatches" role="group" aria-label="LED colour">${TINTS.map((t, i) => `<button style="background:${rgb(t)}" data-ledc="${t.join(" ")}" aria-pressed="${!!look && look.ledColor === t.join(" ")}" aria-label="${TINT_NAMES[i]}" title="${TINT_NAMES[i]}" ${dis}></button>`).join("")}</div></div>
       <label class="field"><span>LED brightness · ${pct(look && look.ledBright)}</span><input type="range" id="d-ledb" min="0" max="255" value="${look ? look.ledBright : 153}" ${dis}></label>
       <label class="check"><input type="checkbox" id="d-click" ${look && look.click ? "checked" : ""} ${dis}> Key click</label>
       <label class="check"><input type="checkbox" id="d-ianim" ${look && look.iconMotion ? "checked" : ""} ${dis}> Moving icons · each icon acts out its key when it fires; a few idle keys play at a time, and a wave runs across now and then</label>
       <label class="field"><span>On battery, sleep after</span><select id="d-sleep" ${dis}>${[[1, "1 minute"], [2, "2 minutes"], [5, "5 minutes"], [10, "10 minutes"], [15, "15 minutes"], [30, "30 minutes"], [0, "Never"]].map(([m, t]) => `<option value="${m}" ${pw && pw.sleep === m ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-      <p class="hint">On battery the screen dims after 20 seconds and turns off after a minute; a touch wakes it. Asleep, the keypad wakes on a touch and reconnects. On USB it stays at full power.</p></div>
-    <div class="book wide" id="qb-book"></div>
-    <div class="book"><h2>Bluetooth hosts</h2>
+      <p class="hint">On battery the screen dims after 20 seconds and turns off after a minute; a touch wakes it. Asleep, the keypad wakes on a touch and reconnects. On USB it stays at full power.</p></div></div>
+    <div class="lane lane3"><div class="book"><h2>Bluetooth hosts</h2>
       ${ble.slots.length ? `<table><thead><tr><th>Host</th><th>State</th><th></th></tr></thead><tbody>${ble.slots.map((b) => `<tr><td>${esc(b.name)}</td><td>${b.state === "connected" ? `<span class="pill ok">connected</span>` : "paired"}</td><td><span class="row" style="flex-wrap:nowrap; justify-content:flex-end">${b.state !== "connected" ? `<button data-use="${b.slot}">Use</button>` : ""}<button class="danger" data-forget="${b.slot}">${ico("trash-2")} Forget</button></span></td></tr>`).join("")}</tbody></table>`
         : `<p class="hint">${c.connected ? "No host paired yet." : "Connect the keypad to see its hosts."}</p>`}
       <div class="row"><button id="d-pair" ${dis}>${ico("link")} Pair a new host</button></div>
       <p class="hint">Pairing shows a six-digit code on the keypad; type it on the computer. The keypad remembers three hosts. Forgetting removes the bond on the keypad; remove it on the computer too.</p></div>
-    <div class="book"><h2>Firmware</h2>
-      <p>${esc(flash.note)}</p>
-      ${flash.available ? `<div class="row"><button class="primary" id="d-flash" aria-describedby="flash-why" ${canFlash ? "" : "disabled"}>${ico("download")} Install firmware ${esc(flash.version || "")}</button></div>
-        <p class="hint" id="flash-why">${canFlash ? "" : onBle ? "Connected over Bluetooth. Installing firmware needs the USB cable: plug it in, Disconnect, then Find keypad." : "Connect the keypad with a USB cable first. Studio checks that it is the Touch Keypad before installing."}</p>
-        <div class="prog" id="flash-prog"><i></i></div><p class="hint" id="flash-msg"></p>` : ""}</div>
-    <div class="book wide"><h2>Backups</h2>
+    <div class="book"><h2>Backups</h2>
       <div class="row"><button id="b-all" ${dis}>${ico("download")} Back up all profiles</button><button id="b-import" ${dis}>${ico("folder-open")} Import JSON</button><button id="b-export">${ico("save")} Export this profile</button></div>
       <p class="hint">A backup is written before every keypad write (the last 20 per profile).</p>
-      <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}" ${dis}>Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div>`;
-  // The form keeps unsaved edits across re-renders (every control here, a profile or page change, re-renders).
-  if (!state.qbDirty) state.qbDraft = JSON.parse(JSON.stringify(state.quickbar || [null, null, null, null]));
+      <div class="backups">${backups.slice(0, 40).map((b) => `<div class="row"><span class="hint">${b.kind} · profile ${b.slot} · ${esc(b.label)}</span><button data-restore="${esc(b.id)}" ${dis}>Open in slot ${state.slot}</button></div>`).join("") || `<p class="hint">No backups yet.</p>`}</div></div></div>
+    <div class="book wide" id="qb-book"></div>`;
+  if (!state.qbTimer && !state.qbSaving) state.qbDraft = structuredClone(state.quickbar || [null, null, null, null]);   // a save in flight keeps its edits
   renderQuickbar(learned, dis);
   const cmd = (s) => api.command(s).then(renderDevice);
-  $("d-detect").onclick = async () => { const r = await api.connect(); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
-  $("d-connect").onclick = async () => { const p = $("d-port").value; if (!p) return; const r = await api.connect(p); cli("sys", r.ok ? `Connected to ${r.path}` : `! ${r.error}`); };
+  $("d-detect").onclick = () => connectTo();
+  $("d-connect").onclick = () => { const p = $("d-port").value; if (p) connectTo(p); };
   $("d-disc").onclick = () => api.disconnect();
   $("d-auto").onchange = async (e) => { state.settings = await api.setSettings({ auto_connect: e.target.checked }); };
   $("d-refresh").onclick = async () => { await api.status(); renderDevice(); };
@@ -680,50 +800,70 @@ async function renderDevice() {
 }
 
 /* ---- Device › Quick bar: four buttons, each a page of a profile; and what the suggestion learned ---- */
-const QB_ROWS = [["Swipe up", "music"], ["Explorer", "folder-open"], ["Git", "git-branch"], ["Commands", "square-terminal"]];
+// Named by where they sit on the keypad: entry 1 opens with a swipe up, 2-4 are the buttons right of the keys.
+const QB_ROWS = ["Swipe up", "Button 1", "Button 2", "Button 3"];
 const pageName = (slot, page) => ((state.slots[slot] && state.slots[slot].pages[page - 1]) || {}).name || "";
+// Saves like a profile edit: debounced, a PC backup first, the header says Saving… then Saved.
+function saveQuickbarSoon(ms = 600) {
+  clearTimeout(state.qbTimer);
+  setSave("busy", "Saving…");
+  state.qbTimer = setTimeout(async () => {
+    state.qbTimer = null;
+    state.qbSaving = true;
+    const bar = structuredClone(state.qbDraft), r = await api.saveQuickbar(bar);
+    state.qbSaving = false;
+    if (r.ok) state.quickbar = bar;
+    setSave(r.ok ? "" : "err", r.ok ? "Saved to the keypad" : "Quick bar not saved");
+    const msg = $("qb-msg");
+    if (msg) msg.textContent = r.ok ? "" : `The keypad refused it: ${r.error}`;
+  }, ms);
+}
 function renderQuickbar(learned, dis) {
-  const el = $("qb-book"), d = state.qbDraft, icons = Object.keys(window.KEY_ICONS || {}).sort();
-  const slots = Object.keys(state.slots).map(Number).filter((n) => !state.empty[n]);
-  const row = ([what], i) => {
+  const el = $("qb-book"), d = state.qbDraft;
+  const slots = Object.keys(state.slots).map(Number).filter((n) => state.empty[n] === false);
+  const row = (what, i) => {
     const b = d[i], pages = b && state.slots[b.profile] ? state.slots[b.profile].pages : [];
     return `<div class="qb-row"><b>${what}</b>
-      <select data-qb-prof="${i}" aria-label="${what}: profile" ${dis}><option value="">None</option>${slots.map((n) => `<option value="${n}" ${b && b.profile === n ? "selected" : ""}>${n} · ${esc(state.slots[n].profile_name)}</option>`).join("")}</select>
+      <select data-qb-prof="${i}" aria-label="${what}: profile" ${dis}><option value="">Nothing</option>${slots.map((n) => `<option value="${n}" ${b && b.profile === n ? "selected" : ""}>${n} · ${esc(state.slots[n].profile_name)}</option>`).join("")}</select>
       <select data-qb-page="${i}" aria-label="${what}: page" ${b ? "" : "disabled"} ${dis}>${pages.map((p, j) => `<option value="${j + 1}" ${b && b.page === j + 1 ? "selected" : ""}>${j + 1} · ${esc(p.name)}</option>`).join("")}</select>
-      <span class="qb-ic">${b ? kicon(b.icon, 22) : ""}</span>
-      <select data-qb-icon="${i}" aria-label="${what}: icon" ${b ? "" : "disabled"} ${dis}>${icons.map((n) => `<option ${b && b.icon === n ? "selected" : ""}>${n}</option>`).join("")}</select>
-      <input data-qb-label="${i}" maxlength="12" aria-label="${what}: label" value="${esc(b ? b.label : "")}" ${b ? "" : "disabled"} ${dis}></div>`;
+      <details class="pick qb-pick" data-qb-pick="${i}" ${b && !dis ? "" : "inert"}><summary aria-label="${what}: icon, ${b && b.icon ? esc(iconTitle(b.icon)) : "none"}">${b && b.icon ? kicon(b.icon, 22) : `<span class="hint">No icon</span>`}</summary>
+        <div class="pick-body"><input data-qb-filter="${i}" placeholder="Search icons" aria-label="${what}: search icons"><div class="icons"></div></div></details>
+      <input data-qb-label="${i}" maxlength="12" placeholder="Label" aria-label="${what}: label" value="${esc(b ? b.label : "")}" ${b ? "" : "disabled"} ${dis}></div>`;
   };
-  const ago = (t) => (t ? new Date(t).toLocaleDateString([], { day: "numeric", month: "short" }) : "—");
+  const ago = (t) => (t ? new Date(t).toLocaleDateString([], { day: "numeric", month: "short" }) : "never");
   el.innerHTML = `<h2>Quick bar</h2>
-    <p class="hint">Each opens a page of one of your profiles over the keys, on every profile. The first opens with a swipe up from the keys. The other three are buttons right of the keys, with Settings below them; tap one again to close it. The top slot suggests a profile for the app in front, learned from your own switches.</p>
+    <p class="hint">Each opens a page of one of your profiles over the keys, on every profile. Swipe up from the keys for the first; the three buttons sit right of the keys, above Settings. Tap one again to close it. The top slot suggests a profile for the app in front, learned from your own switches. Changes save to the keypad as you make them.</p>
     ${QB_ROWS.map(row).join("")}
-    <div class="row"><button class="primary" id="qb-save" ${dis}>${ico("save")} Save to the keypad</button><span class="hint" id="qb-msg"></span></div>
+    <p class="hint err" id="qb-msg" role="status"></p>
     <h3>What it learned</h3>
     ${learned.length ? `<table><thead><tr><th>App</th><th>Profile</th><th>Weight</th><th></th></tr></thead><tbody>${learned.map((r) => `<tr><td>${esc(r.app)}</td><td>${r.slot} · ${esc((state.slots[r.slot] || {}).profile_name || "")}</td><td><span class="wbar" style="width:${Math.max(2, Math.min(120, r.weight * 8))}px"></span> ${r.presses} presses · ${ago(r.last)}</td><td><button class="ghost" data-sclear="${r.slot}" data-app="${esc(r.app)}">Clear</button></td></tr>`).join("")}</tbody></table>`
       : `<p class="hint">Nothing learned yet: switch profile on the keypad and use it, and it shows up here.</p>`}`;
   el.querySelectorAll("[data-qb-prof]").forEach((s) => { s.onchange = () => {
     const i = +s.dataset.qbProf, v = +s.value;
-    d[i] = v ? { profile: v, page: 1, icon: (d[i] && d[i].icon) || QB_ROWS[i][1], label: pageName(v, 1).slice(0, 12) } : null;
-    state.qbDirty = true;
+    d[i] = v ? { profile: v, page: 1, icon: (d[i] && d[i].icon) || "", label: pageName(v, 1).slice(0, 12) } : null;
+    saveQuickbarSoon(0);
     renderQuickbar(learned, dis);
   }; });
   el.querySelectorAll("[data-qb-page]").forEach((s) => { s.onchange = () => {
     const b = d[+s.dataset.qbPage], before = pageName(b.profile, b.page).slice(0, 12);
     b.page = +s.value;
     if (!b.label || b.label === before) b.label = pageName(b.profile, b.page).slice(0, 12);
-    state.qbDirty = true;
+    saveQuickbarSoon(0);
     renderQuickbar(learned, dis);
   }; });
-  el.querySelectorAll("[data-qb-icon]").forEach((s) => { s.onchange = () => { d[+s.dataset.qbIcon].icon = s.value; state.qbDirty = true; renderQuickbar(learned, dis); }; });
-  el.querySelectorAll("[data-qb-label]").forEach((s) => { s.oninput = () => { d[+s.dataset.qbLabel].label = s.value; state.qbDirty = true; }; });
-  $("qb-save").onclick = async () => {
-    const r = await api.command(`quickbar set ${JSON.stringify(d)}`), err = String(r || "").match(/ERR quickbar: (.*)/);
-    if (err) { $("qb-msg").textContent = `Not saved: ${err[1]}`; return; }
-    state.quickbar = parseQuickbar(r);
-    state.qbDirty = false;
-    $("qb-msg").textContent = "Saved. The keypad's bar shows it now.";
-  };
+  el.querySelectorAll("[data-qb-pick]").forEach((p) => {
+    const i = +p.dataset.qbPick, grid = p.querySelector(".icons"), fill = (f = "") => { grid.innerHTML = iconGrid(d[i] && d[i].icon, "data-qb-ic", f, true); };
+    p.ontoggle = () => { if (p.open && !grid.firstChild) fill(); };
+    p.querySelector("[data-qb-filter]").oninput = (e) => fill(e.target.value);
+    grid.onclick = (e) => {
+      const t = e.target.closest("[data-qb-ic]");
+      if (!t || !d[i]) return;
+      d[i].icon = t.dataset.qbIc;
+      saveQuickbarSoon(0);
+      renderQuickbar(learned, dis);
+    };
+  });
+  el.querySelectorAll("[data-qb-label]").forEach((s) => { s.oninput = () => { d[+s.dataset.qbLabel].label = s.value; saveQuickbarSoon(); }; });
   el.querySelectorAll("[data-sclear]").forEach((b) => { b.onclick = async () => renderQuickbar(await api.suggestClear(b.dataset.app, +b.dataset.sclear), dis); });
 }
 
@@ -732,42 +872,49 @@ async function renderSettings() {
   const el = $("settings-pane"), s = state.settings = await api.getSettings();
   const [br, contexts] = await Promise.all([api.bridgeState(prof()), api.contexts()]);
   const failed = new Set(br.failed.map((f) => f.slot));
-  const ctxRows = contexts.map((c) => `<tr><td>${esc(c)}</td><td><select data-ctx="${esc(c)}" aria-label="Profile for ${esc(c)}"><option value="">—</option>${Array.from({ length: NUM_PROFILES }, (_, i) => `<option value="${i + 1}" ${s.context_profiles[c] === i + 1 ? "selected" : ""}>${i + 1} · ${esc(state.slots[i + 1].profile_name)}</option>`).join("")}</select></td></tr>`).join("");
+  const ctxName = (c) => (c === "global" ? "Any other app" : c);
+  const used = SLOT_NUMS.filter((n) => state.empty[n] !== true);
+  const ctxRows = contexts.map((c) => `<tr><td>${esc(ctxName(c))}</td><td><select data-ctx="${esc(c)}" aria-label="Profile for ${esc(ctxName(c))}"><option value="">Don't switch</option>${used.map((n) => `<option value="${n}" ${s.context_profiles[c] === n ? "selected" : ""}>${n} · ${esc(state.slots[n].profile_name)}</option>`).join("")}</select></td></tr>`).join("");
+  const fwStaged = (await api.flashInfo()).version;
   el.innerHTML = `
-    <div class="book wide"><h2>Host bridge</h2>
-      <p class="hint">A <b>Host Action</b> key sends a reserved F13–F24 combo over Bluetooth; Studio catches it and runs the command. Commands: <code>open &lt;url, file or app&gt;</code>, <code>run &lt;command line&gt;</code>, <code>obs.scene &lt;scene&gt;</code>, <code>mic toggle</code> (mutes every mic on the PC, like a laptop's mic key). Studio must be running (it stays in the tray).</p>
-      ${Object.keys(br.slots).length ? `<table><thead><tr><th>Slot</th><th>Combo</th><th>Command</th><th>Status</th><th></th></tr></thead><tbody>${br.combos.map((c) => `<tr><td>${c.slot}</td><td><code>${esc(c.label)}</code></td><td><code>${esc(br.slots[c.slot])}</code></td><td>${failed.has(c.slot) ? `<span class="pill warn">taken by another app</span>` : `<span class="pill ok">listening</span>`}</td><td><button data-test="${c.slot}">Test</button></td></tr>`).join("")}</tbody></table>`
-        : `<p class="hint">No host actions saved yet.</p>`}
-      ${br.shared.length ? `<p><b>Keys that share a host slot:</b></p><ul class="errors">${br.shared.map((x) => `<li>Profiles ${x.profiles.map((n) => `${n} (${esc(state.slots[n].profile_name)})`).join(" and ")} both use slot ${x.slot} for different commands, so one of those keys runs the other's command. Edit either profile here and its key gets a slot of its own.</li>`).join("")}</ul>` : ""}
-      ${br.conflicts.length ? `<p><b>Conflicts in this profile:</b></p><ul class="errors">${br.conflicts.map((x) => `<li>${esc(x.where)} sends ${esc(x.label)}, which is reserved for host actions</li>`).join("")}</ul>` : ""}
-    </div>
+    <div class="lane"><div class="book"><h2>Switch profile by app</h2>
+      <label class="check"><input type="checkbox" data-set="auto_switch_enabled" ${s.auto_switch_enabled ? "checked" : ""}> When the focused app changes, switch the keypad's profile</label>
+      <table><thead><tr><th>App</th><th>Profile</th></tr></thead><tbody>${ctxRows}</tbody></table></div></div>
+    <div class="lane"><div class="book"><h2>Make a profile with Claude</h2>
+      <p class="hint">On the keypad, tap the profile name, then <b>Generate</b>. The app in front gets its own profile and the keypad switches to it. An app that already has one just switches. A new app goes to Claude through Claude Code on this PC, on your claude.ai login. Claude gets the app's name, its window title and your minutes per app this session, never your keystrokes.</p>
+      <dl class="kv"><dt>App in front</dt><dd id="ag-app">None yet</dd></dl>
+      <div class="row"><button id="ag-run">${ico("sparkles")} Make one for it</button><button id="ag-force">${ico("refresh-cw")} Ask Claude again</button></div>
+      <p class="hint" id="ag-msg" role="status"></p></div>
+    <div class="book"><h2>Notifications</h2>
+      <label class="check"><input type="checkbox" data-set="notifications_enabled" ${s.notifications_enabled !== false ? "checked" : ""}> Show this PC's notifications on the keypad</label>
+      <p class="hint">Each new Windows notification (Slack, Teams, Outlook, any app) drops in at the top of the keypad, and the bell counts the unread ones. Swipe down on the keypad, or tap the bell, to read the newest and to set brightness, the profile and the Bluetooth host.</p>
+      <div class="row"><button id="nt-test">${ico("bell")} Send a test notification</button></div></div></div>
+    <div class="lane lane3">
     <div class="book"><h2>Media player</h2>
       <label class="check"><input type="checkbox" data-set="nowplaying_enabled" ${s.nowplaying_enabled ? "checked" : ""}> Send what's playing on this PC to the keypad's player page</label>
       <label class="check"><input type="checkbox" data-set="art_enabled" ${s.art_enabled !== false ? "checked" : ""}> Include album art</label>
       <p class="hint">Uses the Windows media session: Spotify, browsers and most players publish to it. Seeking on the keypad moves the track here.</p></div>
-    <div class="book"><h2>Notifications</h2>
-      <label class="check"><input type="checkbox" data-set="notifications_enabled" ${s.notifications_enabled !== false ? "checked" : ""}> Show this PC's notifications on the keypad</label>
-      <p class="hint">Each new Windows notification (Slack, Teams, Outlook, any app) drops in at the top of the keypad, and the bell counts the unread ones. Swipe down on the keypad, or tap the bell, to read the newest and to set brightness, the profile and the Bluetooth host.</p>
-      <div class="row"><button id="nt-test">${ico("bell")} Send a test notification</button></div></div>
     <div class="book"><h2>OBS</h2>
-      <label class="check"><input type="checkbox" data-set="obs_enabled" ${s.obs_enabled ? "checked" : ""}> Switch OBS scenes (OBS WebSocket v5)</label>
-      <label class="field"><span>WebSocket URL</span><input data-set="obs_url" value="${esc(s.obs_url)}"></label>
-      <label class="field"><span>Password</span><input type="password" data-set="obs_password" value="${esc(s.obs_password)}"></label></div>
-    <div class="book"><h2>Keypad link</h2>
-      <label class="check"><input type="checkbox" data-set="settime_enabled" ${s.settime_enabled ? "checked" : ""}> Set the keypad clock on connect</label>
-      <label class="check"><input type="checkbox" data-set="auto_connect" ${s.auto_connect ? "checked" : ""}> Connect automatically</label>
-      <label class="field"><span>Baud rate</span><select data-set="baud">${[921600, 460800, 115200].map((b) => `<option ${s.baud === b ? "selected" : ""}>${b}</option>`).join("")}</select></label></div>
+      <label class="check"><input type="checkbox" data-set="obs_enabled" ${s.obs_enabled ? "checked" : ""}> Let keys switch OBS scenes</label>
+      <label class="field"><span>OBS address</span><input data-set="obs_url" value="${esc(s.obs_url)}"></label>
+      <label class="field"><span>OBS password</span><input type="password" data-set="obs_password" value="${esc(s.obs_password)}"></label>
+      <p class="hint">In OBS, turn on Tools › WebSocket Server Settings; the address and password are there.</p></div>
     <div class="book"><h2>About</h2>
-      <dl class="kv"><dt>Macropad Studio</dt><dd>${esc(state.conn.appVersion || "—")}</dd><dt>Keypad firmware</dt><dd>${esc((state.conn.status && state.conn.status.ver) || "not connected")}</dd><dt>Firmware Studio installs</dt><dd>${esc((await api.flashInfo()).version || "—")}</dd></dl>
-      <p class="hint">Keys work as a Bluetooth keyboard with nothing installed; Studio adds editing, host actions, the media player feed and firmware installs. Docs: README.md, docs/PROTOCOL.md, firmware/DESIGN.md.</p></div>
-    <div class="book"><h2>Autogenerate with Claude</h2>
-      <p class="hint">On the keypad, tap the profile name, then <b>Generate</b>: the app in front gets its own profile and the keypad switches to it. An app that already has a profile just switches; a new app goes to Claude through Claude Code on this PC (your claude.ai login). Sent: the app's name, its window title and your minutes per app this session. Never keystrokes.</p>
-      <dl class="kv"><dt>App in front</dt><dd id="ag-app">—</dd></dl>
-      <div class="row"><button id="ag-run">${ico("sparkles")} Generate for it</button><button id="ag-force">${ico("refresh-cw")} Regenerate with Claude</button></div>
-      <p class="hint" id="ag-msg"></p></div>
-    <div class="book"><h2>Switch profile by app</h2>
-      <label class="check"><input type="checkbox" data-set="auto_switch_enabled" ${s.auto_switch_enabled ? "checked" : ""}> When the focused app changes, switch the keypad's profile</label>
-      <table><thead><tr><th>App</th><th>Profile</th></tr></thead><tbody>${ctxRows}</tbody></table></div>`;
+      <dl class="kv"><dt>Macropad Studio</dt><dd>${esc(state.conn.appVersion || "Unknown")}</dd><dt>Keypad firmware</dt><dd>${esc((state.conn.status && state.conn.status.ver) || "Keypad not connected")}</dd><dt>Firmware Studio installs</dt><dd>${esc(fwStaged || "None in this copy")}</dd></dl>
+      <p class="hint">The keys work as a Bluetooth keyboard with nothing installed. Studio adds editing, PC commands, the media player feed and firmware installs.</p></div></div>
+    <div class="book wide"><h2>Keys that run PC commands</h2>
+      <p class="hint">A key with a <b>PC command</b> action sends a shortcut no other app uses, and Studio runs the command when it hears it. Studio has to be running; it stays in the tray. Commands: <code>open &lt;website, file or app&gt;</code>, <code>run &lt;command line&gt;</code>, <code>obs.scene &lt;scene&gt;</code> and <code>mic toggle</code>, which mutes every microphone on this PC.</p>
+      ${Object.keys(br.slots).length ? `<table><thead><tr><th>Command</th><th>Shortcut it uses</th><th>Status</th><th></th></tr></thead><tbody>${br.combos.map((c) => `<tr><td><code>${esc(br.slots[c.slot])}</code></td><td><code>${esc(c.label)}</code></td><td>${failed.has(c.slot) ? `<span class="pill warn">taken by another app</span>` : `<span class="pill ok">listening</span>`}</td><td><button data-test="${c.slot}">Test</button></td></tr>`).join("")}</tbody></table>`
+        : `<p class="hint">No key runs a PC command yet.</p>`}
+      ${br.shared.length ? `<p><b>Keys that share a shortcut:</b></p><ul class="errors">${br.shared.map((x) => `<li>Profiles ${x.profiles.map((n) => `${n} (${esc(state.slots[n].profile_name)})`).join(" and ")} use one shortcut for two different commands, so one of those keys runs the other's. Edit either profile here and its key gets a shortcut of its own.</li>`).join("")}</ul>` : ""}
+      ${br.conflicts.length ? `<p><b>Keys in this profile that would set off a PC command:</b></p><ul class="errors">${br.conflicts.map((x) => `<li>${esc(x.where)} sends ${esc(x.label)}, which Studio keeps for PC commands</li>`).join("")}</ul>` : ""}
+    </div>
+    <details class="book wide advanced"><summary><h2>Advanced</h2><span class="hint">Connection details for troubleshooting</span></summary>
+      <label class="check"><input type="checkbox" data-set="auto_connect" ${s.auto_connect ? "checked" : ""}> Connect automatically, over USB or Bluetooth</label>
+      <label class="check"><input type="checkbox" data-set="settime_enabled" ${s.settime_enabled ? "checked" : ""}> Set the keypad's clock when it connects</label>
+      <label class="field"><span>USB serial speed (baud)</span><select data-set="baud">${[921600, 460800, 115200].map((b) => `<option value="${b}" ${s.baud === b ? "selected" : ""}>${b.toLocaleString("en")}${b === 921600 ? " (the keypad's speed)" : ""}</option>`).join("")}</select></label>
+      <p class="hint">The keypad listens at 921,600. Change this only to match a different firmware build. Protocol and design notes: docs/PROTOCOL.md and firmware/DESIGN.md.</p>
+    </details>`;
   el.querySelectorAll("[data-set]").forEach((inp) => {
     inp.addEventListener("change", async () => {
       const k = inp.dataset.set;
@@ -784,11 +931,11 @@ async function renderSettings() {
   });
   el.querySelectorAll("[data-test]").forEach((b) => { b.onclick = async () => { const r = await api.bridgeTest(+b.dataset.test); cli("host", r.ok ? `host: ran slot ${b.dataset.test}` : `! host: ${r.error}`); }; });
   const ag = await api.autogenState();
-  $("ag-app").textContent = ag.last ? `${ag.last.proc}${ag.last.title ? ` · ${ag.last.title}` : ""}` : "none yet: switch to an app";
+  $("ag-app").textContent = ag.last ? `${ag.last.proc}${ag.last.title ? ` · ${ag.last.title}` : ""}` : "None yet: switch to an app";
   const gen = async (force) => {
     if (!state.conn.connected) { $("ag-msg").textContent = "Connect the keypad first."; return; }
     $("ag-run").disabled = $("ag-force").disabled = true;
-    $("ag-msg").textContent = force ? "Asking Claude… this takes about a minute." : "Working…";
+    $("ag-msg").textContent = force ? "Asking Claude. This takes about a minute." : "Working…";
     const r = await api.autogen(force);
     $("ag-run").disabled = $("ag-force").disabled = false;
     $("ag-msg").textContent = r.ok ? `${r.profile ? r.profile.profile_name : "Profile"} is on profile ${r.slot}${r.cached ? " (already made, no Claude call)" : ""}.` : `Could not: ${r.error}`;
