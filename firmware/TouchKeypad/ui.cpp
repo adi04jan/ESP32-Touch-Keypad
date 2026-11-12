@@ -74,7 +74,7 @@ enum Mode : uint8_t { M_HOME, M_SHEET, M_PAIR, M_CAL, M_SHADE, M_MENU };   // sh
 static Mode mode = M_HOME;
 static const char *const MODE_NAMES[] = { "home", "sheet", "pair", "cal", "shade", "menu" };
 
-struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame, fiNow; uint32_t fiAt; uint32_t sig0; int16_t sig; const IconDef *sigIc; uint32_t waveAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen, sigIc the icon it holds; waveAt: its turn in a wave
+struct CellAnim { uint32_t pop0, ring0; uint8_t ring; int8_t frame, fiNow; uint32_t fiAt; const char *fiKey; uint32_t sig0; int16_t sig; const IconDef *sigIc; uint32_t waveAt; };   // ring: 0 none, 1 ok, 2 alert; frame: the GIF frame on screen; sig0: when the icon animation began, sig its frame on screen, sigIc the icon it holds; waveAt: its turn in a wave
 static CellAnim ca[NUM_CELLS];
 static int pressed = -1, released = -1;
 static uint32_t press0 = 0, release0 = 0;
@@ -549,12 +549,15 @@ static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {
 // keeps its last one this frame (still cached) and gets its turn on the next.
 static int frameIndex(JsonVariant k, uint32_t now);
 static int cellFrame(int c, JsonVariant k, uint32_t now) {
+  // Keyed by the key too: a slide or a rise draws two pages in one frame, each with its own key at cell c.
+  const char *id = k["frames"][0] | "";
   if (tileMux) xSemaphoreTake(tileMux, portMAX_DELAY);
-  if (ca[c].fiAt != (now | 1)) {
+  if (ca[c].fiAt != (now | 1) || ca[c].fiKey != id) {
     int fi = frameIndex(k, now);
     if (fi >= 0 && fi != ca[c].frame && ca[c].frame >= 0 && tileLoads > 0 && !tileCached(k["frames"][fi] | "")) fi = ca[c].frame;
     ca[c].fiNow = fi;
     ca[c].fiAt = now | 1;
+    ca[c].fiKey = id;
   }
   int fi = ca[c].fiNow;
   if (tileMux) xSemaphoreGive(tileMux);
@@ -2781,6 +2784,8 @@ void uiNowPlaying(JsonObjectConst o) {
     free(artJpg);   // or artSync would decode the old one again
     artJpg = nullptr;
     artJpgLen = 0;
+    free(art);      // and its 32 KB image: artSync frees it only while a JPEG is held, and there is none now
+    art = nullptr;
   }
   strlcpy(np.title, o["title"] | "", sizeof np.title);
   strlcpy(np.album, o["album"] | "", sizeof np.album);
@@ -2934,7 +2939,7 @@ void uiOpenShade() {
   if (mode != M_HOME) return;
   refreshHosts();   // what the shade shows; nothing slow (all the profiles' details took 1.5 s)
   if (banOn) { banOn = false; markBanner(); }
-  slideCancelPress();
+  touchTaken();   // a host `shade` mid-drag: the page or Media lets go (shadeGrab's own drag is home's, not held)
   mode = M_SHADE;
   shadeClosing = shadeDrag = false;
   shadeRise = { 0, 0, 0, sheetK, sheetZ, false };
@@ -3340,7 +3345,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     } else if (kind == G_SWIPE_L) { pressedBtn = -1; viewGo(viewPage() + 1); }
     else if (kind == G_SWIPE_R) { pressedBtn = -1; viewGo(viewPage() - 1); }
     else if (kind == G_SWIPE_U) { pressedBtn = -1; if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); }   // entry 1: Media (none set: nothing)
-    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (topLayer() == &media) layerClose(media); else uiOpenShade(); }
+    else if (kind == G_SWIPE_D) { pressedBtn = -1; if (Layer *L = topLayer()) layerClose(*L); else uiOpenShade(); }   // as on keys
     return;
   }
 

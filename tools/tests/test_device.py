@@ -712,6 +712,18 @@ def test_jpeg_cover_decodes_when_the_player_opens_and_frees_after(d):
     assert art_state(d)["decoded"] == "0" and heap_free(d) >= free0 - 1024
 
 
+def test_a_new_track_frees_the_decoded_cover(d):                   # final review: the 32 KB image stayed held
+    np = lambda t: d.ok('widget now_playing {"title":"%s","album":"A","artist":"B","app":"Spotify","pos":1,"len":200,"playing":false}' % t)
+    try:
+        np("One"); d.upload_bin("ram:artj", make_jpg()); d.ok("page 2"); time.sleep(0.6)
+        assert art_state(d)["decoded"] == "1"
+        held = heap_free(d)
+        np("Two"); d.ok("page 1"); time.sleep(0.5)
+        assert heap_free(d) >= held + 30000                           # the old cover's 32 KB is back
+    finally:
+        d.ok("page 1")
+
+
 def test_a_new_track_drops_the_old_cover(d):                       # review 2026-11-11: it decoded again
     np = lambda t: d.ok('widget now_playing {"title":"%s","album":"A","artist":"B","app":"Spotify","pos":1,"len":200,"playing":false}' % t)
     np("One"); d.upload_bin("ram:artj", make_jpg()); time.sleep(0.3)
@@ -1004,6 +1016,21 @@ def test_a_sheet_closed_by_the_host_mid_drag_frees_the_touch(d):
     d.write_line("sheet close"); time.sleep(1.5)
     d.drain(); assert "ui:home" in d.cmd("status")[0]
     since = len(d.events); tap(d, 1); d.wait_event(r"^EVT:KEY 1 1 1$", 1, since)
+
+
+def test_a_shade_opened_by_the_host_mid_slide_frees_the_touch(d):  # final review: the page froze under it
+    swipe_held(d, 330, 160, 130, 160, 900); time.sleep(0.45)            # the page sliding on the finger
+    d.write_line("shade"); time.sleep(1.5)
+    d.drain(); assert field(d, "slide") == 0
+    d.ok("shade close"); time.sleep(0.8); since = len(d.events)
+    tap(d, 1); d.wait_event(r"^EVT:KEY 1 1 1$", 1, since)
+
+
+def test_a_swipe_down_closes_a_player_panel(d):                     # final review: the player page pulled the shade
+    set_qb(d, [QB_TEST[0], {"profile": SLOT, "page": 2, "icon": "music", "label": "Player"}, QB_TEST[2], None])
+    d.ok("panel 2"); time.sleep(0.8); since = len(d.events)
+    d.swipe(210, 90, 210, 230, 250); d.wait_event(r"^EVT:PANEL 0$", 1.5, since)
+    assert "ui:home" in d.cmd("status")[0]
 
 
 # Where am I, and how do I leave (review 2026-11-11): the chip names the layer and closes it, a swipe down
