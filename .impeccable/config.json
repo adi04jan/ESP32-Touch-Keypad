@@ -30,6 +30,24 @@
         "rule": "design-system-font",
         "value": "b612 mono",
         "createdAt": "2026-10-02T05:37:53.353Z"
+      },
+      {
+        "rule": "all-caps-body",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/*/content/*.html"
+        ],
+        "createdAt": "2026-11-04T09:32:32.523Z",
+        "reason": "Agent: brainstorm mockups; the uppercase text is short section labels (FRAME RATE, WHAT CHANGED), not body copy"
+      },
+      {
+        "rule": "nested-cards",
+        "value": "*",
+        "files": [
+          ".superpowers/brainstorm/*/content/*.html"
+        ],
+        "createdAt": "2026-11-04T09:32:33.010Z",
+        "reason": "Agent: brainstorm mockups of the keypad; the device frame holds its own Media and Settings sheets on purpose"
       }
     ]
   }
