@@ -309,6 +309,7 @@ handle("device:bleList", () => device.bleList());
 handle("device:bleForget", (_e, n) => device.bleForget(n));
 handle("device:bleUse", (_e, n) => device.bleUse(n));
 handle("device:look", () => device.look());
+handle("device:saveQuickbar", (_e, arr) => device.saveQuickbar(arr));
 
 handle("backup:list", () => { try { return backup.listBackups(); } catch (_) { return []; } });
 handle("backup:read", (_e, id) => { try { return { ok: true, profile: schema.repairProfile(backup.readBackup(id)) }; } catch (e) { return { ok: false, error: e.message }; } });

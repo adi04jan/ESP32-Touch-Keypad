@@ -19,9 +19,10 @@ function stamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
 function ensure(dir) { fs.mkdirSync(dir, { recursive: true }); }
 
 // One snapshot of a single profile, taken before a device write. Pruned to AUTO_KEEP.
+// slot: a profile number, or a name ("quickbar") for other keypad settings Studio writes.
 function autoBackup(slot, profileObj) {
   try {
-    const dir = path.join(BACKUP_ROOT, "auto", `profile${slot}`);
+    const dir = path.join(BACKUP_ROOT, "auto", /^\d+$/.test(String(slot)) ? `profile${slot}` : String(slot));
     ensure(dir);
     const file = path.join(dir, `${stamp()}.json`);
     fs.writeFileSync(file, JSON.stringify(profileObj, null, 2));

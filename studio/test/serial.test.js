@@ -237,6 +237,13 @@ test("Device quickbar round trip and suggest against the sim", async () => {
   assert.equal((await device.setQuickbar([1, 2])).ok, false);
   await device.suggest(13);
   assert.equal(sim.suggested, 13);
+  // Autosave writes it like a profile: a PC backup first, then the keypad.
+  const bar = [null, { profile: 2, page: 1, icon: "", label: "Code" }, null, null];
+  assert.deepEqual(await device.saveQuickbar(bar), { ok: true });
+  assert.deepEqual(sim.quickbar, bar);
+  const saved = fs.readdirSync(path.join(dir, "device_backups", "auto", "quickbar"));
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "device_backups", "auto", "quickbar", saved[0]), "utf8")), bar);
+  assert.ok(backup.listBackups().every((b) => Number.isInteger(b.slot)), "never offered as a profile backup");
 });
 
 

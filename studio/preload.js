@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("api", {
   bleForget: call("device:bleForget"),
   bleUse: call("device:bleUse"),
   lookState: call("device:look"),
+  saveQuickbar: call("device:saveQuickbar"),   // ([4 buttons]) -> {ok, error?}: a PC backup, then the keypad
   backupList: call("backup:list"),
   backupRead: call("backup:read"),
   backupAll: call("backup:all"),

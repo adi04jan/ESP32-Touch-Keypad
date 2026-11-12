@@ -351,6 +351,12 @@ class Device extends EventEmitter {
     return /^quickbar \[/m.test(r) ? { ok: true } : { ok: false, error: r.trim() || "no reply" };
   }
 
+  // The editor's autosave for the bar: a PC backup first, as for a profile, then the keypad.
+  async saveQuickbar(arr) {
+    this.backup.autoBackup("quickbar", arr);
+    return this.setQuickbar(arr);
+  }
+
   // The profile the bar's top slot offers for the app in front (0: none).
   async suggest(slot) { await this.link.command(`suggest ${slot | 0}`, undefined, true); }
 
