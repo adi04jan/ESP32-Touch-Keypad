@@ -30,6 +30,24 @@
         "rule": "design-system-font",
         "value": "b612 mono",
         "createdAt": "2026-10-02T05:37:53.353Z"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          "studio/renderer/index.html"
+        ],
+        "createdAt": "2026-11-12T13:05:37.755Z",
+        "reason": "Claude triage: Paper grain and Retro LCD scanlines are the device themes' own textures in the keypad preview (styles.css .dev[data-theme=paper|retro]), matching the firmware"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "studio/renderer/index.html"
+        ],
+        "createdAt": "2026-11-12T13:15:48.699Z",
+        "reason": "Claude triage: the only colored shadow is Daylight theme's 12px-offset key shadow (rgba 30,58,92) inside the keypad preview; it mirrors the firmware theme on a light screen, not a halo"
       }
     ]
   }
