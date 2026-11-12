@@ -1774,10 +1774,7 @@ static void drawShade(int bot) {
       text(fBodyB, x + 32, y + 21, ellipsize(fBodyB, info.names[i], 108).c_str(), TXT);
       text(fRead, x + 32, y + 38, up ? "Connected" : "Tap to use", up ? legible(GREEN) : TXT2);
     } else if (i == info.bonds) button(x, y, 148, 46, "Pair new", "link", 0, pressedBtn == 120);
-    else {
-      rrRing(x + 0.5f, y + 0.5f, 147, 45, T->crisp ? 4 : 11.5f, 1, mix(PLY, HAIR, 20));
-      text(fRead, x + 74, y + 28, "Empty", TXT3, 255, AL_C);
-    }
+    // past Pair new: nothing (an "Empty" box was a third target that did nothing)
   }
   // the notifications
   char v[28];
