@@ -5,6 +5,7 @@
 const { spawn } = require("child_process");
 
 const PS = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -38,8 +39,9 @@ function start(onFocus) {   // onFocus(processName, windowTitle)
     child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc], { windowsHide: true });
   } catch (_) { child = null; return; }
   let buf = "";
+  child.stdout.setEncoding("utf8");   // whole characters across chunks
   child.stdout.on("data", (d) => {
-    buf += d.toString();
+    buf += d;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
@@ -52,4 +54,4 @@ function start(onFocus) {   // onFocus(processName, windowTitle)
 }
 function stop() { if (child) { try { child.kill(); } catch (_) {} child = null; } }
 
-module.exports = { start, stop };
+module.exports = { start, stop, PS };

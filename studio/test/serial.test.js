@@ -146,6 +146,23 @@ test("a reply that arrives after its command timed out never answers the next co
   assert.equal(await link.command("cat /profile6.json", 200), '{"profile_name":"P6"}');
 });
 
+test("a UTF-8 character split across two chunks arrives whole", async () => {
+  const { EventEmitter } = require("events");
+  let port;
+  class P extends EventEmitter {
+    constructor(_o, cb) { super(); port = this; this.isOpen = true; setImmediate(() => cb(null)); }
+    static async list() { return []; }
+    write(_d, cb) { if (cb) cb(); } set() {} close() {}
+  }
+  const link = new SerialLink({ SerialPort: P });
+  await link.connect("X");
+  const reply = link.command("cat /note.txt");
+  await new Promise((r) => setImmediate(r));
+  const bytes = Buffer.from("Café ☕\nmacropad:$ ", "utf8");
+  for (const [a, b] of [[0, 4], [4, 7], [7, bytes.length]]) port.emit("data", bytes.subarray(a, b));   // splits é and ☕
+  assert.equal(await reply, "Café ☕");
+});
+
 test("two connects at once share one open: no orphaned port holds the COM port", async () => {
   const { EventEmitter } = require("events");
   let held = null;

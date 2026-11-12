@@ -9,6 +9,7 @@
 "use strict";
 
 const { EventEmitter } = require("events");
+const { StringDecoder } = require("string_decoder");
 const { buildBinaryUploadLines } = require("./tiles");
 const { BLE_PATH } = require("./bleport");
 
@@ -117,7 +118,8 @@ class SerialLink extends EventEmitter {
         resolve(true);
       });
       this.port = port;
-      port.on("data", (buf) => this._feed(buf.toString("utf8")));
+      const utf8 = new StringDecoder("utf8");   // a character split across two chunks stays whole
+      port.on("data", (buf) => this._feed(utf8.write(buf)));
       port.on("error", (e) => { this.emit("log", `Serial error: ${e.message}\n`); this._down(port); });
       port.on("close", () => this._down(port));
     });

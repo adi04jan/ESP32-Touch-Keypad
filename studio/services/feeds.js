@@ -67,6 +67,7 @@ function bmpToBgra(bmp) {
 }
 
 const NP_PS = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 Add-Type -AssemblyName System.Drawing
@@ -140,8 +141,9 @@ function startNowPlaying(onData, onError = () => {}, onArt = () => {}) {
     child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc], { windowsHide: true });
   } catch (e) { child = null; onError(e.message); return false; }
   let buf = "";
+  child.stdout.setEncoding("utf8");   // whole characters across chunks
   child.stdout.on("data", (d) => {
-    buf += d.toString();
+    buf += d;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
