@@ -42,7 +42,14 @@ function locate(resourcesPath) {
   if (missing.length) return { error: `firmware files not found: ${missing.join(", ")} (run tools/kp.py build --release)` };
   let version = "";
   try { version = fs.readFileSync(path.join(ROOT, "firmware", "TouchKeypad", "board.h"), "utf8").match(/FW_VERSION\s+"([^"]+)"/)[1]; } catch (_) {}
+  // board.h bumped but not rebuilt: the label would promise a version the binary isn't.
+  if (!binHasVersion(fs.readFileSync(files["app.bin"]), version)) return { error: `build/fw-release is not firmware ${version || "(no FW_VERSION in board.h)"} (rebuild it: tools/kp.py build --release)` };
   return { esptool, files, version };
+}
+
+// The firmware's FW_VERSION is a string of its own in the app image ("\0" 3.13.2 "\0").
+function binHasVersion(bin, version) {
+  return !!version && bin.includes(Buffer.from(`\0${version}\0`, "latin1"));
 }
 
 function info(resourcesPath) {
@@ -89,4 +96,4 @@ function flash(port, resourcesPath, onProgress = () => {}) {
   });
 }
 
-module.exports = { locate, info, flash, targetPort, IMAGES };
+module.exports = { locate, info, flash, targetPort, binHasVersion, IMAGES };

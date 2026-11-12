@@ -17,6 +17,16 @@ test("the installer packages every folder Studio loads at run time", () => {
   }
 });
 
+test("the firmware Studio offers is the version inside its binary, not just board.h's", () => {
+  const { binHasVersion } = require("../services/flasher");
+  const bin = Buffer.concat([Buffer.from([0xe9, 4, 2, 0x20]), Buffer.from("\0\nTouch Keypad v%s starting\n\x003.13.2\0v3.13.9\0", "latin1")]);
+  assert.equal(binHasVersion(bin, "3.13.2"), true);
+  assert.equal(binHasVersion(bin, "3.13.9"), false, "only inside a longer string");
+  assert.equal(binHasVersion(bin, "3.13.3"), false, "board.h was bumped, the build was not");
+  assert.equal(binHasVersion(bin, ""), false);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "services", "flasher.js"), "utf8"), /binHasVersion\(fs\.readFileSync\(files\["app\.bin"\]\)/, "locate() checks the dev build");
+});
+
 test("the installer ships the Bluetooth helper where bleport.js looks for it", () => {
   assert.ok(pkg.build.extraResources.some((r) => r.from === "native/dist" && r.to === "kplink"));
   assert.match(pkg.scripts.dist, /npm run kplink/);
