@@ -54,10 +54,11 @@ function iconNames() {
 }
 
 // The shape Claude must answer in (Claude Code checks it with --json-schema).
+const ANSWER_TYPES = ["keycombo", "key", "text", "delay", "media", "page", "back"];
 function answerSchema(icons) {
   const str = (max) => ({ type: "string", maxLength: max });
   const action = { type: "object", additionalProperties: false, required: ["type"], properties: {
-    type: { enum: ["keycombo", "key", "text", "delay", "media", "page", "back"] },
+    type: { enum: ANSWER_TYPES },
     keys: { type: "array", items: { enum: schema.KEY_AND_MODIFIER } },
     value: { type: "string" }, ms: { type: "integer" }, page: { type: "integer" } } };
   const key = { type: "object", additionalProperties: false, required: ["name", "icon", "actions"], properties: {
@@ -97,7 +98,10 @@ function toProfile(out, label, icons) {
   const known = new Set(icons);
   const tone = PALETTE[[...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
   const pages = Math.min(3, (out.pages || []).length) || 1;
-  const action = (a) => a.type === "keycombo" ? { type: "keycombo", keys: a.keys || [] }
+  // Only the answer schema's types: an answer that skipped the schema (the `result` fallback) never
+  // brings a host command, a profile switch or anything else Studio didn't ask for.
+  const action = (a) => !a || !ANSWER_TYPES.includes(a.type) ? null
+    : a.type === "keycombo" ? { type: "keycombo", keys: a.keys || [] }
     : a.type === "delay" ? { type: "delay", ms: Math.max(0, Math.min(5000, a.ms | 0)) }
     : a.type === "page" ? { type: "page", value: Math.max(1, Math.min(pages, a.page | 0 || parseInt(a.value, 10) || 1)) }
     : a.type === "back" ? { type: "back" }
@@ -110,7 +114,7 @@ function toProfile(out, label, icons) {
         const k = (pg.keys || [])[i];
         if (!k) return null;
         return { id: i + 1, name: String(k.name).slice(0, schema.MAX_LABEL), icon: known.has(k.icon) ? k.icon : "keyboard",
-          led_color: PALETTE[i % PALETTE.length], actions: (k.actions || []).map(action) };
+          led_color: PALETTE[i % PALETTE.length], actions: (Array.isArray(k.actions) ? k.actions : []).map(action).filter(Boolean) };
       }),
     })),
   });

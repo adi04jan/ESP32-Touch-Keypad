@@ -47,6 +47,13 @@ test("assignSlots keeps the slot a host key carries, unless another command hold
   assert.deepEqual(slots, { 0: "open spotify:", 1: "open https://github.com", 2: "run x", 3: "run y", 7: "open new" });
 });
 
+test("newHostCommands lists the commands a profile would add, once each", () => {
+  const p = prof({ 0: [{ type: "host", cmd: "open spotify:" }], 1: [{ type: "repeat", count: 1, actions: [{ type: "host", cmd: "run evil.cmd" }] }], 2: [{ type: "host", cmd: "run evil.cmd" }] });
+  p.pages[0].keys[3] = { id: 4, name: "t", led_color: [1, 1, 1], toggle: true, actions: [], off_actions: [{ type: "host", cmd: "open C:\\x.exe" }] };
+  assert.deepEqual(hb.newHostCommands(p, ["open spotify:"]), ["run evil.cmd", "open C:\\x.exe"]);
+  assert.deepEqual(hb.newHostCommands(p, ["open spotify:", "run evil.cmd", "open C:\\x.exe"]), []);
+});
+
 test("assignSlots reports when all 48 slots are taken", () => {
   const full = Object.fromEntries(Array.from({ length: 48 }, (_, i) => [String(i), `run ${i}`]));
   const p = prof({ 0: [{ type: "host", cmd: "open new" }] });

@@ -337,7 +337,12 @@ handle("contexts:list", () => {
   return [...known, ...Object.keys(store.load().context_profiles || {}).filter((k) => !known.includes(k))];   // + generated apps
 });
 handle("autogen:run", (_e, force) => autogen.run(!!force));
-handle("chat:send", (_e, req) => chat.chatTurn(req));
+handle("chat:send", async (_e, req) => {
+  const r = await chat.chatTurn(req);
+  const mine = schema.hostActions(req && req.profile).map((a) => a.cmd);
+  if (r.profile && !(await approveHostCommands(r.profile, mine, "Claude's change"))) return { reply: r.reply, profile: null, error: "not applied: you didn't approve its new PC commands" };
+  return r;
+});
 handle("tiles:put", (_e, list) => device.putTiles(list));
 handle("tile:get", (_e, name) => device._tileBytes(String(name)) || null);   // RGB565 for the preview
 handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usage.minutes(), busy: autogen.busy }));
@@ -345,9 +350,23 @@ handle("autogen:state", () => ({ last: autogen.usage.last, minutes: autogen.usag
 handle("dialog:import", async () => {
   const r = await dialog.showOpenDialog(win, { filters: [{ name: "JSON", extensions: ["json"] }], properties: ["openFile"] });
   if (r.canceled || !r.filePaths[0]) return null;
-  try { return { ok: true, profile: schema.repairProfile(JSON.parse(fs.readFileSync(r.filePaths[0], "utf8"))) }; }
+  let profile;
+  try { profile = schema.repairProfile(JSON.parse(fs.readFileSync(r.filePaths[0], "utf8"))); }
   catch (e) { return { ok: false, error: e.message }; }
+  if (!(await approveHostCommands(profile, [], `${path.basename(r.filePaths[0])}`))) return { ok: false, error: "Import cancelled: its PC commands were not approved." };
+  return { ok: true, profile };
 });
+
+// A profile from outside (an import, a chat answer) that would add host commands: the owner sees the
+// list and approves it before any of them can run here. known: commands already on this PC's keys.
+async function approveHostCommands(profile, known, what) {
+  const fresh = hostbridge.newHostCommands(profile, [...known, ...Object.values(store.load().host_slots)]);
+  if (!fresh.length) return true;
+  const { response } = await dialog.showMessageBox(win, { type: "warning", buttons: ["Add these commands", "Cancel"], defaultId: 1, cancelId: 1, noLink: true,
+    title: "Commands that run on this PC", message: `${what} adds ${fresh.length === 1 ? "a key that runs a command" : `keys that run ${fresh.length} commands`} on this PC.`,
+    detail: `${fresh.map((c) => `•  ${c}`).join("\n")}\n\nA key runs its command whenever it is pressed. Add them only if you trust where this came from.` });
+  return response === 0;
+}
 handle("dialog:export", async (_e, profile) => {
   const r = await dialog.showSaveDialog(win, { defaultPath: "profile.json", filters: [{ name: "JSON", extensions: ["json"] }] });
   if (r.canceled || !r.filePath) return null;

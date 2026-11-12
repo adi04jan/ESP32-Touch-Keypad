@@ -55,6 +55,14 @@ function assignSlots(profiles, slots = {}) {
   return { slots: out, errors };
 }
 
+// The host commands in `profile` that aren't in `known`, once each: what an import or a chat
+// change would start running on this PC, for the owner to approve first.
+function newHostCommands(profile, known = []) {
+  const seen = new Set(known), out = [];
+  for (const a of schema.hostActions(profile)) if (!seen.has(a.cmd)) { seen.add(a.cmd); out.push(a.cmd); }
+  return out;
+}
+
 // keycombo/key actions that would send a reserved host combo by accident.
 function findActionConflicts(profile) {
   const reserved = new Map();
@@ -170,4 +178,4 @@ class HostBridge {
   dispose() { this.apply({}); }
 }
 
-module.exports = { MOD_SETS, comboForSlot, slotsFromProfiles, assignSlots, findActionConflicts, parseCommand, obsAuth, obsRequest, HostBridge };
+module.exports = { MOD_SETS, comboForSlot, slotsFromProfiles, assignSlots, newHostCommands, findActionConflicts, parseCommand, obsAuth, obsRequest, HostBridge };

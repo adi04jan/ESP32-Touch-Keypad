@@ -75,6 +75,14 @@ test("a folder in Claude's answer opens its page and its page has Back", () => {
   assert.equal(far.pages[0].keys[0].actions[0].value, 1);   // a folder never points past the last page
 });
 
+test("an answer's action types outside the answer schema are dropped: never a host command", () => {
+  const p = toProfile({ profile_name: "X", pages: [{ name: "Main", keys: [{ name: "A", icon: "zap", actions: [
+    { type: "host", value: "run calc.exe" }, { type: "host_action", value: "open x" }, { type: "repeat", count: 2, actions: [{ type: "host", cmd: "run y" }] },
+    { type: "profile", value: "3" }, { type: "text", value: "ok" }, { type: "media", value: "NEXT" }] }] }] }, "X", iconNames());
+  assert.deepEqual(p.pages[0].keys[0].actions, [{ type: "text", value: "ok" }, { type: "media", value: "NEXT" }]);
+  assert.deepEqual(schema.hostActions(p), []);
+});
+
 test("Claude's answer becomes a valid v2 profile: 15 cells, ids, known icons only", () => {
   const icons = iconNames();
   assert.ok(icons.length > 200 && icons.includes("keyboard"));
