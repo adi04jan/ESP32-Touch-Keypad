@@ -7,6 +7,7 @@
  * applies it as one undoable change and autosave writes it to the keypad. */
 "use strict";
 
+const crypto = require("crypto");
 const schema = require("./schema");
 const { runClaude, iconNames } = require("./autogen");
 
@@ -28,7 +29,7 @@ function guide(icons) {
     "A page whose first key has widget:'media' and span:[5,3] is the full-page media player: keep it unless asked.",
     `Icons: ${icons.join(" ")}`,
     "Rules: keep every key the owner did not ask about exactly as it is (id, actions, colours). Use real default Windows shortcuts; never invent one. No destructive key on page 1.",
-    "Private values: every text and multiline value and every host cmd shows as a placeholder like «secret:3». They are opaque: keep each one verbatim on its action (moving the action is fine), never edit, split, copy or explain one. Write a literal value only for an action you add.",
+    "Private values: every text and multiline value and every host cmd shows as a placeholder like «secret:3fa9c21e». They are opaque: keep each one verbatim on its action (moving the action is fine), never edit, split, copy or explain one. Write a literal value only for an action you add.",
     "Answer JSON {reply, profile}. reply: a short plain answer for the owner (what you changed, or your answer to the question). profile: the COMPLETE updated profile when you changed it, else null.",
   ].join("\n");
 }
@@ -47,7 +48,7 @@ function turnText({ history = [], message, profile, slot, slots = [] }, fix = ""
 }
 
 /* Typed text and host commands can hold passwords and tokens, so they never leave this PC: each
- * such action's value goes as «secret:N» and comes back wherever the answer kept that placeholder.
+ * such action's value goes as a «secret:…» placeholder and comes back wherever the answer kept that placeholder.
  * A placeholder returns only into the kind of field it came from: typed text never becomes a command. */
 const PRIVATE = { text: ["value", "typed"], multiline: ["value", "typed"], host: ["cmd", "host"] };
 function eachPrivate(profile, fn) {
@@ -61,20 +62,29 @@ function eachPrivate(profile, fn) {
   for (const pg of list(profile && profile.pages)) for (const k of list(pg && pg.keys))
     if (k && typeof k === "object") for (const f of ["actions", "hold_actions", "off_actions", "mic_actions"]) walk(k[f]);
 }
+// A placeholder is a keyed hash of its kind and value under a key made fresh each run: the same secret
+// keeps its placeholder from turn to turn (a reply's «secret:…» still means it next turn), and the
+// placeholder says nothing about the value.
+const PH_KEY = crypto.randomBytes(16);
+const PH = /«secret:[0-9a-f]+»/g;
+const placeholder = (kind, value) => `«secret:${crypto.createHmac("sha256", PH_KEY).update(`${kind}\0${value}`).digest("hex").slice(0, 8)}»`;
 function redact(profile) {
   const copy = structuredClone(profile), secrets = new Map();
   eachPrivate(copy, (a, field, kind) => {
-    const ph = `«secret:${secrets.size + 1}»`;
+    const ph = placeholder(kind, a[field]);
     secrets.set(ph, { value: a[field], kind });
     a[field] = ph;
   });
   return { profile: copy, secrets };
 }
+// null when a placeholder is left that maps to nothing here (invented, or a typed one moved into a
+// command): applied, the key would type "«secret:…»", or a password would become a command.
 function unredact(profile, secrets) {
+  let left = 0;
   eachPrivate(profile, (a, field, kind) => {
-    a[field] = a[field].replace(/«secret:\d+»/g, (ph) => (secrets.has(ph) && secrets.get(ph).kind === kind ? secrets.get(ph).value : ph));
+    a[field] = a[field].replace(PH, (ph) => { const s = secrets.get(ph); if (s && s.kind === kind) return s.value; left++; return ph; });
   });
-  return profile;
+  return left ? null : profile;
 }
 
 /* One turn. req: {history:[{role,text}], message, profile, slot, slots:[[n,name]]}.
@@ -93,7 +103,9 @@ async function chatTurn(req, claude = "claude") {
       v = out.profile ? schema.validateProfile(out.profile) : { ok: false, errors: ["no profile"] };
       if (!v.ok) return { reply: String(out.reply || ""), profile: null, error: `the change did not validate: ${v.errors.slice(0, 2).join("; ")}` };
     }
-    return { reply: String(out.reply || ""), profile: schema.repairProfile(unredact(out.profile, secrets)) };
+    const restored = unredact(out.profile, secrets);
+    if (!restored) return { reply: String(out.reply || ""), profile: null, error: "Claude changed a private value it was asked to keep (typed text or a PC command), so nothing was applied. Ask again." };
+    return { reply: String(out.reply || ""), profile: schema.repairProfile(restored) };
   } catch (e) {
     return { reply: "", profile: null, error: e.message };
   }

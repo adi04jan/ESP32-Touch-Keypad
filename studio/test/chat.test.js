@@ -86,6 +86,7 @@ let input = ""; process.stdin.on("data", (d) => input += d).on("end", () => {
   keys[6] = { id: 7, name: "New", icon: "zap", led_color: [1, 2, 3], actions: [{ type: "text", value: "a new literal" }] };
   if (process.env.FAKE_CHAT === "drop") keys[5].actions = [{ type: "key", value: "ENTER" }];
   if (process.env.FAKE_CHAT === "swap") keys[1].actions[0].cmd = keys[5].actions[0].value;
+  if (process.env.FAKE_CHAT === "invent") keys[6].actions[0].value = "«secret:0badf00d»";
   console.log(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: { reply: "Moved it.", profile: prof } }));
 });`;
 const SECRETS = ["hunter2-pa55word", "run C:\\deploy.cmd --token tk_9f8e7d", "user@example.com\nsecond-line-secret", "nested-r3peat-secret", "open https://x.y/?key=abc123"];
@@ -109,7 +110,7 @@ test("Ask Claude never sends typed text or host commands: they go as placeholder
   assert.equal(out.error, undefined);
   const seen = r.seen();
   for (const s of SECRETS) for (const part of s.split("\n")) assert.ok(!seen.includes(part) && !seen.includes(JSON.stringify(part).slice(1, -1)), `sent: ${part}`);
-  assert.match(seen, /«secret:1»/);
+  assert.match(seen, /«secret:[0-9a-f]{8}»/);
   assert.match(seen, /opaque/);   // the model is told to keep them verbatim
 });
 
@@ -131,5 +132,24 @@ test("a placeholder the answer deleted stays deleted; a typed one never becomes 
   const drop = await chatTurn(secretReq(), secretRig("drop").claude);
   assert.ok(!JSON.stringify(drop.profile).includes(SECRETS[0].slice(0, 6)));
   const swap = await chatTurn(secretReq(), secretRig("swap").claude);
-  assert.ok(!JSON.stringify(swap.profile.pages[0].keys[1].actions).includes(SECRETS[0]), "a typed password became a host command");
+  assert.equal(swap.profile, null, "a typed password moved into a host command must not come back at all");
+  assert.match(swap.error, /private/);
+});
+
+// Final review: a placeholder that maps to nothing would be typed as "«secret:…»" into the focused app.
+test("an answer with a placeholder that maps to nothing is refused, not typed", async () => {
+  const out = await chatTurn(secretReq(), secretRig("invent").claude);
+  assert.equal(out.profile, null);
+  assert.match(out.error, /private/);
+});
+
+// Final review: numbered by position, «secret:3» could mean another value on the next turn.
+test("a value keeps its placeholder from turn to turn", async () => {
+  const r = secretRig("edit");
+  const loginPh = () => JSON.parse(r.seen().split(/\r?\n/).find((l) => l.startsWith('{"schema_version"')))
+    .pages[0].keys.find((k) => k && k.name === "Login").actions[0].value;
+  await chatTurn(secretReq(), r.claude); const first = loginPh();
+  const req = secretReq(); req.profile.pages[0].keys.reverse();   // Login's secret is now the last one met
+  await chatTurn(req, r.claude);
+  assert.equal(loginPh(), first);
 });

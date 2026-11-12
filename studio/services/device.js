@@ -351,9 +351,12 @@ class Device extends EventEmitter {
     return /^quickbar \[/m.test(r) ? { ok: true } : { ok: false, error: r.trim() || "no reply" };
   }
 
-  // The editor's autosave for the bar: a PC backup first, as for a profile, then the keypad.
+  // The editor's autosave for the bar: the bar it replaces to a PC backup first, as for a profile, then
+  // the keypad. A bar that can't be read is not written over: the editor's draft of it would be empty.
   async saveQuickbar(arr) {
-    this.backup.autoBackup("quickbar", arr);
+    const old = await this.getQuickbar();
+    if (!old) return { ok: false, error: "couldn't read the keypad's quick bar, so it was left as it is" };
+    this.backup.autoBackup("quickbar", old);
     return this.setQuickbar(arr);
   }
 
