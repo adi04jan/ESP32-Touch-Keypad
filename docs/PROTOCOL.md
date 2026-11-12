@@ -194,7 +194,7 @@ The device is DisplayOnly with LE Secure Connections, MITM and bonding.
 - **Pairing window:** opened by `ble pair` or the sheet's Pair new host. The host is asked for the passkey shown on screen (`EVT:PASSKEY`).
 - **First host:** when the keypad has no bonds, a host that starts pairing opens the window by itself and gets a shown passkey.
 - **Otherwise:** the passkey is never shown, and new bonds are rejected.
-- **Only a passkey pairing is a host:** a link must be MITM-authenticated, not just encrypted. A peer with no keyboard or display ("Just Works"), bonding or not, is disconnected and its bond deleted: it gets no HID reports and no console. A link that never authenticates is dropped after 15 s (not while the pairing window is open), so it can't hold the keypad and keep the owner's host from reconnecting.
+- **Only a passkey pairing is a host:** a link must be MITM-authenticated, not just encrypted. A peer with no keyboard or display ("Just Works"), bonding or not, is disconnected: it gets no HID reports and no console. A bond it has just made is deleted; one made under older firmware stays saved but is refused on every reconnect (Forget it in Settings › Bluetooth). A link that never authenticates is dropped after 15 s (not while the pairing window is open), so it can't hold the keypad and keep the owner's host from reconnecting.
 - Up to three hosts; `ble use <n>` or the Bluetooth tab switches between them with directed advertising.
 
 ## NVS
