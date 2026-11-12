@@ -65,6 +65,24 @@ test("hostActions and page clamping cover off_actions and mic_actions too", () =
   assert.ok(schema.validateProfile(r).ok, schema.validateProfile(r).errors.join());
 });
 
+test("hold_to_fire: a boolean, never with hold_actions; repair keeps it and drops the hold actions", () => {
+  const keys = blank();
+  keys[0] = key(1, { hold_to_fire: true });
+  keys[3] = key(4, { hold_to_fire: false });
+  assert.deepEqual(schema.validateProfile(profile(keys)).errors, []);
+  keys[1] = key(2, { hold_to_fire: true, hold_actions: [{ type: "key", value: "B" }] });
+  keys[2] = key(3, { hold_to_fire: "yes" });
+  const errs = schema.validateProfile(profile(keys)).errors;
+  assert.ok(errs.some((e) => /keys\[1\]: hold_to_fire and hold_actions/.test(e)), errs.join());
+  assert.ok(errs.some((e) => /keys\[2\]\.hold_to_fire must be true or false/.test(e)), errs.join());
+  const r = schema.repairProfile(profile(keys)).pages[0].keys;
+  assert.equal(r[0].hold_to_fire, true);
+  assert.deepEqual([r[1].hold_to_fire, "hold_actions" in r[1]], [true, false]);
+  assert.equal("hold_to_fire" in r[2], false);
+  assert.equal("hold_to_fire" in r[3], false);
+  assert.ok(schema.validateProfile(schema.repairProfile(profile(keys))).ok);
+});
+
 test("repeat nesting deeper than 4 is rejected and repaired away", () => {
   let a = { type: "key", value: "A" };
   for (let i = 0; i < 5; i++) a = { type: "repeat", count: 1, actions: [a] };

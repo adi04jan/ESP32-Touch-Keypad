@@ -299,6 +299,9 @@ function validateProfile(p) {
       if (typeof k.name !== "string" || k.name.length > MAX_LABEL) e.push(`${kp}.name must be a string of at most ${MAX_LABEL} chars`);
       if (k.anim !== undefined && !ANIMS.includes(k.anim)) e.push(`${kp}.anim must be one of ${ANIMS.join(", ")}`);
       if (k.toggle !== undefined && typeof k.toggle !== "boolean") e.push(`${kp}.toggle must be true or false`);
+      // hold_to_fire: a tap does nothing ("Hold to fire" on the keypad); holding 500 ms fires `actions`.
+      if (k.hold_to_fire !== undefined && typeof k.hold_to_fire !== "boolean") e.push(`${kp}.hold_to_fire must be true or false`);
+      if (k.hold_to_fire === true && Array.isArray(k.hold_actions) && k.hold_actions.length) e.push(`${kp}: hold_to_fire and hold_actions can't both be set (holding fires the key's actions)`);
       if (k.widget !== undefined) {
         const span = WIDGETS[k.widget];
         if (!span) e.push(`${kp}.widget '${k.widget}' unknown`);
@@ -340,9 +343,10 @@ function repairKey(k, i) {
     if (frames.length >= 2) { out.frames = frames; out.frame_ms = clampInt(k.frame_ms, 40, 2000, 100); }
     if (ANIMS.includes(k.anim)) out.anim = k.anim;
     if (k.toggle === true) out.toggle = true;
+    if (k.hold_to_fire === true) out.hold_to_fire = true;   // the safer reading wins: its hold actions go
   }
   out.actions = repairActions(k.actions || []);
-  for (const f of ["hold_actions", "off_actions", ...(k.widget ? ["mic_actions"] : [])]) {   // mic_actions: the player's mic button
+  for (const f of [...(out.hold_to_fire ? [] : ["hold_actions"]), "off_actions", ...(k.widget ? ["mic_actions"] : [])]) {   // mic_actions: the player's mic button
     if (!Array.isArray(k[f])) continue;
     const list = repairActions(k[f]);
     if (list.length) out[f] = list;

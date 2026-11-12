@@ -19,7 +19,7 @@ function guide(icons) {
     "You help the owner of a Touch Keypad organize, create and edit its profiles, inside Macropad Studio.",
     "The keypad: a 480x320 touch screen, 5x3 keys per page (15 cells), up to 16 pages per profile, 16 profiles. Keys type into the focused Windows app over Bluetooth.",
     "Profile JSON (schema v2): {schema_version:2, profile_name (max 24), color:[r,g,b], default_delay (ms), pages:[{name (max 14), keys:[exactly 15 entries, null for an empty cell]}]}.",
-    "A key: {id: its cell 1-15, name (max 14 chars), icon (from the list below), led_color:[r,g,b], actions:[...], optional hold_actions:[...], toggle:true with off_actions:[...], anim: eq|pulse|rec}.",
+    "A key: {id: its cell 1-15, name (max 14 chars), icon (from the list below), led_color:[r,g,b], actions:[...], optional hold_actions:[...], toggle:true with off_actions:[...], anim: eq|pulse|rec, hold_to_fire:true (a tap does nothing, holding 500 ms fires actions; never with hold_actions)}.",
     "Actions: {type:'key', value:KEY} | {type:'keycombo', keys:[MODIFIER..., KEY]} | {type:'text', value} typed literally | {type:'multiline', value} | {type:'delay', ms} |",
     "  {type:'media', value: PLAY_PAUSE|STOP|NEXT|PREVIOUS|MUTE|VOLUME_UP|VOLUME_DOWN} | {type:'telephony', value: MIC_MUTE|ANSWER|DECLINE} | {type:'page', value:n} (1-based) | {type:'back'} |",
     "  {type:'profile', value: 1-16} | {type:'host', cmd: 'open <url, file or app>' or 'run <command line>'} (Studio runs it on the PC).",
