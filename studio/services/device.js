@@ -112,7 +112,11 @@ class Device extends EventEmitter {
     if (this.bridge) this.emit("bridge", this.bridge.apply(slots));
   }
 
-  disconnect() { this.link.disconnect(); }
+  // Pending pushes and autosaves go to the keypad first (Disconnect, quit, firmware install).
+  async disconnect() {
+    await this.flush();
+    this.link.disconnect();
+  }
   syncTime() { return this.link.command(feeds.timeCommand()); }
 
   async refreshStatus() {
@@ -195,6 +199,8 @@ class Device extends EventEmitter {
     if (kinds.has("title")) await this.link.command(`title ${keyId} ${clean.name}`);
     return true;
   }
+
+  pending() { return this._push.size + this._save.size > 0; }
 
   // Flush pending debounces now (used on quit and by tests).
   async flush() {

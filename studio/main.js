@@ -253,7 +253,17 @@ function cleanup() {
   if (tray) { tray.destroy(); tray = null; }
 }
 const smokeExit = (code) => { cleanup(); app.exit(code); };
-app.on("before-quit", () => { app.isQuitting = true; cleanup(); });
+let quitFlushed = false;
+app.on("before-quit", (e) => {
+  app.isQuitting = true;
+  if (!quitFlushed && device && device.pending()) {   // edits still waiting go to the keypad first, for up to 10 s
+    e.preventDefault();
+    quitFlushed = true;
+    Promise.race([device.flush(), new Promise((r) => setTimeout(r, 10000))]).finally(() => app.quit());
+    return;
+  }
+  cleanup();
+});
 app.on("window-all-closed", () => { if (app.isQuitting || SMOKE) { if (link) link.disconnect(); app.quit(); } });
 
 // ---- IPC --------------------------------------------------------------------
@@ -284,7 +294,7 @@ handle("device:connect", async (_e, portPath) => {
   if (link.isOpen()) return { ok: true, ...device.state() };
   return connectOnce(portPath || undefined);
 });
-handle("device:disconnect", () => { manualDisconnect = true; device.disconnect(); return true; });
+handle("device:disconnect", async () => { manualDisconnect = true; await device.disconnect(); return true; });
 handle("device:state", () => ({ ...device.state(), noSerial: NO_SERIAL, view: process.env.STUDIO_VIEW || null, appVersion: app.getVersion(), smoke: SMOKE }));
 handle("device:status", () => device.refreshStatus());
 handle("device:fsinfo", () => device.fsinfo());
@@ -381,9 +391,8 @@ handle("flash:run", async () => {
   const target = await flasher.targetPort(link);   // the live USB link, checked to be the keypad
   if (target.error) return { ok: false, error: target.error };
   const port = target.port;
-  await device.flush();   // a pending autosave goes to the keypad first
   manualDisconnect = true;
-  device.disconnect();
+  await device.disconnect();   // a pending autosave goes to the keypad first
   await new Promise((r) => setTimeout(r, 400));
   const r = await flasher.flash(port, fwResources(), (p) => send("flash", p));
   log(r.ok ? `Firmware installed on ${port}.\n` : `Firmware install failed: ${r.error}\n${r.log.slice(-1500)}\n`);

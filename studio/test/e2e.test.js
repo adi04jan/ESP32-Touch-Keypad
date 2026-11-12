@@ -180,6 +180,17 @@ test("on connect the host table follows the keypad's profiles: stale slots dropp
   link.disconnect();
 });
 
+test("disconnecting writes a pending autosave first", async () => {
+  const { sim, link, dev } = rig();
+  await dev.connect("SIM1");
+  const p = schema.blankProfile("Pending");
+  p.pages[0].keys[0] = { id: 1, name: "Late edit", led_color: [1, 2, 3], actions: [{ type: "key", value: "A" }] };
+  dev.edit({ slot: 1, profile: p, page: 1, keyId: 1, kinds: ["title"] });
+  await dev.disconnect();
+  assert.equal(link.isOpen(), false);
+  assert.equal(JSON.parse(sim.files.get("/profile1.json")).pages[0].keys[0].name, "Late edit");
+});
+
 test("autosave re-uploads tiles the device lost, from the PC cache", async () => {
   const { sim, link, dev } = rig();
   await dev.connect("SIM1");
