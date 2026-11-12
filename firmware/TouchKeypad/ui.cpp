@@ -86,6 +86,8 @@ static int backDepth = 0;
 
 static int pressedBtn = -1;          // player control or sheet button under the finger
 static uint32_t offArmedAt = 0;      // Settings › Device › Turn off, tapped once: a second tap within 3 s turns it off
+static int forgetArmed = -1;         // Settings › Bluetooth › Forget, the same: the host row armed, and when
+static uint32_t forgetArmedAt = 0;
 static int brightness = 200, dimAfterS = DIM_DEFAULT_S, dimState = 0;   // 0 lit, 1 dim, 2 off
 static uint32_t lastAct = 0;
 static uint32_t timeEpoch = 0, timeBase = 0;
@@ -132,7 +134,11 @@ static char hostName[24] = "";
 struct Note { char app[20], title[48], body[96], icon[24], tag[12]; uint32_t at; };
 static Note notes[NOTE_MAX], banNote;
 static int noteN = 0, noteUnread = 0;
-static uint32_t ban0 = 0, shade0 = 0, menu0 = 0;
+static uint32_t ban0 = 0, menu0 = 0;
+static Spring shadeRise;          // the shade: x 0 up .. 1 down; it follows a drag (shadeDrag), then springs
+static bool shadeDrag = false;
+static float shadeDragFrom = 0;   // where the shade stood when the finger took it
+static void shadeGrab(int y, uint32_t now);
 static bool banOn = false, shadeClosing = false;
 static int shadeBotDrawn = STATUS_H;
 
@@ -265,6 +271,7 @@ static void emitKey(int c, char st) {
   else Con.printf("EVT:KEY %d %d %c\n", currentPage + 1, c + 1, st);
 }
 static void emitPanel() {   // the top layer: Media over a panel reports Media; closing it reports the panel again
+  mark(0, 0, SCR_W, STATUS_H);   // the status chip names it
   if (Layer *L = topLayer()) Con.printf("EVT:PANEL %d %d %d\n", L->btn, L->prof, L->page + 1); else Con.println("EVT:PANEL 0");
 }
 static void emitMode() { Con.printf("EVT:UI %s\n", MODE_NAMES[mode]); }
@@ -750,7 +757,7 @@ static void drawCell(int c, uint32_t now) {
 
   bool host = false;
   for (JsonVariant act : k["actions"].as<JsonArray>()) host |= !strcmp(act["type"] | "", "host");
-  bool hasHold = k["hold_actions"].size() > 0, holding = down && hasHold && !holdFired;
+  bool hasHold = k["hold_actions"].size() > 0 || (k["hold_to_fire"] | false), holding = down && hasHold && !holdFired;
   int tagR = (int)kx + KEY + 6;   // tags sit on the key's top-right corner
   if (on) tag(tagR, cy, "ON", GREEN, false, GREEN, ON_INK, A);
   else if (host) tag(tagR, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
@@ -849,11 +856,14 @@ static void drawStatus() {
     text(fTitle, x, 21, b, TXT);
     x += textW(fTitle, b) + 12;
   }
-  C3 line = lineC();
+  // The chip names what is on top: a panel or Media by its bar label, with a close mark (a tap closes it);
+  // else the profile (a tap opens Profiles).
+  Layer *L = topLayer();
+  C3 line = L ? lineOf(L->col) : lineC();
   char pg[12];
-  sprintf(pg, "%d/%d", currentPage + 1, pageCount);
+  snprintf(pg, sizeof pg, "%d/%d", (L ? L->page : currentPage) + 1, L ? L->pages : pageCount);
   int pgW = textW(fRead, pg);
-  String name = ellipsize(fBodyB, profileName, constrain(bellX - 8 - (x - 6) - (pgW + 50), 24, 150));
+  String name = ellipsize(fBodyB, L ? qb[L->btn - 1].label : profileName, constrain(bellX - 8 - (x - 6) - (pgW + 50), 24, 150));
   profChipX = x - 6;
   profChipW = textW(fBodyB, name.c_str()) + pgW + 50;
   rrFill(profChipX, 2, profChipW, 24, 12, ctlFill());
@@ -863,7 +873,7 @@ static void drawStatus() {
   text(fBodyB, x, 19, name.c_str(), TXT);
   x += textW(fBodyB, name.c_str()) + 6;
   text(fRead, x, 19, pg, TXT2);
-  glyph(iconFind("chevron-down", true), true, x + pgW + 11, 14, 14, TXT2);
+  glyph(iconFind(L ? "x" : "chevron-down", true), true, x + pgW + 11, 14, 14, TXT2);
 }
 
 static void drawStations() {
@@ -928,7 +938,7 @@ static void drawPlayer(uint32_t now) {
   base += 24;
   if (np.have && np.album[0]) { text(fBody, SEEK_X, base, ellipsize(fBody, np.album, SEEK_W).c_str(), TXT); base += 22; }
   const char *artist = np.have ? np.artist : "Studio sends the track here";
-  String ar = ellipsize(fBody, artist, 150);
+  String ar = ellipsize(fBody, artist, np.have && np.app[0] ? 150 : SEEK_W);   // 150: room for the app beside it
   text(fBody, SEEK_X, base, ar.c_str(), TXT2);
   int x = SEEK_X + textW(fBody, ar.c_str()) + 10;
   if (np.have && np.app[0]) {
@@ -941,20 +951,22 @@ static void drawPlayer(uint32_t now) {
       fillRect(x + i * 5, base - (int)h, 3, (int)h, GREEN);
     }
   }
-  // seek
-  float p = np.len > 0 ? clamp01(npPos() / (float)np.len) : 0;
-  rrFill(SEEK_X, 153, SEEK_W, 6, 3, solidFill(TRACK));
-  if (p > 0) { Fill fl = solidFill(CYAN); if (!T->crisp) fl.top = mix(CYAN, BLACK, 100); rrFill(SEEK_X, 153, SEEK_W * p, 6, 3, fl); }
-  softShadow(SEEK_X + SEEK_W * p - 7, 149, 14, 14, 200);
-  circle(SEEK_X + SEEK_W * p, 156, 7, T->knob);
-  if (T->light && luma(T->knob) > 200) ringC(SEEK_X + SEEK_W * p, 156, 7, 1, HAIR, 80);
-  char a[12], b[13];
-  clockStr(a, sizeof a, npPos());
-  b[0] = 0;
-  clockStr(b + 3, sizeof b - 3, np.len - npPos());
-  memcpy(b, "\xe2\x88\x92", 3);   // U+2212 minus
-  text(fLabel, SEEK_X, 190, a, TXT2);
-  text(fLabel, SEEK_X + SEEK_W, 190, b, TXT2, 255, AL_R);
+  // seek: only for a track with a length (nothing playing, or a live stream, has nowhere to seek)
+  if (np.have && np.len > 0) {
+    float p = clamp01(npPos() / (float)np.len);
+    rrFill(SEEK_X, 153, SEEK_W, 6, 3, solidFill(TRACK));
+    if (p > 0) { Fill fl = solidFill(CYAN); if (!T->crisp) fl.top = mix(CYAN, BLACK, 100); rrFill(SEEK_X, 153, SEEK_W * p, 6, 3, fl); }
+    softShadow(SEEK_X + SEEK_W * p - 7, 149, 14, 14, 200);
+    circle(SEEK_X + SEEK_W * p, 156, 7, T->knob);
+    if (T->light && luma(T->knob) > 200) ringC(SEEK_X + SEEK_W * p, 156, 7, 1, HAIR, 80);
+    char a[12], b[13];
+    clockStr(a, sizeof a, npPos());
+    b[0] = 0;
+    clockStr(b + 3, sizeof b - 3, np.len - npPos());
+    memcpy(b, "\xe2\x88\x92", 3);   // U+2212 minus
+    text(fLabel, SEEK_X, 190, a, TXT2);
+    text(fLabel, SEEK_X + SEEK_W, 190, b, TXT2, 255, AL_R);
+  }
   // controls
   const PBtn *B;
   int nb = playerBtns(B);
@@ -1261,7 +1273,10 @@ static bool riseGesture(uint8_t kind, int x0, int y0, int x1, int y1, uint32_t n
     if (!mediaDrag) {
       if (abs(dy) <= LOCK_PX || abs(dy) <= abs(dx)) return false;
       bool open = topLayer() == &media;
-      if (open ? dy < 0 : dy > 0) return false;   // up on an open Media, or down on the keys (the shade's)
+      if (open ? dy < 0 : dy > 0) {   // up on an open Media; down: the shade's (a panel open: it closes on release)
+        if (!open && !topLayer()) { shadeGrab(y1, now); return true; }
+        return false;
+      }
       if (!open && !mediaLoad()) return false;    // no entry 1: nothing to open
       slideCancelPress();
       slideEnd();
@@ -1341,12 +1356,14 @@ static void loadSlots() {
   refreshInfo();
 }
 
-// Settings → Display: one chip per theme, each a small live sample of that theme.
-#define THEME_Y 184
-#define THEME_H 26
-#define THEME_COLS 5
+// Settings → Display: one chip per theme, each a small live sample of that theme (its ground, a key, its
+// name in its own ink), 44 px tall like every other control on the sheet.
+#define THEME_Y 176
+#define THEME_H 44
+#define THEME_COLS 4
 #define THEME_GAP 6
-#define THEME_ROW (THEME_H + 6)
+#define THEME_ROW (THEME_H + 4)
+#define THEME_ROWS ((THEME_COUNT + THEME_COLS - 1) / THEME_COLS)
 static float themeChipW() { return (PANE_W - (THEME_COLS - 1) * THEME_GAP) / (float)THEME_COLS; }
 static void themeChips() {
   float w = themeChipW();
@@ -1358,10 +1375,26 @@ static void themeChips() {
     Fill g = solidFill(th.g1); g.top = th.g0; g.bot = th.g2;
     g.edge = th.light ? th.hair : WHITE; g.edgeA = th.light ? 50 : 30;
     rrFill(x, cy, w, THEME_H, T->crisp ? 4 : 10, g);
-    float ks = 18, kx = x + (w - ks) / 2 - 1, ky = cy + 4;
+    float ks = 14, kx = x + (w - ks) / 2, ky = cy + 5;
     keyBody(th, kx, ky, ks, ks, th.keyR * ks / KEY, th.ks == KS_PIXEL ? th.track : HEXC(0x4f8cff), -1, false, 255);
+    text(fLabelS, (int)(x + w / 2), cy + 37, ellipsize(fLabelS, th.title, (int)w - 6).c_str(), th.txt, 255, AL_C);
     if (cur) rrRing(x - 2, cy - 2, w + 4, THEME_H + 4, T->crisp ? 5 : 12, 2, ACCENT);
   }
+}
+
+// A profile card's name, whole where it can be: one line of the bold body face (15 px) when it fits, else
+// the label face (13 px), on two lines split at a space when one won't do, the second cut short last.
+static void cardName(float x, int y, const char *name, C3 ink) {
+  const int w = CARD_W - 14, lx = (int)x + 8;
+  if (textW(fBodyB, name) <= w) { text(fBodyB, lx, y + 34, name, ink); return; }
+  if (textW(fLabel, name) <= w) { text(fLabel, lx, y + 34, name, ink); return; }
+  String s = name;
+  int cut = -1;
+  for (int i = s.indexOf(' '); i > 0; i = s.indexOf(' ', i + 1))
+    if (textW(fLabel, s.substring(0, i).c_str()) <= w) cut = i;
+  if (cut < 0) { text(fLabel, lx, y + 34, ellipsize(fLabel, name, w).c_str(), ink); return; }
+  text(fLabel, lx, y + 27, s.substring(0, cut).c_str(), ink);
+  text(fLabel, lx, y + 41, ellipsize(fLabel, s.substring(cut + 1).c_str(), w).c_str(), ink);
 }
 
 static void drawPane() {
@@ -1372,13 +1405,8 @@ static void drawPane() {
       text(fBody, PANE_X, 106, "Brightness", TXT);
       text(fRead, PANE_X + PANE_W, 106, v, TXT2, 255, AL_R);
       slider(PANE_X, 110, PANE_W, brightness / 255.0f);
-      text(fBody, PANE_X, 176, "Theme", TXT);
-      text(fRead, PANE_X + PANE_W, 176, T->title, ACCENT, 255, AL_R);
+      text(fBody, PANE_X, 170, "Theme", TXT);
       themeChips();
-      text(fBody, PANE_X, 268, "On USB the screen stays on", TXT);
-      text(fRead, PANE_X, 289, "On battery: dim 20 s, off 1 min,", TXT2);
-      snprintf(v, sizeof v, "deep sleep after %d min", powerSleepMin());
-      text(fRead, PANE_X, 308, powerSleepMin() ? v : "no deep sleep", TXT2);
       break;
     }
     case 1: {   // all slots, 4 x 4: tap one to switch
@@ -1390,7 +1418,7 @@ static void drawPane() {
         if (slots[i].ok) {
           rrFill(x, y, CARD_W, CARD_H, T->crisp ? 4 : 10, cardFill());
           rrFill(x + 8, y + 7, 18, 4, 2, solidFill(T->crisp ? TXT2 : C3{ slots[i].col[0], slots[i].col[1], slots[i].col[2] }));
-          text(fBodyB, (int)x + 8, y + 34, ellipsize(fBodyB, slots[i].name, CARD_W - 14).c_str(), cur ? ACCENT : TXT);
+          cardName(x, y, slots[i].name, cur ? ACCENT : TXT);
         } else {
           rrRing(x + 0.5f, y + 0.5f, CARD_W - 1, CARD_H - 1, 9.5f, 1, mix(PLY, HAIR, 20));
           sprintf(v, "%d", i + 1);
@@ -1407,10 +1435,10 @@ static void drawPane() {
           bool up = info.up[i];
           rrFill(PANE_X, y, PANE_W, 52, T->crisp ? 4 : 12, cardFill());
           glyph(iconFind("bluetooth", true), true, PANE_X + 22, y + 26, 20, TXT);
-          text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, info.names[i], 140).c_str(), TXT);
+          text(fBodyB, PANE_X + 42, y + 22, ellipsize(fBodyB, info.names[i], up ? 196 : 116).c_str(), TXT);
           text(fRead, PANE_X + 42, y + 40, up ? "Connected" : "Saved", up ? GREEN : TXT2);
-          button(PANE_X + PANE_W - 86, y + 6, 80, 40, "Forget", nullptr, 2, pressedBtn == 20 + i);
-          if (!up) button(PANE_X + PANE_W - 156, y + 6, 62, 40, "Use", nullptr, 0, pressedBtn == 10 + i);
+          button(PANE_X + PANE_W - 86, y + 6, 80, 40, forgetArmed == i ? "Tap again" : "Forget", nullptr, 2, pressedBtn == 20 + i);
+          if (!up) button(PANE_X + PANE_W - 172, y + 6, 62, 40, "Use", nullptr, 0, pressedBtn == 10 + i);   // 24 px clear of Forget
         } else {
           rrRing(PANE_X + 0.5f, y + 0.5f, PANE_W - 1, 51, 11.5f, 1, mix(PLY, HAIR, 20));
           glyph(iconFind("bluetooth-off", true), true, PANE_X + 22, y + 26, 20, TXT3);
@@ -1473,6 +1501,7 @@ static void drawPane() {
       snprintf(dd[3], 40, "%s", info.mac);
       int pct = powerBatteryPct();
       if (powerOnUsb()) snprintf(dd[4], 40, pct < 0 ? "USB" : pct < 100 ? "USB, charging (%d%%)" : "USB, battery full", pct);
+      else if (powerSleepMin()) snprintf(dd[4], 40, "Battery %d%%, sleeps after %d min", pct, powerSleepMin());
       else snprintf(dd[4], 40, "Battery %d%%", pct);
       for (int i = 0; i < 5; i++) {
         text(fBody, PANE_X, 212 + i * 23, dt[i], TXT2);
@@ -1664,12 +1693,9 @@ static void drawHud(uint32_t now) {
 #define SH_NXT 432
 static int shadeRows() { return min(noteN, 3); }
 static int shadeHeight() { return SH_LIST + (noteN ? shadeRows() * SH_ROWH : 40) + 14; }   // the shade's bottom
-static int shadeBot(uint32_t now) {
+static int shadeBot(uint32_t now) {   // its bottom edge: on the finger, or on the spring Media and Settings ride
   if (mode != M_SHADE) return STATUS_H;
-  if (!shade0) return shadeClosing ? shadeHeight() : STATUS_H;   // its first frame has not come yet
-  float e = easeQuad((int32_t)(now - shade0) / 220.0f);   // signed: shade0 is now | 1, a millisecond ahead half the time
-  if (shadeClosing) e = 1 - e;
-  return STATUS_H + (int)((shadeHeight() - STATUS_H) * e);
+  return STATUS_H + (int)lroundf((shadeHeight() - STATUS_H) * shadeRise.x);
 }
 static void markShade() { mark(0, STATUS_H, SCR_W, shadeHeight() - STATUS_H + 14); }
 
@@ -1860,6 +1886,16 @@ static void qbCheck() {
   }
 }
 
+// A bar button: icon over its label, lit (an accent fill) for the layer it has open.
+static void barButton(int top, const IconDef *ic, bool uiIcon, const char *label, bool lit) {
+  const int cx = BAR_X + BAR_W / 2;
+  bool inked = T->crisp && T->light;   // Retro: an ink fill
+  C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
+  if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
+  if (ic) glyph(ic, uiIcon, cx, top + 22, 22, ink);
+  text(fLabelS, cx, top + 46, ellipsize(fLabelS, label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
+}
+
 static void drawBar(uint32_t now) {
   if (!gfxHits(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H)) return;
   fillRect(BAR_X, STATUS_H, BAR_W, SCR_H - STATUS_H, BARC);
@@ -1876,20 +1912,15 @@ static void drawBar(uint32_t now) {
     rrRing(BAR_X + 5.5f, SUG_Y + 4.5f, BAR_W - 11, SUG_H - 9, r - 0.5f, 2, lc);
     circle(cx, SUG_Y + 21, 5, lc);
     text(fLabelS, cx, SUG_Y + 43, ellipsize(fLabelS, sug.name, BAR_W - 14).c_str(), TXT, 255, AL_C);
+  } else if (qb[0].prof && qb[0].ok) {   // nothing to suggest: Media's way in (else only a swipe up finds it)
+    barButton(SUG_Y, iconFind(qb[0].icon, false), false, qb[0].label, topLayer() == &media);
   }
-  // Rows 0-2: entries 2-4 (entry 1 is the swipe-up page); row 3: Settings, always there.
+  // Rows 0-2: entries 2-4; row 3: Settings, always there. The open panel's button is lit, like the sheet's tab.
   for (int row = 0; row < QB_BUTTONS; row++) {
-    int top = QB_Y0 + row * QB_H;
     bool settings = row == QB_BUTTONS - 1;
-    const QbBtn &b = qb[settings ? 0 : row + 1];
-    if (!settings && (!b.prof || !b.ok)) continue;
-    bool lit = !settings && panel.btn == row + 2;   // the open panel's button: like the sheet's current tab
-    bool inked = T->crisp && T->light;   // Retro: an ink fill
-    C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
-    if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
-    const IconDef *ic = settings ? iconFind("settings", true) : iconFind(b.icon, false);
-    if (ic) glyph(ic, settings, cx, top + 22, 22, ink);
-    text(fLabelS, cx, top + 46, settings ? "Settings" : ellipsize(fLabelS, b.label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
+    const QbBtn &b = qb[row + 1 < QB_BUTTONS ? row + 1 : 0];
+    if (settings) barButton(QB_Y0 + row * QB_H, iconFind("settings", true), true, "Settings", false);
+    else if (b.prof && b.ok) barButton(QB_Y0 + row * QB_H, iconFind(b.icon, false), false, b.label, panel.btn == row + 2 && topLayer() != &media);
   }
 }
 
@@ -2133,11 +2164,13 @@ static bool animate(uint32_t now) {
       riseMark(true);
       live = true;
     }
+    if (mode == M_SHADE && (shadeRise.on || shadeDrag)) {
+      if (!shadeDrag && springStep(shadeRise, dt, eps) && shadeClosing) { shadeClosing = false; mode = M_HOME; emitMode(); }
+      live = true;
+    }
   }
-  if (mode == M_SHADE) {
-    if (!shade0) shade0 = now | 1;
+  {   // the shade's edge (also once it has gone: mode is home again, the edge back at the band)
     int bot = shadeBot(now);
-    if (shadeClosing && (int32_t)(now - shade0) > 220) { shadeClosing = false; mode = M_HOME; emitMode(); bot = STATUS_H; }
     if (bot != shadeBotDrawn) {
       int a = min(bot, shadeBotDrawn), b = max(bot, shadeBotDrawn);
       mark(0, a, SCR_W, b - a + 14);   // the rows the edge crossed, and the shadow under it
@@ -2224,6 +2257,7 @@ void uiTick() {
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
   if (offArmedAt && (int32_t)(now - offArmedAt) > 3000) { offArmedAt = 0; mark(GEN_X, 42, GEN_W, 44); }   // signed: armed is now | 1
+  if (forgetArmed >= 0 && (int32_t)(now - forgetArmedAt) > 3000) { forgetArmed = -1; if (mode == M_SHEET) mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
   // On USB the screen stays lit at full power. On battery: dim within 20 s (CPU slowed, LED dark),
   // the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
   bool usb = powerOnUsb();
@@ -2620,8 +2654,14 @@ static int barHit(int x, int y) {   // -1 off the bar, 0 the suggestion slot, 2-
   return row < QB_BUTTONS - 1 ? row + 2 : row == QB_BUTTONS - 1 ? QB_SETTINGS : -1;
 }
 
+// The status chip: with a panel or Media on top it closes that layer; else it opens Profiles.
+static void chipTap() {
+  if (Layer *L = topLayer()) layerClose(*L);
+  else uiOpenSheet(1);
+}
+
 static void barTap(int i) {
-  if (i == 0) {   // the suggestion slot: the way back first, else the suggestion
+  if (i == 0) {   // the suggestion slot: the way back first, else the suggestion, else Media
     if (backTo.prof) {
       int p = backTo.prof, pg = backTo.page;
       feedbackClick();
@@ -2630,6 +2670,9 @@ static void barTap(int i) {
     } else if (sug.slot && sug.slot != currentProfile) {
       feedbackClick();
       uiSetProfile(sug.slot, "suggest");
+    } else if (qb[0].prof && qb[0].ok) {
+      feedbackClick();
+      if (topLayer() == &media) layerClose(media); else uiPanel(1);
     }
     return;
   }
@@ -2866,11 +2909,13 @@ void uiOpenShade() {
   if (mode != M_HOME) return;
   refreshHosts();   // what the shade shows; nothing slow (all the profiles' details took 1.5 s)
   if (banOn) { banOn = false; markBanner(); }
+  slideCancelPress();
   mode = M_SHADE;
-  shadeClosing = false;
-  shade0 = 0;   // the slide's clock starts at its first frame (animate), so a slow moment before it can't make it jump
+  shadeClosing = shadeDrag = false;
+  shadeRise = { 0, 0, 0, sheetK, sheetZ, false };
+  riseGo(shadeRise, 1, 0);   // down on the spring Media and Settings ride (a drag takes it over: shadeGrab)
   shadeBotDrawn = STATUS_H;
-  pressed = pressedBtn = dragSlider = -1;
+  pressedBtn = dragSlider = -1;
   if (noteUnread) { noteUnread = 0; mark(0, 0, SCR_W, STATUS_H); }   // the shade shows them: the bell's count goes
   emitMode();
 }
@@ -2878,8 +2923,21 @@ void uiCloseShade() {   // and the host menu
   if (mode == M_MENU) { markMenu(); mode = M_HOME; emitMode(); return; }
   if (mode != M_SHADE || shadeClosing) return;
   shadeClosing = true;
-  shade0 = 0;
+  if (shadeDrag) { shadeDrag = false; slide.ignore = true; }   // the host closed it under the finger: the rest of the touch is nothing
+  riseGo(shadeRise, 0, 0);
   pressedBtn = dragSlider = -1;
+}
+
+// A drag down from the keys (nothing on top of them): the shade comes down on the finger, from where it is.
+static void shadeGrab(int y, uint32_t now) {
+  uiOpenShade();
+  if (mode != M_SHADE) return;
+  shadeRise.on = false;
+  shadeRise.x = shadeRise.v = 0;
+  shadeDrag = true;
+  shadeDragFrom = 0;
+  rn = 0;
+  riseSample(y, now);
 }
 
 static void openHostMenu() {
@@ -3044,7 +3102,12 @@ static void sheetTap(int x, int y) {
   int b = sheetButtonAt(x, y);
   if (b == 1) { uiCloseSheet(); return; }
   if (b >= 10 && b < 13) { bleUse(b - 10); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
-  if (b >= 20 && b < 23) { bleForget(b - 20); refreshInfo(); mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); return; }
+  if (b >= 20 && b < 23) {   // Forget asks first, as Turn off does: a slip on a resistive panel unpairs a host
+    if (forgetArmed == b - 20) { forgetArmed = -1; bleForget(b - 20); refreshInfo(); }
+    else { forgetArmed = b - 20; forgetArmedAt = millis() | 1; }
+    mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H);
+    return;
+  }
   if (b == 30) { mode = M_HOME; blePairOpen(); return; }
   if (b == 40) { uiCalibrate(); return; }
   if (b == 41) {
@@ -3060,8 +3123,8 @@ static void sheetTap(int x, int y) {
   }
   switch (sheetTab) {
     case 0:
-      if (inRect(x, y, PANE_X - 3, THEME_Y - 3, PANE_W + 6, 2 * THEME_ROW)) {
-        int col = constrain((int)((x - PANE_X) / (themeChipW() + THEME_GAP)), 0, THEME_COLS - 1), row = (y - THEME_Y + 3) / THEME_ROW;
+      if (inRect(x, y, PANE_X - 3, THEME_Y - 3, PANE_W + 6, THEME_ROWS * THEME_ROW)) {
+        int col = constrain((int)((x - PANE_X) / (themeChipW() + THEME_GAP)), 0, THEME_COLS - 1), row = (y - THEME_Y + 2) / THEME_ROW;
         if (row * THEME_COLS + col < THEME_COUNT) uiSetTheme(row * THEME_COLS + col);
       }
       break;
@@ -3085,6 +3148,9 @@ static void sheetTap(int x, int y) {
       break;
   }
 }
+
+// Studio's "hold to fire": a tap only says so, a 500 ms hold (the hold arc) runs the key's actions.
+static bool holdToFire(int c) { return keyAt(c)["hold_to_fire"] | false; }
 
 static void runKey(int c, bool hold) {
   JsonVariant k = keyAt(c);
@@ -3159,10 +3225,31 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
   if (mode == M_SHADE) {
     if (shadeClosing) return;
     if (kind == G_DOWN) {
+      rn = 0;
+      if (shadeDrag) {   // a release lost: it lands where it is nearer
+        shadeDrag = false;
+        if (roundf(shadeRise.x) == 0) { uiCloseShade(); return; }
+        riseGo(shadeRise, 1, 0);
+      }
+      if (shadeRise.on) { shadeRise.x = shadeRise.to; shadeRise.v = 0; shadeRise.on = false; }   // still moving: it lands
       if (inRect(x0, y0, SH_SLX, SH_ROW1, SH_SLW, 44)) { dragSlider = 2; shadeSlider(x0); }
       else { pressedBtn = shadeButtonAt(x0, y0); if (pressedBtn >= 0) markShade(); }
     } else if (kind == G_MOVE && dragSlider == 2) shadeSlider(x1);
-    else if (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D)) {
+    else if (kind == G_MOVE) {   // a drag up or down: the shade follows the finger, as Media and Settings do
+      int dx = x1 - x0, dy = y1 - y0;
+      if (!shadeDrag && abs(dy) > LOCK_PX && abs(dy) > abs(dx)) {
+        shadeDrag = true;
+        shadeDragFrom = shadeRise.x;
+        if (pressedBtn >= 0) { pressedBtn = -1; markShade(); }
+      }
+      if (shadeDrag) { riseSample(y1, now); shadeRise.x = constrain(shadeDragFrom + dy / (float)(shadeHeight() - STATUS_H), 0.0f, 1.0f); }
+    } else if (shadeDrag && (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D))) {   // let go
+      shadeDrag = false;
+      float v = -riseVelocity() * (SCR_H - STATUS_H) / (shadeHeight() - STATUS_H), t = flickTarget(shadeRise.x, v, 0, 1);
+      if ((rn ? rt[rn - 1] : now) - touchAt <= QUICK_MS && (kind == G_SWIPE_U || kind == G_SWIPE_D)) t = kind == G_SWIPE_D;
+      if (t == 0) { shadeClosing = true; pressedBtn = dragSlider = -1; }
+      riseGo(shadeRise, t, v);
+    } else if (kind == G_TAP || (kind >= G_SWIPE_L && kind <= G_SWIPE_D)) {
       bool wasDrag = dragSlider >= 0;
       int b = pressedBtn;
       dragSlider = pressedBtn = -1;
@@ -3219,7 +3306,7 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
         mark(SEEK_X - 8, 140, SEEK_W + 16, 56);
       } else if (onBell(x0, y0)) uiOpenShade();
       else if (onHostChip(x0, y0)) openHostMenu();
-      else if (onProfChip(x0, y0)) uiOpenSheet(1);
+      else if (onProfChip(x0, y0)) chipTap();
       else if (y0 >= LINE_Y) {
         int total = (viewPages() - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < viewPages(); i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
@@ -3259,10 +3346,10 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       break;
     }
     case G_HOLD:
-      if (pressed >= 0 && keyAt(pressed)["hold_actions"].size()) {
+      if (pressed >= 0 && (keyAt(pressed)["hold_actions"].size() || holdToFire(pressed))) {
         holdFired = true;
         emitKey(pressed, 'H');
-        runKey(pressed, true);
+        runKey(pressed, !holdToFire(pressed));   // hold to fire: the hold runs the key's own actions
         uiFlash(pressed, true);
       }
       break;
@@ -3270,10 +3357,11 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       int c = pressed;
       bool fire = c >= 0 && !holdFired && hit(x1, y1) == c;
       release(c);
-      if (fire) { runKey(c, false); if (c >= 0) uiFlash(c, true); }
+      if (fire && holdToFire(c)) uiToast("Hold to fire");   // a key that types a secret: a tap is not enough
+      else if (fire) { runKey(c, false); if (c >= 0) uiFlash(c, true); }
       else if (c < 0 && onBell(x0, y0)) uiOpenShade();
       else if (c < 0 && onHostChip(x0, y0)) openHostMenu();
-      else if (c < 0 && onProfChip(x0, y0)) uiOpenSheet(1);
+      else if (c < 0 && onProfChip(x0, y0)) chipTap();
       else if (c < 0 && y0 >= LINE_Y && viewPages() > 1) {
         int total = (viewPages() - 1) * 30, xs = KEYS_W / 2 - total / 2, best = -1, bd = 99;
         for (int i = 0; i < viewPages(); i++) { int d = abs(x0 - (xs + i * 30)); if (d < bd) { bd = d; best = i; } }
@@ -3284,6 +3372,6 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
     case G_SWIPE_L: release(pressed); viewGo(viewPage() + 1); break;
     case G_SWIPE_R: release(pressed); viewGo(viewPage() - 1); break;
     case G_SWIPE_U: release(pressed); if (!media.btn && qb[0].prof && qb[0].ok) uiPanel(1); break;   // entry 1: Media (none set: nothing)
-    case G_SWIPE_D: release(pressed); if (topLayer() == &media) layerClose(media); else uiOpenShade(); break;   // Media closes, else the shade comes down
+    case G_SWIPE_D: release(pressed); if (Layer *L = topLayer()) layerClose(*L); else uiOpenShade(); break;   // Media or a panel closes, else the shade comes down
   }
 }

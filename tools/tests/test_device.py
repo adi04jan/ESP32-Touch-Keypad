@@ -365,9 +365,10 @@ def test_station_tap_changes_page(d):
 
 def test_bar_column_presses_no_key(d):
     since = len(d.events)
-    d.touch(450, 75)                       # the bar, beside key 5
+    d.touch(450, 75)                       # the bar, beside key 5 (its free top slot: Media)
     time.sleep(0.3)
     assert not [l for _, l in d.events[since:] if l.startswith("EVT:KEY")]
+    d.ok("panel 0"); time.sleep(0.6)
     tap(d, 5)                              # key 5 still answers at its new place
     d.wait_event(r"^EVT:KEY 1 5 1$", 2, since)
 
@@ -467,8 +468,8 @@ def test_media_opens_over_a_panel_and_closing_returns_to_it(d):
 def test_bar_tap_with_media_open_swaps_to_that_panel(d):
     set_qb(d); swipe_up(d); time.sleep(0.6); since = len(d.events)
     d.touch(*BAR[3]); d.wait_event(rf"^EVT:PANEL 3 {SLOT} 3$", 2, since)
-    swipe_down(d); d.wait_event(r"^EVT:UI shade$", 2, since)          # media was closed, not hidden
-    d.cmd("shade close")
+    swipe_down(d); d.wait_event(r"^EVT:PANEL 0$", 2, since)           # a swipe down closes the panel
+    time.sleep(0.6); assert "panel:0" in d.cmd("status")[0]           # and Media was closed, not hidden under it
 
 
 def test_settings_from_media_comes_back_to_media(d):
@@ -942,6 +943,20 @@ def test_a_quick_swipe_sideways_that_sets_off_up_turns_the_page(d):
     assert not evts(d, since, "EVT:PANEL") and field(d, "rise") == 0
 
 
+def test_hold_to_fire_needs_the_hold(d):                           # review 2026-11-11: a secret typed on a slip
+    p = json.loads(json.dumps(PROFILE))
+    p["pages"][0]["keys"][0]["hold_to_fire"] = True                   # Copy
+    try:
+        d.upload_text(f"profile{SLOT}.json", json.dumps(p)); d.ok(f"setprofile {SLOT}"); time.sleep(0.6)
+        d.listen(0.3); d.clear_events()
+        tap(d, 1); d.listen(0.8)
+        assert not [l for _, l in d.events if l.startswith("EVT:HID")]
+        d.hold(*cell_xy(1), 800)
+        assert hid_reports(d, 1, 1)
+    finally:
+        put_back_profile(d); d.ok(f"setprofile {SLOT}")
+
+
 @pytest.mark.skipif(os.environ.get("KP_ALLOW_UNPAIR") != "1", reason="if Forget regressed, this would unpair the owner's PC")
 def test_forget_asks_first(d):                                     # review 2026-11-11: one tap, 8 px from Use
     hosts = lambda: [l.split()[1] for l in d.cmd("ble list") if re.match(r"\d+ ", l)]
@@ -989,6 +1004,33 @@ def test_a_sheet_closed_by_the_host_mid_drag_frees_the_touch(d):
     d.write_line("sheet close"); time.sleep(1.5)
     d.drain(); assert "ui:home" in d.cmd("status")[0]
     since = len(d.events); tap(d, 1); d.wait_event(r"^EVT:KEY 1 1 1$", 1, since)
+
+
+# Where am I, and how do I leave (review 2026-11-11): the chip names the layer and closes it, a swipe down
+# closes it, and Media has a way in besides the swipe.
+def test_a_swipe_down_closes_an_open_panel(d):
+    set_qb(d); d.ok("panel 2"); time.sleep(0.8); since = len(d.events)
+    d.swipe(210, 90, 210, 230, 250); d.wait_event(r"^EVT:PANEL 0$", 1.5, since)
+    assert "ui:home" in d.cmd("status")[0]                             # not the shade over the panel
+
+
+def test_the_status_chip_closes_an_open_panel(d):
+    set_qb(d); d.ok("panel 2"); time.sleep(0.8); since = len(d.events)
+    d.touch(30, 14); d.wait_event(r"^EVT:PANEL 0$", 1.5, since)
+    assert "ui:home" in d.cmd("status")[0]                             # not Profiles
+
+
+def test_the_free_suggestion_slot_opens_media(d):
+    set_qb(d); since = len(d.events)
+    d.touch(BAR["settings"][0], 58); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)
+
+
+def test_the_shade_follows_a_drag_down_and_springs(d):              # review 2026-11-11: it only played on release
+    swipe_held(d, 210, 60, 210, 200, 1400); time.sleep(0.7)
+    assert "ui:shade" in d.cmd("status")[0]                             # on the finger before it lets go
+    time.sleep(1.4); assert "ui:shade" in d.cmd("status")[0]           # let go far down: it stays open
+    swipe_held(d, 210, 200, 210, 100, 1200); time.sleep(2.0)           # a slow drag back up past half: it goes
+    assert "ui:home" in d.cmd("status")[0]
 
 
 def test_a_slow_short_drag_springs_back(d):
@@ -1220,12 +1262,17 @@ def test_theme_command_lists_switches_and_reports(d):
     assert d.cmd("theme 5") == ["theme synth"]          # and 1-based numbers
 
 
+def theme_chip(i):
+    """Settings › Display: four chips across, 44 px rows (4 px apart) from y 176; firmware theme order."""
+    w = (338 - 3 * 6) / 4
+    return int(128 + (i % 4) * (w + 6) + w / 2), 176 + (i // 4) * 48 + 22
+
+
 def test_second_row_chip_picks_a_new_theme(d):
     d.ok("sheet"); d.wait_event(r"^EVT:UI sheet$"); time.sleep(0.5)
     d.touch(60, 64); time.sleep(0.3)                     # Display tab
-    w = (338 - 4 * 6) / 5
     since = len(d.events)
-    d.touch(int(128 + 2 * (w + 6) + w / 2), 184 + 32 + 13)   # row 2, column 3: Focus Slate
+    d.touch(*theme_chip(THEMES.index("focus_slate")))       # row 2, column 4
     d.wait_event(r"^EVT:THEME focus_slate$", 3, since)
     d.ok("sheet close")
 
@@ -1302,9 +1349,8 @@ def test_sheet_theme_chip_switches_the_theme(d):
     time.sleep(0.5)
     d.touch(60, 64)                                      # Display tab
     time.sleep(0.3)
-    w = (338 - 4 * 6) / 5                                # two rows of five chips from y 184, 26 px high
     since = len(d.events)
-    d.touch(int(128 + 4 * (w + 6) + w / 2), 184 + 13)      # the Synth chip: row 1, column 5
+    d.touch(*theme_chip(THEMES.index("synth")))          # the Synth chip: row 2, column 1
     d.wait_event(r"^EVT:THEME synth$", 3, since)
     time.sleep(0.6)
     img = d.shot()
