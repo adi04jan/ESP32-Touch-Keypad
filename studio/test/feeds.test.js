@@ -4,6 +4,12 @@ const assert = require("node:assert/strict");
 const feeds = require("../services/feeds");
 const { contextForProcess } = require("../services/contexts");
 
+test("the PowerShell helpers print UTF-8, not the OEM code page (titles like Beyoncé, Café)", () => {
+  const utf8 = /\[Console\]::OutputEncoding\s*=\s*\[Text\.Encoding\]::UTF8/;
+  assert.match(feeds.NP_PS, utf8);
+  assert.match(require("../services/activewin").PS, utf8);
+});
+
 test("settime carries epoch seconds and minutes east of UTC", () => {
   const d = new Date(Date.UTC(2026, 9, 1, 12, 0, 0));
   const [cmd, epoch, tz] = feeds.timeCommand(d).split(" ");

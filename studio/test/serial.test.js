@@ -127,6 +127,77 @@ test("commands time out cleanly and offline commands resolve empty", async () =>
   link.disconnect();
 });
 
+test("a reply that arrives after its command timed out never answers the next command", async () => {
+  const { EventEmitter } = require("events");
+  class SlowPort extends EventEmitter {   // profile 4 answers after 300 ms (a slow Bluetooth read), the rest after 60 ms
+    constructor(_o, cb) { super(); this.isOpen = true; setImmediate(() => cb(null)); }
+    static async list() { return []; }
+    set() {} close() {}
+    write(d, cb) {
+      if (cb) cb();
+      const cmd = String(d).trim(), m = cmd.match(/^cat \/profile(\d+)\.json$/);
+      setTimeout(() => this.emit("data", Buffer.from(`${m ? `{"profile_name":"P${m[1]}"}` : `ok ${cmd}`}\nmacropad:$ `)), m && m[1] === "4" ? 300 : 60);
+    }
+  }
+  const link = new SerialLink({ SerialPort: SlowPort });
+  await link.connect("X");
+  assert.equal(await link.command("cat /profile4.json", 200), "");   // timed out
+  assert.equal(await link.command("cat /profile5.json", 200), '{"profile_name":"P5"}');
+  assert.equal(await link.command("cat /profile6.json", 200), '{"profile_name":"P6"}');
+});
+
+test("a UTF-8 character split across two chunks arrives whole", async () => {
+  const { EventEmitter } = require("events");
+  let port;
+  class P extends EventEmitter {
+    constructor(_o, cb) { super(); port = this; this.isOpen = true; setImmediate(() => cb(null)); }
+    static async list() { return []; }
+    write(_d, cb) { if (cb) cb(); } set() {} close() {}
+  }
+  const link = new SerialLink({ SerialPort: P });
+  await link.connect("X");
+  const reply = link.command("cat /note.txt");
+  await new Promise((r) => setImmediate(r));
+  const bytes = Buffer.from("Café ☕\nmacropad:$ ", "utf8");
+  for (const [a, b] of [[0, 4], [4, 7], [7, bytes.length]]) port.emit("data", bytes.subarray(a, b));   // splits é and ☕
+  assert.equal(await reply, "Café ☕");
+});
+
+test("two connects at once share one open: no orphaned port holds the COM port", async () => {
+  const { EventEmitter } = require("events");
+  let held = null;
+  class OnePort extends EventEmitter {   // like Windows: a second open of a held port is denied
+    constructor(_o, cb) { super(); this.isOpen = false; setTimeout(() => { if (held) return cb(new Error("Access denied")); held = this; this.isOpen = true; cb(null); }, 30); }
+    static async list() { return []; }
+    write(_d, cb) { if (cb) cb(); } set() {}
+    close() { this.isOpen = false; if (held === this) held = null; }
+  }
+  const link = new SerialLink({ SerialPort: OnePort });
+  const [a, b] = await Promise.all([link.connect("COM5"), link.connect("COM5")]);
+  assert.deepEqual([a, b, link.isOpen()], [true, true, true]);
+  assert.equal(link.port, held, "the link holds the one open port");
+  link.disconnect();
+  assert.equal(held, null);
+  assert.equal(await link.connect("COM5"), true);
+});
+
+test("firmware installs only on a live USB link that answers model:touch", async () => {
+  const { targetPort } = require("../services/flasher");
+  const { BLE_PATH } = require("../services/bleport");
+  const { link } = await rig();
+  assert.match((await targetPort(link)).error, /USB cable/);           // never connected
+  await link.connect("SIM1");
+  assert.deepEqual(await targetPort(link), { port: "SIM1" });
+  link.disconnect();
+  assert.match((await targetPort(link)).error, /USB cable/, "a stale path is never used");
+  const other = await rig({ model: "s2" });
+  await other.link.connect("SIM1");
+  assert.match((await targetPort(other.link)).error, /did not answer as a Touch Keypad/);
+  const ble = await rig({ ports: [{ path: BLE_PATH }, { path: "SIM1", vendorId: "1a86", productId: "7523" }] });
+  await ble.link.connect(BLE_PATH);
+  assert.match((await targetPort(ble.link)).error, /Bluetooth/, "never a guessed CH340 port");
+});
+
 test("a dropped port releases the in-flight command", async () => {
   const { sim, link } = await rig();
   await link.connect("SIM1");
@@ -166,6 +237,13 @@ test("Device quickbar round trip and suggest against the sim", async () => {
   assert.equal((await device.setQuickbar([1, 2])).ok, false);
   await device.suggest(13);
   assert.equal(sim.suggested, 13);
+  // Autosave writes it like a profile: a PC backup first, then the keypad.
+  const bar = [null, { profile: 2, page: 1, icon: "", label: "Code" }, null, null];
+  assert.deepEqual(await device.saveQuickbar(bar), { ok: true });
+  assert.deepEqual(sim.quickbar, bar);
+  const saved = fs.readdirSync(path.join(dir, "device_backups", "auto", "quickbar"));
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "device_backups", "auto", "quickbar", saved[0]), "utf8")), bar);
+  assert.ok(backup.listBackups().every((b) => Number.isInteger(b.slot)), "never offered as a profile backup");
 });
 
 

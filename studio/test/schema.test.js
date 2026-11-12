@@ -43,6 +43,46 @@ test("repair normalizes aliases and drops the unfixable", () => {
   assert.ok(schema.isValidActions(r));
 });
 
+test("a new profile has no brightness: the keypad applies one on every switch, over the owner's own", () => {
+  assert.equal("brightness" in schema.blankProfile("New"), false);
+  assert.equal("brightness" in schema.repairProfile({ profile_name: "X", pages: [] }), false);
+  const kept = schema.repairProfile({ ...schema.blankProfile(), brightness: 300 });   // an explicit value is still clamped and kept
+  assert.equal(kept.brightness, 255);
+  assert.ok(schema.validateProfile({ ...schema.blankProfile(), brightness: 0 }).ok);
+  assert.equal(schema.validateProfile({ ...schema.blankProfile(), brightness: 256 }).ok, false);
+});
+
+test("hostActions and page clamping cover off_actions and mic_actions too", () => {
+  const keys = blank();
+  keys[0] = { id: 1, name: "Now Playing", widget: "media", span: [5, 3], actions: [], mic_actions: [{ type: "host", cmd: "mic toggle" }, { type: "page", value: 9 }] };
+  const p = profile(keys);
+  p.pages.push({ name: "Two", keys: blank() });
+  p.pages[1].keys[0] = key(1, { toggle: true, off_actions: [{ type: "host", cmd: "run off.cmd" }, { type: "page", value: 7 }] });
+  assert.deepEqual(schema.hostActions(p).map((a) => a.cmd).sort(), ["mic toggle", "run off.cmd"]);
+  const r = schema.repairProfile(p);
+  assert.equal(r.pages[0].keys[0].mic_actions[1].value, 2);
+  assert.equal(r.pages[1].keys[0].off_actions[1].value, 2);
+  assert.ok(schema.validateProfile(r).ok, schema.validateProfile(r).errors.join());
+});
+
+test("hold_to_fire: a boolean, never with hold_actions; repair keeps it and drops the hold actions", () => {
+  const keys = blank();
+  keys[0] = key(1, { hold_to_fire: true });
+  keys[3] = key(4, { hold_to_fire: false });
+  assert.deepEqual(schema.validateProfile(profile(keys)).errors, []);
+  keys[1] = key(2, { hold_to_fire: true, hold_actions: [{ type: "key", value: "B" }] });
+  keys[2] = key(3, { hold_to_fire: "yes" });
+  const errs = schema.validateProfile(profile(keys)).errors;
+  assert.ok(errs.some((e) => /keys\[1\]: hold_to_fire and hold_actions/.test(e)), errs.join());
+  assert.ok(errs.some((e) => /keys\[2\]\.hold_to_fire must be true or false/.test(e)), errs.join());
+  const r = schema.repairProfile(profile(keys)).pages[0].keys;
+  assert.equal(r[0].hold_to_fire, true);
+  assert.deepEqual([r[1].hold_to_fire, "hold_actions" in r[1]], [true, false]);
+  assert.equal("hold_to_fire" in r[2], false);
+  assert.equal("hold_to_fire" in r[3], false);
+  assert.ok(schema.validateProfile(schema.repairProfile(profile(keys))).ok);
+});
+
 test("repeat nesting deeper than 4 is rejected and repaired away", () => {
   let a = { type: "key", value: "A" };
   for (let i = 0; i < 5; i++) a = { type: "repeat", count: 1, actions: [a] };

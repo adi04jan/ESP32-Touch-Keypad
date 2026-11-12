@@ -44,6 +44,7 @@ const ACTION_TYPES = [
   "page", "back", "host",
 ];
 
+const ACTION_FIELDS = ["actions", "hold_actions", "off_actions", "mic_actions"];   // every action list a key can carry
 const KEY_SET = new Set(KEY_NAMES);
 const KEY_AND_MOD_SET = new Set(KEY_AND_MODIFIER);
 const MEDIA_SET = new Set(MEDIA_NAMES);
@@ -298,6 +299,9 @@ function validateProfile(p) {
       if (typeof k.name !== "string" || k.name.length > MAX_LABEL) e.push(`${kp}.name must be a string of at most ${MAX_LABEL} chars`);
       if (k.anim !== undefined && !ANIMS.includes(k.anim)) e.push(`${kp}.anim must be one of ${ANIMS.join(", ")}`);
       if (k.toggle !== undefined && typeof k.toggle !== "boolean") e.push(`${kp}.toggle must be true or false`);
+      // hold_to_fire: a tap does nothing ("Hold to fire" on the keypad); holding 500 ms fires `actions`.
+      if (k.hold_to_fire !== undefined && typeof k.hold_to_fire !== "boolean") e.push(`${kp}.hold_to_fire must be true or false`);
+      if (k.hold_to_fire === true && Array.isArray(k.hold_actions) && k.hold_actions.length) e.push(`${kp}: hold_to_fire and hold_actions can't both be set (holding fires the key's actions)`);
       if (k.widget !== undefined) {
         const span = WIDGETS[k.widget];
         if (!span) e.push(`${kp}.widget '${k.widget}' unknown`);
@@ -339,9 +343,10 @@ function repairKey(k, i) {
     if (frames.length >= 2) { out.frames = frames; out.frame_ms = clampInt(k.frame_ms, 40, 2000, 100); }
     if (ANIMS.includes(k.anim)) out.anim = k.anim;
     if (k.toggle === true) out.toggle = true;
+    if (k.hold_to_fire === true) out.hold_to_fire = true;   // the safer reading wins: its hold actions go
   }
   out.actions = repairActions(k.actions || []);
-  for (const f of ["hold_actions", "off_actions", ...(k.widget ? ["mic_actions"] : [])]) {   // mic_actions: the player's mic button
+  for (const f of [...(out.hold_to_fire ? [] : ["hold_actions"]), "off_actions", ...(k.widget ? ["mic_actions"] : [])]) {   // mic_actions: the player's mic button
     if (!Array.isArray(k[f])) continue;
     const list = repairActions(k[f]);
     if (list.length) out[f] = list;
@@ -394,12 +399,13 @@ function repairProfile(p) {
     if (a.type === "page" && a.value > n) a.value = n;
     if (a.type === "repeat") clampPages(a.actions);
   });
-  for (const pg of out.pages) for (const k of pg.keys) if (k) { clampPages(k.actions); if (k.hold_actions) clampPages(k.hold_actions); }
+  for (const pg of out.pages) for (const k of pg.keys) if (k) for (const f of ACTION_FIELDS) if (k[f]) clampPages(k[f]);
   return out;
 }
 
+// No brightness: the keypad applies a profile's on every switch, over the owner's Settings brightness.
 function blankProfile(name = "Profile") {
-  return { schema_version: SCHEMA_VERSION, profile_name: name, default_delay: 20, brightness: 200,
+  return { schema_version: SCHEMA_VERSION, profile_name: name, default_delay: 20,
     pages: [{ name: "Main", keys: Array.from({ length: CELLS }, () => null) }] };
 }
 
@@ -410,7 +416,7 @@ function hostActions(p) {
     if (a && a.type === "host") out.push(a);
     if (a && a.type === "repeat") walk(a.actions);
   });
-  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) { walk(k.actions); walk(k.hold_actions); walk(k.mic_actions); }
+  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) for (const f of ACTION_FIELDS) walk(k[f]);
   return out;
 }
 

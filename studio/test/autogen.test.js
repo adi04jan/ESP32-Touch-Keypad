@@ -75,6 +75,14 @@ test("a folder in Claude's answer opens its page and its page has Back", () => {
   assert.equal(far.pages[0].keys[0].actions[0].value, 1);   // a folder never points past the last page
 });
 
+test("an answer's action types outside the answer schema are dropped: never a host command", () => {
+  const p = toProfile({ profile_name: "X", pages: [{ name: "Main", keys: [{ name: "A", icon: "zap", actions: [
+    { type: "host", value: "run calc.exe" }, { type: "host_action", value: "open x" }, { type: "repeat", count: 2, actions: [{ type: "host", cmd: "run y" }] },
+    { type: "profile", value: "3" }, { type: "text", value: "ok" }, { type: "media", value: "NEXT" }] }] }] }, "X", iconNames());
+  assert.deepEqual(p.pages[0].keys[0].actions, [{ type: "text", value: "ok" }, { type: "media", value: "NEXT" }]);
+  assert.deepEqual(schema.hostActions(p), []);
+});
+
 test("Claude's answer becomes a valid v2 profile: 15 cells, ids, known icons only", () => {
   const icons = iconNames();
   assert.ok(icons.length > 200 && icons.includes("keyboard"));
@@ -120,6 +128,22 @@ test("Generate on a new app: Claude once, saved to a free slot, mapped, loaded, 
   // Regenerate asks Claude again.
   const fresh = await r.ag.run(true);
   assert.deepEqual([fresh.ok, !!fresh.cached, r.calls()], [true, false, 2]);
+  r.link.disconnect();
+});
+
+test("an empty or foreign `ls /` reply is an error: no slot looks free, profile 1 is not overwritten", async () => {
+  const r = rig();
+  await r.dev.connect("SIM1");
+  r.ag.usage.focus("bruno", "Bruno");
+  const before = r.sim.files.get("/profile1.json").toString();
+  const cmd = r.sim._command.bind(r.sim);
+  for (const reply of ["", "Profile:1 loaded:1 model:touch"]) {   // a timeout; another command's late reply
+    r.sim._command = (s) => (s === "ls /" ? (reply ? r.sim.println(reply) : undefined) : cmd(s));
+    const res = await r.ag.run(true);
+    assert.equal(res.ok, false);
+    assert.match(res.error, /list the keypad/);
+  }
+  assert.equal(r.sim.files.get("/profile1.json").toString(), before);
   r.link.disconnect();
 });
 

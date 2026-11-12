@@ -11,6 +11,8 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { parseStatus } = require("./serial");
+const { BLE_PATH } = require("./bleport");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const CORE = path.join(process.env.LOCALAPPDATA || "", "Arduino15", "packages", "esp32");
@@ -40,13 +42,29 @@ function locate(resourcesPath) {
   if (missing.length) return { error: `firmware files not found: ${missing.join(", ")} (run tools/kp.py build --release)` };
   let version = "";
   try { version = fs.readFileSync(path.join(ROOT, "firmware", "TouchKeypad", "board.h"), "utf8").match(/FW_VERSION\s+"([^"]+)"/)[1]; } catch (_) {}
+  // board.h bumped but not rebuilt: the label would promise a version the binary isn't.
+  if (!binHasVersion(fs.readFileSync(files["app.bin"]), version)) return { error: `build/fw-release is not firmware ${version || "(no FW_VERSION in board.h)"} (rebuild it: tools/kp.py build --release)` };
   return { esptool, files, version };
+}
+
+// The firmware's FW_VERSION is a string of its own in the app image ("\0" 3.13.2 "\0").
+function binHasVersion(bin, version) {
+  return !!version && bin.includes(Buffer.from(`\0${version}\0`, "latin1"));
 }
 
 function info(resourcesPath) {
   const l = locate(resourcesPath);
   if (l.error) return { available: false, note: `Studio can't install firmware here: ${l.error}.` };
   return { available: true, version: l.version, note: `Installs firmware ${l.version || ""} over USB. Profiles, Bluetooth pairings and touch calibration are kept.` };
+}
+
+// The port to install on: the live USB link, once it answers `status` with model:touch. Never a stale
+// path or a guessed CH340 port: esptool overwrites whatever board answers there.
+async function targetPort(link) {
+  if (!link.isOpen()) return { error: "Connect the keypad with a USB cable first." };
+  if (link.path === BLE_PATH) return { error: "Connected over Bluetooth: installing firmware needs the USB cable. Plug it in, Disconnect, then Find keypad." };
+  const st = parseStatus(await link.command("status", undefined, true));
+  return st.model === "touch" ? { port: link.path } : { error: `${link.path} did not answer as a Touch Keypad.` };
 }
 
 /* Runs esptool on `port`. onProgress({pct, msg}). Resolves { ok, error?, log }.
@@ -78,4 +96,4 @@ function flash(port, resourcesPath, onProgress = () => {}) {
   });
 }
 
-module.exports = { locate, info, flash, IMAGES };
+module.exports = { locate, info, flash, targetPort, binHasVersion, IMAGES };

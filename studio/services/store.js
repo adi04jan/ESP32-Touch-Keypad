@@ -39,7 +39,8 @@ function save(patch) {
   const merged = { ...load(), ...patch };
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify(merged, null, 2));
+    fs.writeFileSync(`${file()}.tmp`, JSON.stringify(merged, null, 2));   // whole or not at all: a write that dies
+    fs.renameSync(`${file()}.tmp`, file());                               // halfway never resets every setting
   } catch (e) { console.error("settings write failed:", e.message); }
   return merged;
 }

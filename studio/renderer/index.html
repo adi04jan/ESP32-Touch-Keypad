@@ -18,10 +18,11 @@
   </nav>
   <main class="st-main">
     <div class="st-top">
-      <h1 id="view-title">Editor</h1>
-      <span class="slots" id="st-slots" role="group" aria-label="Profile slot"></span>
+      <h1 id="view-title" tabindex="-1">Editor</h1>
+      <span class="slots" id="st-slots" role="group" aria-label="Profiles"></span>
+      <span class="conn-msg" id="conn-msg" role="alert" hidden></span>
       <span class="pill off" id="conn-pill" role="status" aria-live="polite"><span class="dotc"></span><span>Offline</span></span>
-      <span class="save-ind" id="save-ind" role="status" aria-live="polite"><span class="dotc"></span><span>Auto-saves live</span></span>
+      <span class="save-ind" id="save-ind" role="status" aria-live="polite"><span class="dotc"></span><span>Saves to the keypad as you edit</span></span>
     </div>
 
     <section class="view" data-view="editor">
@@ -34,7 +35,7 @@
           </div>
           <div class="mini"><div class="screen" id="st-screen"></div></div>
           <section class="chat" aria-labelledby="chat-h">
-            <div class="chat-head"><h2 id="chat-h"><svg class="lc" aria-hidden="true"><use href="#i-sparkles"/></svg>Ask Claude</h2><span class="hint">Organizes, creates and edits the profile open here; the keypad follows. Ctrl+Z undoes a change.</span></div>
+            <div class="chat-head"><h2 id="chat-h"><svg class="lc" aria-hidden="true"><use href="#i-sparkles"/></svg>Ask Claude</h2><span class="hint">Organizes, creates and edits the profile open here; the keypad follows. Typed text and PC commands stay on this PC. Ctrl+Z undoes a change.</span></div>
             <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
             <div class="chat-ideas" id="chat-ideas"></div>
             <form class="chat-form" id="chat-form"><textarea id="chat-in" rows="2" maxlength="2000" placeholder="Ask for a change: “Put all Git commands in a folder on page 1”" aria-label="Message to Claude"></textarea><button class="primary" id="chat-send">Send</button></form>
@@ -47,7 +48,7 @@
           <div class="field"><span>Profile line colour · the page stations and status dot</span><div class="swatches" id="p-color"></div></div>
           <ul class="errors" id="st-errors"></ul>
           <details>
-            <summary class="hint" style="cursor:pointer">Show the profile JSON (schema v2)</summary>
+            <summary class="hint" style="cursor:pointer">Show the profile as JSON</summary>
             <pre class="console" id="st-json" style="height:240px; margin-top:8px"></pre>
           </details>
         </div>

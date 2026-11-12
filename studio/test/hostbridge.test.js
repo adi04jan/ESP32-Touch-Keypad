@@ -31,6 +31,29 @@ test("assignSlots: one slot per distinct cmd, stable across saves, shared across
   assert.equal(b.pages[0].keys[5].actions[0].actions[0].slot, 2);
 });
 
+test("slotsFromProfiles: the slots the keypad's profiles carry; a slot two commands claim is a conflict", () => {
+  const p1 = prof({ 0: [{ type: "host", cmd: "open spotify:", slot: 0 }], 1: [{ type: "host", cmd: "open discord:", slot: 4 }] });
+  const p3 = prof({ 0: [{ type: "host", cmd: "open discord:", slot: 16 }], 1: [{ type: "host", cmd: "obs.scene Live", slot: 0 }], 2: [{ type: "host", cmd: "run x" }] });
+  const { slots, conflicts } = hb.slotsFromProfiles({ 1: p1, 2: null, 3: p3 });
+  assert.deepEqual(slots, { 0: "open spotify:", 4: "open discord:", 16: "open discord:" });   // one cmd on two slots is fine
+  assert.deepEqual(conflicts, [{ slot: 0, profiles: [1, 3] }]);
+});
+
+test("assignSlots keeps the slot a host key carries, unless another command holds it", () => {
+  const known = { 0: "open spotify:", 1: "open https://github.com" };
+  const p = prof({ 0: [{ type: "host", cmd: "open new", slot: 7 }], 1: [{ type: "host", cmd: "run x", slot: 0 }], 2: [{ type: "host", cmd: "run y" }], 3: [{ type: "host", cmd: "open spotify:", slot: 0 }] });
+  const { slots } = hb.assignSlots([p], known);
+  assert.deepEqual(p.pages[0].keys.slice(0, 4).map((k) => k.actions[0].slot), [7, 2, 3, 0]);
+  assert.deepEqual(slots, { 0: "open spotify:", 1: "open https://github.com", 2: "run x", 3: "run y", 7: "open new" });
+});
+
+test("newHostCommands lists the commands a profile would add, once each", () => {
+  const p = prof({ 0: [{ type: "host", cmd: "open spotify:" }], 1: [{ type: "repeat", count: 1, actions: [{ type: "host", cmd: "run evil.cmd" }] }], 2: [{ type: "host", cmd: "run evil.cmd" }] });
+  p.pages[0].keys[3] = { id: 4, name: "t", led_color: [1, 1, 1], toggle: true, actions: [], off_actions: [{ type: "host", cmd: "open C:\\x.exe" }] };
+  assert.deepEqual(hb.newHostCommands(p, ["open spotify:"]), ["run evil.cmd", "open C:\\x.exe"]);
+  assert.deepEqual(hb.newHostCommands(p, ["open spotify:", "run evil.cmd", "open C:\\x.exe"]), []);
+});
+
 test("assignSlots reports when all 48 slots are taken", () => {
   const full = Object.fromEntries(Array.from({ length: 48 }, (_, i) => [String(i), `run ${i}`]));
   const p = prof({ 0: [{ type: "host", cmd: "open new" }] });

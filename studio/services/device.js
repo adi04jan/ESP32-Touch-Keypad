@@ -38,12 +38,14 @@ class Device extends EventEmitter {
     this._push = new Map();        // debounce timers
     this._save = new Map();
     this._clock = null;
+    this.onDevice = null;          // slot -> profile|null as the keypad holds it (read at connect), null: unknown
+    this.hostConflicts = [];       // [{slot, profiles:[a, b]}]: one host slot, two commands
     this._np = null;
     this._art = null;
 
     const l = this.link;
     l.on("open", () => this.emit("state", this.state()));
-    l.on("disconnect", () => { clearInterval(this._clock); this.status = null; this.emit("state", this.state()); });
+    l.on("disconnect", () => { clearInterval(this._clock); this.status = null; this.onDevice = null; this.emit("state", this.state()); });
     l.on("profile", (n) => { this.activeSlot = n; this.devicePage = 1; this.emit("state", this.state()); });
     l.on("page", (n) => { this.devicePage = n; this.emit("state", this.state()); });
     l.on("ble", (b) => { if (b.up && this.hostName) this.link.command(`hostname ${this.hostName}`); });
@@ -83,10 +85,38 @@ class Device extends EventEmitter {
     }
     this.deviceTiles = tiles.parseTileList(await this.link.command("ls /t"));
     if (this.hostName && +status.ble > 0) await this.link.command(`hostname ${this.hostName}`);
+    await this.reconcileHostSlots();
     this.emit("state", this.state());
   }
 
-  disconnect() { this.link.disconnect(); }
+  // ---- host slots ----
+  // Each host key on the keypad sends the combo of the slot its profile carries, so Studio's table
+  // follows the keypad: on connect it reads every profile and rebuilds host_slots from them. Slots no
+  // profile uses go; a slot two commands claim is reported (saving either profile gives its key its own).
+  // ponytail: 16 reads on every connect (about a second on USB, longer over Bluetooth); the slot strip's
+  // names come from the same read.
+  async reconcileHostSlots() {
+    const read = {};
+    try { for (let n = 1; n <= schema.NUM_PROFILES; n++) read[n] = await this.readProfile(n, true); }
+    catch (e) { this.onDevice = null; this.emit("log", `Host keys were not checked against the keypad: ${e.message}.\n`); return false; }
+    this.onDevice = read;
+    this._applySlots();
+    for (const c of this.hostConflicts) this.emit("log", `host: profiles ${c.profiles.join(" and ")} use host slot ${c.slot} for different commands; edit either one in Studio and its key gets a slot of its own.\n`);
+    return true;
+  }
+
+  _applySlots(slots) {
+    const r = hostbridge.slotsFromProfiles(this.onDevice || {});
+    if (this.onDevice) { slots = r.slots; this.hostConflicts = r.conflicts; }
+    if (JSON.stringify(slots) !== JSON.stringify(this.settings.load().host_slots)) this.settings.save({ host_slots: slots });
+    if (this.bridge) this.emit("bridge", this.bridge.apply(slots));
+  }
+
+  // Pending pushes and autosaves go to the keypad first (Disconnect, quit, firmware install).
+  async disconnect() {
+    await this.flush();
+    this.link.disconnect();
+  }
   syncTime() { return this.link.command(feeds.timeCommand()); }
 
   async refreshStatus() {
@@ -99,25 +129,35 @@ class Device extends EventEmitter {
   }
 
   // ---- profiles ----
+  // One profile file: the profile, null for an empty slot (`ERR no such file`), and a throw when the
+  // keypad gave no readable answer (a timeout, a garbled reply): an editor that took that for an
+  // empty slot would autosave a blank or stale copy over the owner's profile.
+  async readProfile(slot, quiet = false) {
+    const raw = await this.link.readFile(`profile${slot}.json`, quiet);
+    if (/^ERR no such file/.test(raw)) return null;
+    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) {}
+    throw new Error(`could not read profile ${slot} from the keypad${raw ? "" : " (no answer)"}`);
+  }
+
   async loadProfile(slot) {
-    if (!this.link.isOpen()) return null;
+    if (!this.link.isOpen()) throw new Error("not connected");
     if (this._save.has(slot)) await this.flush();     // never read back a file with edits still pending
     await this.link.command(`setprofile ${slot}`);
     this.activeSlot = slot;
     this.devicePage = 1;
-    const raw = await this.link.readFile(`profile${slot}.json`);
-    let p = null;
-    try { p = schema.repairProfile(JSON.parse(raw)); } catch (_) {}
-    if (p) this.profiles[slot] = p;
     this.emit("state", this.state());
+    const p = await this.readProfile(slot);
+    if (p) this.profiles[slot] = p;
+    if (this.onDevice) this.onDevice[slot] = p;
     return p;
   }
 
   // Read a profile without switching the keypad to it (the slot strip's names). null = empty slot.
+  // Right after a connect it comes from the connect's own read.
   async peekProfile(slot) {
-    if (!this.link.isOpen()) return null;
-    const raw = await this.link.readFile(`profile${slot}.json`, true);
-    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) { return null; }
+    if (!this.link.isOpen()) throw new Error("not connected");
+    if (this.onDevice && slot in this.onDevice) return structuredClone(this.onDevice[slot]);
+    return this.readProfile(slot, true);
   }
 
   async showPage(slot, page) {
@@ -160,6 +200,8 @@ class Device extends EventEmitter {
     return true;
   }
 
+  pending() { return this._push.size + this._save.size > 0; }
+
   // Flush pending debounces now (used on quit and by tests).
   async flush() {
     const pushes = [...this._push.entries()];
@@ -179,10 +221,10 @@ class Device extends EventEmitter {
     if (!profile) return { ok: false, error: "nothing to save" };
     this.profiles[slot] = profile;
     const clean = schema.repairProfile(profile);
-    const s = this.settings.load();
-    const { slots, errors: slotErr } = hostbridge.assignSlots([clean], s.host_slots);
-    if (JSON.stringify(slots) !== JSON.stringify(s.host_slots)) this.settings.save({ host_slots: slots });
-    if (this.bridge) this.emit("bridge", this.bridge.apply(slots));
+    // Slots the keypad's other profiles use (when it was read at connect), else Studio's table.
+    const base = this.onDevice ? hostbridge.slotsFromProfiles({ ...this.onDevice, [slot]: null }).slots : this.settings.load().host_slots;
+    const { slots, errors: slotErr } = hostbridge.assignSlots([clean], base);
+    if (!this.onDevice) this._applySlots(slots);
     const v = schema.validateProfile(clean);
     const errors = [...slotErr, ...v.errors];
     if (errors.length) { this.emit("save-state", { slot, state: "error", errors }); return { ok: false, errors }; }
@@ -195,6 +237,7 @@ class Device extends EventEmitter {
     if (!t.ok) { this.emit("save-state", { slot, state: "error", errors: [t.error] }); return { ok: false, error: t.error, backup: bk }; }
     const r = await this.link.uploadJson(`profile${slot}.json`, clean);
     if (!r.ok) { this.emit("save-state", { slot, state: "error", errors: [r.reply] }); return { ok: false, error: r.reply, backup: bk }; }
+    if (this.onDevice) { this.onDevice[slot] = clean; this._applySlots(); }
     if (slot === this.activeSlot) {
       const page = this.devicePage || 1;
       await this.link.command(`setprofile ${slot}`);
@@ -306,6 +349,12 @@ class Device extends EventEmitter {
     const e = r.match(/^ERR quickbar: (.*)$/m);
     if (e) return { ok: false, error: e[1].trim() };
     return /^quickbar \[/m.test(r) ? { ok: true } : { ok: false, error: r.trim() || "no reply" };
+  }
+
+  // The editor's autosave for the bar: a PC backup first, as for a profile, then the keypad.
+  async saveQuickbar(arr) {
+    this.backup.autoBackup("quickbar", arr);
+    return this.setQuickbar(arr);
   }
 
   // The profile the bar's top slot offers for the app in front (0: none).
