@@ -292,6 +292,14 @@ static float contrast(C3 a, C3 b) { float x = relLum(a), y = relLum(b); return (
 // A state colour set as text ("Connected", "Clear all", the calibration's notes): moved toward the theme's
 // text ink just far enough to read (4.5:1) on the sheet, a card and the ground alike. Fills keep the pure
 // colour; the themes' palettes stay as the owner set them.
+// The ON tag's word on its green: the theme's ink for it unless that fails 4.5:1, then white or a
+// green-black, whichever reads (Daylight and Synth: the green-black, 4.7 and 5.1:1, as Studio's preview).
+static C3 onTagInk() {
+  if (contrast(ON_INK, GREEN) >= 4.5f) return ON_INK;
+  C3 dark = HEXC(0x062012);
+  return contrast(WHITE, GREEN) >= contrast(dark, GREEN) ? WHITE : dark;
+}
+
 static C3 legible(C3 c) {
   for (int a = 0; a < 256; a += 32) {
     C3 m = mix(c, T->txt, a);
@@ -776,7 +784,7 @@ static void drawCell(int c, uint32_t now) {
   for (JsonVariant act : k["actions"].as<JsonArray>()) host |= !strcmp(act["type"] | "", "host");
   bool hasHold = k["hold_actions"].size() > 0 || (k["hold_to_fire"] | false), holding = down && hasHold && !holdFired;
   int tagR = (int)kx + KEY + 6;   // tags sit on the key's top-right corner
-  if (on) tag(tagR, cy, "ON", GREEN, false, GREEN, ON_INK, A);
+  if (on) tag(tagR, cy, "ON", GREEN, false, GREEN, onTagInk(), A);
   else if (host) tag(tagR, cy, "PC", TAG_BG, true, CYAN, CYAN, A);
   else if (hasHold && !holding) tag(tagR, cy, "HOLD", TAG_BG, true, mix(TAG_BG, HAIR, th.light ? 120 : 38), TXT2, A);
 
