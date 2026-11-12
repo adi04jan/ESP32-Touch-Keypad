@@ -30,7 +30,8 @@ class Suggest {
   save(file) {
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(this.data));
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify(this.data));   // whole or not at all
+      fs.renameSync(`${file}.tmp`, file);
       return true;
     } catch (_) { return false; }
   }
