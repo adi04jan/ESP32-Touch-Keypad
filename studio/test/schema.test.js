@@ -52,6 +52,19 @@ test("a new profile has no brightness: the keypad applies one on every switch, o
   assert.equal(schema.validateProfile({ ...schema.blankProfile(), brightness: 256 }).ok, false);
 });
 
+test("hostActions and page clamping cover off_actions and mic_actions too", () => {
+  const keys = blank();
+  keys[0] = { id: 1, name: "Now Playing", widget: "media", span: [5, 3], actions: [], mic_actions: [{ type: "host", cmd: "mic toggle" }, { type: "page", value: 9 }] };
+  const p = profile(keys);
+  p.pages.push({ name: "Two", keys: blank() });
+  p.pages[1].keys[0] = key(1, { toggle: true, off_actions: [{ type: "host", cmd: "run off.cmd" }, { type: "page", value: 7 }] });
+  assert.deepEqual(schema.hostActions(p).map((a) => a.cmd).sort(), ["mic toggle", "run off.cmd"]);
+  const r = schema.repairProfile(p);
+  assert.equal(r.pages[0].keys[0].mic_actions[1].value, 2);
+  assert.equal(r.pages[1].keys[0].off_actions[1].value, 2);
+  assert.ok(schema.validateProfile(r).ok, schema.validateProfile(r).errors.join());
+});
+
 test("repeat nesting deeper than 4 is rejected and repaired away", () => {
   let a = { type: "key", value: "A" };
   for (let i = 0; i < 5; i++) a = { type: "repeat", count: 1, actions: [a] };

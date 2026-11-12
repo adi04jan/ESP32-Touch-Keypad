@@ -44,6 +44,7 @@ const ACTION_TYPES = [
   "page", "back", "host",
 ];
 
+const ACTION_FIELDS = ["actions", "hold_actions", "off_actions", "mic_actions"];   // every action list a key can carry
 const KEY_SET = new Set(KEY_NAMES);
 const KEY_AND_MOD_SET = new Set(KEY_AND_MODIFIER);
 const MEDIA_SET = new Set(MEDIA_NAMES);
@@ -394,7 +395,7 @@ function repairProfile(p) {
     if (a.type === "page" && a.value > n) a.value = n;
     if (a.type === "repeat") clampPages(a.actions);
   });
-  for (const pg of out.pages) for (const k of pg.keys) if (k) { clampPages(k.actions); if (k.hold_actions) clampPages(k.hold_actions); }
+  for (const pg of out.pages) for (const k of pg.keys) if (k) for (const f of ACTION_FIELDS) if (k[f]) clampPages(k[f]);
   return out;
 }
 
@@ -411,7 +412,7 @@ function hostActions(p) {
     if (a && a.type === "host") out.push(a);
     if (a && a.type === "repeat") walk(a.actions);
   });
-  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) { walk(k.actions); walk(k.hold_actions); walk(k.mic_actions); }
+  for (const pg of (p && p.pages) || []) for (const k of pg.keys || []) if (k) for (const f of ACTION_FIELDS) walk(k[f]);
   return out;
 }
 
