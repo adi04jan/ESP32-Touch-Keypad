@@ -332,6 +332,27 @@ bool hidMouseMove(int x, int y, int wheel) {
   return sendReport(RID_MOUSE, r, 4);
 }
 
+// Stay active (ble_hid.h). A jump and its way back alternate, so the pointer never drifts off.
+static bool jigOn = false;
+static uint32_t jigAt = 0, jigMs = 30000, jigMoves = 0;
+static int jigX = 0, jigY = 0;   // the jump still to undo
+
+void hidJiggle(bool on, uint16_t everyS) {
+  jigMs = (everyS ? constrain(everyS, 2, 600) : 30) * 1000UL;
+  if (on && !jigOn) { jigAt = millis() - jigMs; jigX = jigY = 0; }   // the first jump goes at once
+  jigOn = on;
+}
+bool hidJiggling() { return jigOn; }
+uint32_t hidJiggleMoves() { return jigMoves; }
+
+static void jiggleTick() {
+  if (!jigOn || millis() - jigAt < jigMs) return;
+  jigAt = millis();
+  if (jigX || jigY) { if (hidMouseMove(-jigX, -jigY, 0)) { jigX = jigY = 0; jigMoves++; } return; }
+  int x = (int)random(40, 121) * (random(2) ? 1 : -1), y = (int)random(30, 91) * (random(2) ? 1 : -1);
+  if (hidMouseMove(x, y, 0)) { jigX = x; jigY = y; jigMoves++; }
+}
+
 bool hidMouseClick(uint8_t buttons) {
   uint8_t r[4] = { buttons, 0, 0, 0 };
   bool ok = sendReport(RID_MOUSE, r, 4);
@@ -395,6 +416,7 @@ static void dropStrangers() {
 
 void blePoll() {
   if (txLen && millis() - txAt > 30) txSend();   // a partial console line (a prompt) goes out
+  jiggleTick();
   BleEvt e;
   while (xQueueReceive(evq, &e, 0) == pdTRUE) {
     switch (e.type) {

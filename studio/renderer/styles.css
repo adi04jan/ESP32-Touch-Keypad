@@ -298,6 +298,9 @@ details.book[open] > summary::before { transform: rotate(45deg); }
 .dev .art { position: absolute; left: 16px; top: 14px; width: 128px; height: 128px; border-radius: 16px; overflow: hidden; display: grid; place-items: center;
   background: linear-gradient(180deg, color-mix(in oklab, #6b4fd8 74%, #10161d), color-mix(in oklab, #6b4fd8 36%, #070a0e)); box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 14px 22px -14px #000; }
 .dev .art img { width: 100%; height: 100%; object-fit: cover; }
+/* Stay active (firmware JIG_*): the pill under the art; the keypad lights it while the pointer is kept moving. */
+.dev .mp .jig { position: absolute; left: 16px; top: 151px; width: 128px; height: 30px; border-radius: 12px; display: grid; place-items: center;
+  font: 700 15px/1 var(--body); color: var(--txt); background: color-mix(in oklab, var(--dg1), var(--txt) 10%); box-shadow: inset 0 0 0 1px var(--hair); }
 .dev .art svg { width: 36px; height: 36px; color: #fff; }
 .dev .meta { position: absolute; left: 160px; top: 16px; right: 16px; }
 .dev .meta .t { font: 700 25px/1.12 var(--body); color: #fff; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

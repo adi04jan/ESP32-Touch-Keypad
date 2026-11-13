@@ -493,6 +493,10 @@ static bool runCommand(char *s) {
       if (*arg) uiSetTheme(t);
       Con.printf("theme %s\n", uiThemeId(t));
     }
+  } else if (cmd == "jiggle") {   // Stay active: `jiggle on [seconds]` | `jiggle off`; prints the state and jumps so far
+    if (!strncmp(arg, "on", 2)) uiSetJiggle(true, atoi(arg + 2));
+    else if (!strcmp(arg, "off")) uiSetJiggle(false);
+    Con.printf("jiggle %s %lu\n", hidJiggling() ? "on" : "off", (unsigned long)hidJiggleMoves());
   } else if (cmd == "iconanim") {
     if (!strcmp(arg, "wave")) uiIconWave();
     else if (*arg) uiSetIconMotion(!strcmp(arg, "on"));

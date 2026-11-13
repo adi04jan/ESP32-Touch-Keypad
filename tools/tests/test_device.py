@@ -746,6 +746,33 @@ def test_screen_layout(d):
     assert close(img.getpixel((x + 56, y + 33)), (0, 255, 0), 40)
 
 
+def test_stay_active_pill_jumps_the_pointer_and_back_until_tapped_off(d):
+    """Media's Stay active pill (under the art) latches on with a tap and off with the next. While on, the pointer
+    jumps at once, then every interval, and back the next time (no drift), so Slack and Teams never see the PC idle."""
+    s8 = lambda h: (lambda v: v - 256 if v > 127 else v)(int(h, 16))
+    try:
+        d.ok("jiggle off")
+        d.ok("page 2"); time.sleep(0.6)
+        off = d.shot().getpixel((22, 193))                           # the pill's fill, left of its label
+        d.clear_events()
+        d.touch(80, 193)
+        assert d.ok("jiggle")[0].startswith("jiggle on"), d.ok("jiggle")
+        time.sleep(0.4)
+        assert not close(d.shot().getpixel((22, 193)), off, 30)       # lit while on
+        jump = hid_reports(d, 3, 1)[0]                               # mouse: buttons, x, y, wheel
+        d.ok("jiggle on 2")                                          # 2 s steps for the test
+        back = hid_reports(d, 3, 2, timeout=6)[1]
+        dx, dy, bx, by = s8(jump[2:4]), s8(jump[4:6]), s8(back[2:4]), s8(back[4:6])
+        assert abs(dx) >= 40 and abs(dy) >= 30 and (bx, by) == (-dx, -dy), (jump, back)
+        d.touch(80, 193)
+        assert d.ok("jiggle")[0].startswith("jiggle off")
+        d.clear_events(); time.sleep(3); d._pump()
+        assert not [l for _, l in d.events if l.startswith("EVT:HID 3 ")], d.events   # off: still
+    finally:
+        d.ok("jiggle off")
+        d.ok("page 1")
+
+
 def test_media_player_page(d):
     d.ok('widget now_playing {"title":"Paper Moon","album":"Test","artist":"Band","app":"Spotify","pos":10,"len":200,"playing":false}')
     d.ok("page 2")

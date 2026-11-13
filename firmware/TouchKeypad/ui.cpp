@@ -931,6 +931,15 @@ static int playerBtns(const PBtn *&b) { bool m = keyAt(0)["mic_actions"].size() 
 #define BTN_Y 248
 #define SEEK_X 160
 #define SEEK_W 244
+// Stay active (hidJiggle): a pill under the art, lit while the pointer is kept moving. Clear of the art (to y 172)
+// and of the controls' touch rings (from y 213).
+#define JIG_X 16
+#define JIG_Y 181
+#define JIG_W 128
+#define JIG_H 30
+#define JIG_BTN 70             // pressedBtn while the finger is on it
+static void markJig() { mark(JIG_X, JIG_Y, JIG_W, JIG_H); }
+void uiSetJiggle(bool on, int everyS) { hidJiggle(on, everyS); markJig(); }
 
 static void drawPlayer(uint32_t now) {
   if (!gfxHits(0, STATUS_H, SCR_W, LINE_Y - STATUS_H)) return;
@@ -1020,6 +1029,7 @@ static void drawPlayer(uint32_t now) {
     if (keyInkDrop(*T)) glyphLit(ic, false, gx, gy, gs, ink, mix(t, BLACK, 150));
     else glyph(iconFind(ic, false), false, gx, gy, gs, ink);
   }
+  if (gfxHits(JIG_X, JIG_Y, JIG_W, JIG_H)) button(JIG_X, JIG_Y, JIG_W, JIG_H, "Stay active", nullptr, hidJiggling() ? 1 : 0, pressedBtn == JIG_BTN);
 }
 
 // ---------------------------------------------------------------- settings sheet
@@ -1134,7 +1144,7 @@ static void drawSlide(uint32_t now) {
 // A drag took the touch: what was under the finger goes up without firing.
 static void slideCancelPress() {
   if (pressed >= 0) { int c = pressed; pressed = -1; emitKey(c, '0'); markCellRect(c); }
-  if (pressedBtn >= 0) { pressedBtn = -1; mark(0, BTN_Y - 46, SCR_W, 92); }
+  if (pressedBtn >= 0) { if (pressedBtn == JIG_BTN) markJig(); pressedBtn = -1; mark(0, BTN_Y - 46, SCR_W, 92); }
 }
 
 // Sideways drags on the home screen (the keys, a panel, Media): the page under the finger. True when it
@@ -2293,7 +2303,7 @@ void uiTick() {
     uint32_t idle = now - lastAct, dimMs = min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;   // setdim under 20 s: tests
     if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); powerSave(true); }
     else if (dimState == 1 && idle > BAT_OFF_MS) { dimState = 2; displaySetBacklight(0); }
-    else if (dimState == 2 && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning()) powerDeepSleep();
+    else if (dimState == 2 && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning() && !hidJiggling()) powerDeepSleep();   // Stay active keeps it awake
   }
   static bool lowWarned = false;   // once per drop under 15 %
   int pct = powerBatteryPct();
@@ -3315,10 +3325,14 @@ void uiGesture(uint8_t kind, int x0, int y0, int x1, int y1) {
       int nb = playerBtns(B);
       for (int i = 0; i < nb; i++)
         if (hypotf(x0 - B[i].x, y0 - BTN_Y) <= B[i].r + 6) { pressedBtn = i; feedbackClick(); mark(0, BTN_Y - 46, SCR_W, 92); }
+      if (pressedBtn < 0 && inRect(x0, y0, JIG_X, JIG_Y, JIG_W, JIG_H)) { pressedBtn = JIG_BTN; feedbackClick(); markJig(); }
     } else if (kind == G_TAP) {
       int b = pressedBtn;
       pressedBtn = -1;
-      if (b >= 0) {
+      if (b == JIG_BTN) {   // Stay active: a tap latches it on, the next lets go
+        if (inRect(x1, y1, JIG_X - 8, JIG_Y - 8, JIG_W + 16, JIG_H + 16)) hidJiggle(!hidJiggling());
+        markJig();
+      } else if (b >= 0) {
         released = 100 + b;
         release0 = now;
         const PBtn *B;

@@ -14,6 +14,11 @@ void hidReleaseAll();
 bool hidSendMedia(uint16_t usage);
 bool hidMouseMove(int x, int y, int wheel);
 bool hidMouseClick(uint8_t buttons);         // 1=L 2=R 4=M
+// Stay active: the pointer jumps at once, then every everyS seconds (0: 30), and back the next time, so chat
+// apps never see the PC idle. RAM only: a reboot turns it off. blePoll() runs it.
+void hidJiggle(bool on, uint16_t everyS = 0);
+bool hidJiggling();
+uint32_t hidJiggleMoves();                   // jumps sent since boot
 bool hidSendTelephony(const char *which);    // MIC_MUTE / ANSWER / DECLINE
 bool hidHostCombo(int slot);                 // reserved F13-F24 combo, slot 0-47
 

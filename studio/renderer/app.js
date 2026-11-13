@@ -242,6 +242,7 @@ function playerHTML(sel) {
   const art = state.art ? `<img src="${state.art}" alt="Album art">` : kicon("music", 36);
   return `<div class="mp${sel ? " sel" : ""}" data-k="0" role="button" tabindex="0" aria-label="Media player page">
     <div class="art">${art}</div>
+    <div class="jig">Stay active</div>
     <div class="meta"><div class="t">${esc(np.title || "Nothing playing")}</div>${np.album ? `<div class="al">${esc(np.album)}</div>` : ""}
       <div class="a">${esc(np.artist || "Studio sends the track here")}${np.app ? ` <b>${esc(String(np.app).split("!").pop().replace(/\.exe$/i, "").split(".").pop())}</b>` : ""}</div></div>
     <div class="seek"><i style="width:${pct}%"></i><b style="left:${pct}%"></b></div>
