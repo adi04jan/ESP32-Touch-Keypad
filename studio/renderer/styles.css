@@ -196,7 +196,7 @@ details.book[open] > summary::before { transform: rotate(45deg); }
 .seg button { min-height: 34px; background: var(--card); box-shadow: inset 0 0 0 1px var(--hair); color: var(--txt-2); }
 .seg button[aria-pressed="true"] { color: var(--mag); background: color-mix(in oklab, var(--mag) 14%, var(--card)); box-shadow: inset 0 0 0 1px var(--mag); }
 .prog { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
-.prog i { display: block; height: 100%; width: 0; background: var(--cyan); transition: width .2s var(--out); }
+.prog i { display: block; height: 100%; background: var(--cyan); transform: scaleX(0); transform-origin: left; transition: transform .2s var(--out); }
 
 /* ---------- console ---------- */
 .st-console { border-top: 1px solid var(--hair); padding: 8px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; background: var(--ply-2); min-width: 0; }

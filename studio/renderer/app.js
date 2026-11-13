@@ -1047,7 +1047,7 @@ api.onEvent(({ type, data }) => {
     case "art": state.art = data; if (playerShown()) renderStudio(true); break;
     case "context": if (data.slot) cli("sys", `Focused app → ${data.context}: profile ${data.slot}`); break;
     case "bridge": if (data.failed && data.failed.length) cli("host", `! ${data.failed.length} host combo(s) are taken by another app: ${data.failed.map((f) => f.label).join(", ")}`); break;
-    case "flash": { const p = $("flash-prog"), m = $("flash-msg"); if (p) p.firstElementChild.style.width = `${data.pct || 0}%`; if (m && data.msg) m.textContent = data.msg; break; }
+    case "flash": { const p = $("flash-prog"), m = $("flash-msg"); if (p) p.firstElementChild.style.transform = `scaleX(${Math.min(100, data.pct || 0) / 100})`; if (m && data.msg) m.textContent = data.msg; break; }
   }
 });
 

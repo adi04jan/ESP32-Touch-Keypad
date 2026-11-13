@@ -66,6 +66,21 @@
         ],
         "createdAt": "2026-11-12T13:15:48.699Z",
         "reason": "Claude triage: the only colored shadow is Daylight theme's 12px-offset key shadow (rgba 30,58,92) inside the keypad preview; it mirrors the firmware theme on a light screen, not a halo"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(.34, 1.56, .64, 1)",
+        "createdAt": "2026-11-13T13:01:30.542Z",
+        "reason": "Claude triage: --spring is the keypad's own press spring (firmware motion), used only for a 0.2 s button/key press scale in Studio and its device preview"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "studio/renderer/styles.css"
+        ],
+        "createdAt": "2026-11-13T13:01:30.893Z",
+        "reason": "Claude triage: the only match is .pick > summary::after, a dropdown chevron drawn from two 2px borders rotated 45deg, not a card's accent edge"
       }
     ]
   }
