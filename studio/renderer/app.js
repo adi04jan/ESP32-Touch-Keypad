@@ -220,8 +220,10 @@ function parseQuickbar(text) {
 }
 function qbarHTML() {
   const qb = state.quickbar || [null, null, null, null];
-  // Entry 1 opens with a swipe up; the bar shows entries 2-4, then Settings.
-  return `<div class="qbar" aria-label="Quick bar"><div class="sug"></div>${qb.slice(1).map((b) => `<div class="qb">${b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : ""}</div>`).join("")}<div class="qb">${kicon("settings", 22)}<span>Settings</span></div></div>`;
+  // Entry 1 opens with a swipe up and sits in the top slot while nothing is suggested (the preview never
+  // suggests); the bar shows entries 2-4, then Settings.
+  const btn = (b) => (b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : "");
+  return `<div class="qbar" aria-label="Quick bar"><div class="sug qb">${btn(qb[0])}</div>${qb.slice(1).map((b) => `<div class="qb">${btn(b)}</div>`).join("")}<div class="qb">${kicon("settings", 22)}<span>Settings</span></div></div>`;
 }
 function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
@@ -832,7 +834,7 @@ function renderQuickbar(learned, dis) {
   };
   const ago = (t) => (t ? new Date(t).toLocaleDateString([], { day: "numeric", month: "short" }) : "never");
   el.innerHTML = `<h2>Quick bar</h2>
-    <p class="hint">Each opens a page of one of your profiles over the keys, on every profile. Swipe up from the keys for the first; the three buttons sit right of the keys, above Settings. Tap one again to close it. The top slot suggests a profile for the app in front, learned from your own switches. Changes save to the keypad as you make them.</p>
+    <p class="hint">Each opens a page of one of your profiles over the keys, on every profile. Swipe up from the keys for the first; the other three sit right of the keys, above Settings. Tap one again to close it. The top slot suggests a profile for the app in front, learned from your own switches; with nothing to suggest, it holds the first button. Changes save to the keypad as you make them.</p>
     ${QB_ROWS.map(row).join("")}
     <p class="hint err" id="qb-msg" role="status"></p>
     <h3>What it learned</h3>

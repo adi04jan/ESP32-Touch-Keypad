@@ -263,6 +263,28 @@ test("uploads send ###SYNC### every 4 KB and wait for the ACK", async () => {
   assert.deepEqual(JSON.parse(sim.files.get("/big.json").toString()), big);
 });
 
+// A late ACK must not restart a timed-out upload's pump under the next command.
+test("an ACK that arrives after its upload timed out sends nothing more", async (t) => {
+  const { EventEmitter } = require("events");
+  let port; const sent = [];
+  class Mute extends EventEmitter {   // never answers ###SYNC### in time
+    constructor(_o, cb) { super(); port = this; this.isOpen = true; setImmediate(() => cb(null)); }
+    static async list() { return []; }
+    write(d, cb) { sent.push(String(d)); if (cb) cb(); } set() {} close() {}
+  }
+  const link = new SerialLink({ SerialPort: Mute, uploadRate: Infinity });
+  await link.connect("X");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const up = link.uploadJson("big.json", { text: "x".repeat(10000) });
+  await new Promise((r) => setImmediate(r));
+  assert.ok(sent.some((l) => l.startsWith("###SYNC###")));
+  t.mock.timers.tick(9000);
+  assert.equal((await up).ok, false);
+  const n = sent.length;
+  port.emit("data", Buffer.from("ACK\n"));
+  assert.equal(sent.length, n, "the late ACK restarted the timed-out upload");
+});
+
 test("the cover goes as a JPEG to ram:artj when Studio has an encoder", async () => {
   const fs = require("fs"), os = require("os"), path = require("path");
   const { Device } = require("../services/device");

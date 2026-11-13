@@ -226,12 +226,14 @@ class SerialLink extends EventEmitter {
       const bytes = lines.reduce((n, l) => n + l.length + 1, 0);
       const rate = this.uploadRate;
       this._readResolve = (reply) => resolve({ ok: uploadOk(reply), reply });
+      let dead = false;   // timed out: a late ACK or a queued pump must send nothing more of it
       this._capture(8000 + (Number.isFinite(rate) ? (bytes / rate) * 1000 : 0),
-        () => { this._stale = true; this.emit("log", `Upload of ${label} timed out; device did not acknowledge.\n`); });
+        () => { dead = true; this._ackWait = null; this._stale = true; this.emit("log", `Upload of ${label} timed out; device did not acknowledge.\n`); });
       this.emit("tx", `${lines[0]}  (${lines.length - 2} lines, ${bytes} B)`);
       const t0 = Date.now();
       let i = 0, sent = 0, sinceSync = 0;
       const pump = () => {
+        if (dead) return;
         if (!this.isOpen()) { this._ackWait = null; this._finishRead(); return; }
         const budget = Number.isFinite(rate) ? 256 + ((Date.now() - t0) * rate) / 1000 : Infinity;
         while (i < lines.length && sent < budget) {
