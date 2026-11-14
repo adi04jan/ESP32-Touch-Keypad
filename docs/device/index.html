@@ -55,14 +55,17 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 .sb .prof { display: flex; align-items: center; gap: 6px; font: 700 13px/1 "B612"; }
 .sb .prof i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px color-mix(in oklab, var(--line) 30%, transparent); }
 .sb .prof span { font: 400 12px/1 "B612 Mono"; color: var(--txt-2); }
-.sb .host { margin-left: auto; display: flex; align-items: center; gap: 4px; font: 400 12px/1 "B612 Mono"; color: var(--green); }
+.sb .host { display: flex; align-items: center; gap: 4px; font: 400 12px/1 "B612 Mono"; color: var(--green); }
 .sb .host.caution { color: var(--amber); } .sb .host.pairing { color: var(--mag); }
 .sb .usb { color: var(--txt-3); display: grid; }
-.sb .gear { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--txt);
+/* the chips: a caret when one opens a list; the profile chip's x closes the layer it names. Settings is on the quick bar. */
+.sb .chip { height: 24px; border-radius: 12px; padding: 0 5px 0 8px; display: flex; align-items: center;
   background: linear-gradient(180deg, #242e39, #151c24); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px var(--hair-2); }
+.sb .chip > svg:last-child { color: var(--txt-2); }
+.sb .bell { margin-left: auto; width: 26px; padding: 0; justify-content: center; color: var(--txt-2); }
 
 /* key grid */
-.grid { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; display: grid; grid-template-columns: repeat(5, 96px); grid-template-rows: repeat(3, 90px); }
+.grid { position: absolute; left: 0; top: 30px; width: 420px; height: 270px; display: grid; grid-template-columns: repeat(5, 84px); grid-template-rows: repeat(3, 90px); }
 .cell { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
 .key { --t: #8a98ab; position: relative; width: 66px; height: 66px; border-radius: 19px; display: grid; place-items: center; color: #fff;
   background: linear-gradient(180deg, color-mix(in oklab, var(--t) 74%, #10161d) 0%, color-mix(in oklab, var(--t) 36%, #070a0e) 100%);
@@ -73,18 +76,19 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 /* signature: the press brightens with pressure (on the device: XPT2046 Z), here with hold time */
 .cell.pressed .key { transform: scale(calc(.94 - var(--pr, .4) * .04)); filter: brightness(calc(1.06 + var(--pr, .4) * .34)) saturate(calc(1 + var(--pr, .4) * .3)); transition: transform .09s var(--press); }
 .cell.pressed .key::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px rgba(255,255,255, calc(var(--pr, .4) * .5)); }
-.lbl { margin-top: 5px; font: 400 13px/14px "B612"; color: var(--lbl); max-width: 92px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl { margin-top: 5px; font: 400 13px/14px "B612"; color: var(--lbl); max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl.sm { font-size: 11px; }   /* too wide for 80 px at 13: steps down before anything is cut */
 .well { width: 66px; height: 66px; border-radius: 19px; background: var(--well); box-shadow: inset 0 2px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(255,255,255,.05); }
-.tag { position: absolute; top: -5px; right: -7px; height: 17px; padding: 0 5px; border-radius: 6px; font: 700 12px/17px "B612 Mono"; letter-spacing: .02em; }
+.tag { position: absolute; top: -4px; right: -6px; height: 17px; padding: 0 5px; border-radius: 6px; font: 700 12px/17px "B612 Mono"; letter-spacing: .02em; }
 .tag.pc { color: var(--cyan); background: #071318; box-shadow: inset 0 0 0 1px var(--cyan); }
 .tag.hold { color: var(--txt-2); background: #0b1015; box-shadow: inset 0 0 0 1px var(--hair-2); }
 .tag.on { color: #062012; background: var(--green); }
 .cell.on .key { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--t) 30%, #fff), inset 0 0 0 2px var(--green), 0 12px 16px -12px #000; }
-.ring { position: absolute; top: 0; left: 12px; width: 72px; height: 72px; border-radius: 22px; border: 2px solid var(--green); pointer-events: none; transform: scale(1.06); opacity: .75; }
+.ring { position: absolute; top: 0; left: 6px; width: 72px; height: 72px; border-radius: 22px; border: 2px solid var(--green); pointer-events: none; transform: scale(1.06); opacity: .75; }
 .ring.alert { border-color: var(--red); }
 .ring.stamp { animation: stamp .7s var(--out) forwards; }
 @keyframes stamp { from { transform: scale(.9); opacity: 1; } 55% { opacity: 1; } to { transform: scale(1.08); opacity: 0; } }
-.hold-arc { position: absolute; top: 0; left: 12px; width: 72px; height: 72px; border-radius: 23px; pointer-events: none;
+.hold-arc { position: absolute; top: 0; left: 6px; width: 72px; height: 72px; border-radius: 23px; pointer-events: none;
   background: conic-gradient(var(--cyan) var(--p, 60%), transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 3px; }
 
 /* animated keys */
@@ -98,7 +102,7 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 @keyframes rec { 50% { color: var(--red); } }
 
 /* page line */
-.line { position: absolute; left: 0; right: 0; bottom: 3px; height: 16px; display: flex; justify-content: center; align-items: center; gap: 22px; }
+.line { position: absolute; left: 0; right: 60px; bottom: 3px; height: 16px; display: flex; justify-content: center; align-items: center; gap: 22px; }
 .line::before { content: ""; position: absolute; height: 2px; width: calc(var(--n) * 30px - 22px); background: color-mix(in oklab, var(--line) 70%, #000); border-radius: 1px; }
 .line button { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--g1); box-shadow: inset 0 0 0 2px var(--line); }
 .line button[aria-current="true"] { width: 12px; height: 12px; background: var(--line); box-shadow: 0 0 0 2px var(--g1); }
@@ -109,7 +113,7 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 @keyframes pop { from { transform: scale(.82); opacity: 0; } }
 
 /* media player */
-.mp { position: absolute; left: 0; top: 30px; width: 480px; height: 270px; }
+.mp { position: absolute; left: 0; top: 30px; width: 420px; height: 270px; }
 .art { position: absolute; left: 16px; top: 14px; width: 128px; height: 128px; border-radius: 16px; overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.25), inset 0 0 0 1px rgba(255,255,255,.08), 0 14px 22px -14px #000; }
 .art .synth { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
@@ -126,14 +130,30 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 .seek .fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--p); border-radius: 3px; background: linear-gradient(90deg, color-mix(in oklab, var(--cyan) 60%, #000), var(--cyan)); }
 .seek .knob { position: absolute; top: 15px; left: calc(var(--p) - 7px); width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px #000; }
 .times { position: absolute; left: 160px; right: 16px; top: 146px; display: flex; justify-content: space-between; font: 400 13px/1 "B612"; font-variant-numeric: tabular-nums; color: var(--txt-2); }
-.ctl { position: absolute; left: 12px; right: 12px; top: 176px; height: 84px; display: flex; align-items: center; justify-content: space-between; }
-.ctl button { --t: #8a98ab; position: relative; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+.ctl { position: absolute; left: 9px; right: 9px; top: 176px; height: 84px; display: flex; align-items: center; justify-content: space-between; }
+.ctl button { --t: #8a98ab; position: relative; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; color: #fff;
   background: linear-gradient(180deg, color-mix(in oklab, var(--t) 40%, #10161d), color-mix(in oklab, var(--t) 14%, #070a0e));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 0 0 1px color-mix(in oklab, var(--t) 45%, transparent), 0 12px 16px -12px #000; transition: transform .26s var(--spring); }
 .ctl button:active { transform: scale(.92); transition-duration: .09s; }
 .ctl button svg { width: 28px; height: 28px; filter: drop-shadow(0 1px 3px color-mix(in oklab, var(--t) 60%, #000)); }
-.ctl .play { --t: var(--cyan); width: 84px; height: 84px; } .ctl .play svg { width: 36px; height: 36px; }
-.ctl .mute { width: 56px; height: 56px; } .ctl .mute svg { width: 24px; height: 24px; }
+.ctl .play { --t: var(--cyan); width: 76px; height: 76px; } .ctl .play svg { width: 36px; height: 36px; }
+.ctl .mute { width: 52px; height: 52px; } .ctl .mute svg { width: 24px; height: 24px; }
+.mp .jig { position: absolute; left: 16px; top: 151px; width: 128px; height: 30px; padding: 0; font-size: 15px; }   /* Stay active: cyan while on */
+
+/* quick bar: 60 px right of the keys. The top slot (Media here), a hairline, three panel entries, Settings. */
+.qbar { position: absolute; left: 420px; top: 30px; width: 60px; bottom: 0; display: grid; grid-template-rows: 60px repeat(4, 57px); background: var(--ply); box-shadow: inset 1px 0 0 var(--hair); }
+.qbar::after { content: ""; position: absolute; left: 8px; right: 8px; top: 59px; height: 1px; background: var(--hair); }
+.qb { margin: 2px 4px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 9px; color: var(--txt); }
+.qb.sug { margin-bottom: 5px; }
+.qb svg { width: 22px; height: 22px; flex: none; }
+.qb span { max-width: 56px; font: 400 11px/11px "B612"; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qb[aria-pressed="true"] { color: var(--mag); background: color-mix(in oklab, var(--mag) 16%, transparent); }   /* its layer is open: lit like the sheet's tab */
+.qb[aria-pressed="true"] span { color: var(--mag); }
+
+/* layers over the keys: a bar panel lies on the ply; Media rises over the keys as a sheet */
+.plane { position: absolute; left: 0; top: 30px; width: 420px; bottom: 0; background: var(--ply); }
+.plane.media { border-radius: 16px 16px 0 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.13); }
+.plane ~ .line { --g1: var(--ply); }   /* the stations sit on the ply */
 
 /* sheet (ply 3) */
 .sheet { position: absolute; left: 0; top: 30px; width: 480px; height: 290px; border-radius: 16px 16px 0 0; background: linear-gradient(180deg, var(--ply), var(--ply-2));
@@ -184,6 +204,33 @@ figcaption span { color: var(--page-txt-2); font-size: 14px; }
 dl.about { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font: 400 14px/1.25 "B612"; font-variant-numeric: tabular-nums; }
 dl.about dt { color: var(--txt-2); } dl.about dd { margin: 0; color: var(--txt); }
 
+/* the shade: pulled down from the status band over the keys and the bar */
+.shade { position: absolute; left: 0; top: 30px; width: 480px; border-radius: 0 0 16px 16px; background: linear-gradient(180deg, var(--ply), var(--ply-2));
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,.06), 0 14px 22px -10px #000; }
+.shade > * { position: absolute; }
+.shade .sun { left: 8px; top: 21px; display: grid; color: var(--txt-2); }
+.shade .slider { left: 30px; top: 8px; width: 256px; margin: 0; }
+.shade .step { left: 292px; top: 8px; display: flex; gap: 4px; }
+.shade .step .btn { width: 38px; padding: 0; } .shade .step .btn:nth-child(2) { width: 94px; font-size: 15px; }
+.shade .hcs { left: 12px; top: 60px; display: flex; gap: 6px; }
+.shade .hcs .btn { width: 148px; height: 46px; justify-content: flex-start; gap: 6px; padding: 0 0 0 9px; text-align: left; }
+.shade .hcs .btn:last-child { justify-content: center; padding: 0; }
+.shade .hcs .btn > svg { color: var(--txt-2); } .shade .hcs .btn:last-child > svg { color: var(--txt); }
+.shade .hcs .up { box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 2px var(--green); } .shade .hcs .up > svg { color: var(--green); }
+.shade .n { min-width: 0; } .shade .n b { display: block; font: 700 15px/1.2 "B612"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shade .n span { font: 400 12px/1.2 "B612 Mono"; color: var(--txt-2); } .shade .up .n span { color: var(--green); }
+.shade .nh { left: 14px; right: 14px; top: 110px; display: flex; justify-content: space-between; align-items: baseline; font: 400 12px/1 "B612 Mono"; color: var(--txt-2); }
+.shade .nh b { font: 700 15px/1 "B612"; color: var(--cyan); }
+.shade .notes { left: 8px; right: 8px; top: 132px; display: flex; flex-direction: column; gap: 4px; }
+.note { height: 42px; border-radius: 12px; padding-right: 10px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; grid-template-rows: 20px 16px; align-content: center;
+  background: #172029; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px var(--hair); }
+.note svg { grid-row: span 2; place-self: center; }
+.note b { font: 700 15px/20px "B612"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note .age { font: 400 12px/20px "B612 Mono"; color: var(--txt-3); }
+.note .sub { grid-column: 2 / 4; font: 400 12px/16px "B612 Mono"; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note .sub span { margin-right: 6px; color: var(--cyan); }
+.shade .handle { left: 220px; bottom: 5px; width: 40px; height: 4px; border-radius: 2px; background: color-mix(in oklab, var(--ply), var(--txt-2) 35%); }
+
 /* pairing */
 .pair { position: absolute; inset: 30px 0 0 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 22px; }
 .pair h2 { margin: 0; font: 700 19px/1.2 "B612"; color: #fff; }
@@ -225,7 +272,7 @@ dl.about dt { color: var(--txt-2); } dl.about dd { margin: 0; color: var(--txt);
 <div class="doc">
   <header>
     <h1>Touch Keypad screens</h1>
-    <p>Every screen of the 480×320 keypad, drawn at device pixels from the same profiles and icon set the firmware ships. The first screen responds to clicks: keys, page stations, the gear, the player. Album art is synthetic.</p>
+    <p>Every screen of the 480×320 keypad, drawn at device pixels from the same profiles and icon set the firmware ships. The first screen responds to clicks: keys, page stations, the quick bar, the status chip, the player. Album art is synthetic.</p>
     <div class="zoom" role="group" aria-label="Scale"><button type="button" aria-pressed="true" data-z="1">1×</button><button type="button" aria-pressed="false" data-z="2">2×</button></div>
   </header>
   <main class="gallery" id="gallery"></main>
@@ -244,13 +291,33 @@ function icon(name, px = 24) {
   return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" ${paint} aria-hidden="true">${g.d}</svg>`;
 }
 
-function statusBand(p, pageIdx, host = "PC-WORK", hostState = "") {
-  const hostTxt = hostState === "caution" ? "No host" : hostState === "pairing" ? "Pairing" : host;
+// The quick bar (`quickbar` in docs/PROTOCOL.md): entry 1 is Media, entries 2-4 each open a page of a profile as a panel.
+const QB = [{ profile: 1, page: 2, icon: "music", label: "Media" }, { profile: 2, page: 1, icon: "code", label: "Code" },
+  { profile: 2, page: 2, icon: "git-branch", label: "Git" }, { profile: 3, page: 3, icon: "music-2", label: "Sounds" }];
+
+// layer: { btn, page }, an open panel (btn 2-4) or Media (1). The chip names what is on top (the Where Am I Rule).
+function statusBand(p, pageIdx, hostState = "", layer = null) {
+  const hostTxt = hostState === "caution" ? "No host" : hostState === "pairing" ? "Pairing" : "PC-WORK";
   const bt = hostState === "caution" ? "bluetooth-off" : hostState === "pairing" ? "bluetooth-searching" : "bluetooth";
-  return `<div class="sb" style="--line:${rgb(p.color)}"><span class="clock">14:05</span>
-    <span class="prof"><i></i>${esc(p.profile_name)} <span>${pageIdx + 1}/${p.pages.length}</span></span>
-    <span class="host ${hostState}">${icon(bt, 18)}${esc(hostTxt)}</span><span class="usb" title="USB power">${icon("plug-zap", 18)}</span>
-    <button class="gear" type="button" aria-label="Settings" data-act="sheet">${icon("settings", 18)}</button></div>`;
+  const e = layer && QB[layer.btn - 1], lp = e ? P[e.profile - 1] : p;
+  return `<div class="sb" style="--line:${rgb(lp.color)}"><span class="clock">14:05</span>
+    <button class="prof chip" type="button" data-act="chip" aria-label="${e ? `Close ${esc(e.label)}` : "Profiles"}"><i></i>${esc(e ? e.label : p.profile_name)} <span>${(e ? layer.page : pageIdx) + 1}/${lp.pages.length}</span>${icon(e ? "x" : "chevron-down", 14)}</button>
+    <span class="bell chip">${icon("bell", 16)}</span>
+    <span class="host chip ${hostState}">${icon(bt, 18)}${esc(hostTxt)}${icon("chevron-down", 14)}</span><span class="usb" title="USB power">${icon("plug-zap", 18)}</span></div>`;
+}
+
+// Entry 1 holds the top slot while nothing is suggested; then entries 2-4 and Settings. open: the layer's entry, lit.
+function qbarHTML(open = 0) {
+  return `<nav class="qbar" aria-label="Quick bar">${QB.map((b, i) => `<button type="button" class="qb${i ? "" : " sug"}" aria-pressed="${open === i + 1}" data-qb="${i + 1}">${icon(b.icon, 22)}<span>${esc(b.label)}</span></button>`).join("")}
+    <button type="button" class="qb" data-act="sheet">${icon("settings", 22)}<span>Settings</span></button></nav>`;
+}
+
+// A label too wide for its 80 px at 13 px steps down to 11 px (ui.cpp drawCell).
+let measure = null;
+function small(s) {
+  measure = measure || document.createElement("canvas").getContext("2d");
+  measure.font = '400 13px "B612"';
+  return measure.measureText(s).width > 80;
 }
 
 function keyHTML(k, st = {}) {
@@ -265,7 +332,7 @@ function keyHTML(k, st = {}) {
   return `<div class="cell ${st.pressed ? "pressed" : ""} ${st.on ? "on" : ""}" data-id="${k.id}" style="--d:${st.d || 0}${st.pr != null ? `;--pr:${st.pr}` : ""}">
     ${st.hold ? `<span class="hold-arc" style="--p:${st.hold}%"></span>` : ""}
     <button type="button" class="${cls}" style="--t:${t}" aria-label="${esc(k.name)}">${face}${tags}</button>
-    <span class="lbl">${esc(k.name)}</span>${st.ring ? `<span class="ring ${st.ring}"></span>` : ""}</div>`;
+    <span class="lbl${small(k.name) ? " sm" : ""}">${esc(k.name)}</span>${st.ring ? `<span class="ring ${st.ring}"></span>` : ""}</div>`;
 }
 
 function gridHTML(page, states = {}, enter = false) {
@@ -277,13 +344,15 @@ function lineHTML(p, cur) {
     `<button type="button" aria-label="Page ${i + 1}: ${esc(pg.name)}" aria-current="${i === cur}" data-page="${i}"></button>`).join("")}</div>`;
 }
 
+// The keys take the left 420 px, the quick bar the right 60. opts.layer: a panel or Media over the keys, on the ply
+// with its own profile's page and page line.
 function homeHTML(p, pageIdx, states, opts = {}) {
-  const page = p.pages[pageIdx];
+  const L = opts.layer, e = L && QB[L.btn - 1], vp = e ? P[e.profile - 1] : p, vi = L ? L.page : pageIdx, page = vp.pages[vi];
   const body = page.keys[0] && page.keys[0].widget === "media" ? playerHTML(opts.np) : gridHTML(page, states, opts.enter);
-  return statusBand(p, pageIdx, "PC-WORK", opts.host || "") + body + lineHTML(p, pageIdx);
+  return statusBand(p, pageIdx, opts.host || "", L) + (L ? `<div class="plane${L.btn === 1 ? " media" : ""}"></div>` : "") + body + lineHTML(vp, vi) + qbarHTML(L ? L.btn : 0);
 }
 
-const NP = { title: "Midnight City", album: "Hurry Up, We're Dreaming", artist: "M83", app: "Spotify", pos: 102, len: 243, playing: true };
+const NP = { title: "Midnight City", album: "Hurry Up, We're Dreaming", artist: "M83", app: "Spotify", pos: 102, len: 243, playing: true, jig: false };
 const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 function playerHTML(np = NP) {
   const p = (np.pos / np.len * 100).toFixed(1) + "%";
@@ -292,6 +361,7 @@ function playerHTML(np = NP) {
       <div class="a">${esc(np.artist)} <span class="src">${icon("spotify", 14)}${esc(np.app)}</span>${np.playing ? `<span class="mini-eq"><i></i><i></i><i></i></span>` : ""}</div></div>
     <button class="seek" type="button" aria-label="Seek" data-act="seek" style="--p:${p}"><span class="tr"><span class="fill"></span></span><span class="knob"></span></button>
     <div class="times"><span>${clock(np.pos)}</span><span>−${clock(np.len - np.pos)}</span></div>
+    <button type="button" class="btn jig${np.jig ? " primary" : ""}" aria-pressed="${!!np.jig}" data-act="jig">Stay active</button>
     <div class="ctl">
       <button type="button" class="mute" aria-label="Mute">${icon("volume-x", 24)}</button>
       <button type="button" aria-label="Volume down">${icon("volume-1", 28)}</button>
@@ -333,7 +403,7 @@ function sheetHTML(tab, wipe = false) {
 }
 
 function pairHTML() {
-  return statusBand(P[0], 0, "", "pairing") + `<div class="pair"><h2>Pair a host</h2>
+  return statusBand(P[0], 0, "pairing") + `<div class="pair"><h2>Pair a host</h2>
     <p>On your computer open Bluetooth, add a device, choose Touch Keypad, then type this code.</p>
     <div class="pk">482<span>913</span></div>
     <div class="timer"><span class="bar" style="--p:86%"><i></i></span><span>0:52</span></div>
@@ -354,19 +424,40 @@ function calTestHTML() {
     `<div class="acts"><button type="button" class="btn">${icon("rotate-ccw", 18)}Redo</button><button type="button" class="btn primary">${icon("check", 18)}Done</button></div>`;
 }
 
+// The shade (ui.cpp drawShade): brightness and the profile stepper, the hosts, then the newest notifications.
+const NOTES = [["square-terminal", "Build finished", "Terminal", "npm test: 42 passed", "now"], ["bluetooth", "Connected", "Bluetooth", "PC-WORK", "1m"]];
+function shadeHTML() {
+  return `<div class="shade" style="height:${132 + NOTES.length * 46 + 14}px">
+    <span class="sun">${icon("sun", 18)}</span>
+    <div class="slider" style="--f:.78"><span class="tr"><span class="fill" style="--p:78%"></span></span><span class="th"></span></div>
+    <div class="step"><button type="button" class="btn" aria-label="Previous profile">${icon("chevron-left", 18)}</button><button type="button" class="btn">${esc(P[0].profile_name)}</button><button type="button" class="btn" aria-label="Next profile">${icon("chevron-right", 18)}</button></div>
+    <div class="hcs"><button type="button" class="btn up">${icon("bluetooth", 18)}<span class="n"><b>PC-WORK</b><span>Connected</span></span></button>
+      <button type="button" class="btn">${icon("bluetooth", 18)}<span class="n"><b>MacBook Air</b><span>Tap to use</span></span></button>
+      <button type="button" class="btn">${icon("link", 18)}Pair new</button></div>
+    <div class="nh"><span>Notifications · ${NOTES.length}</span><b>Clear all</b></div>
+    <div class="notes">${NOTES.map(([ic, t, app, body, age]) => `<div class="note">${icon(ic, 22)}<b>${esc(t)}</b><span class="age">${age}</span><span class="sub"><span>${esc(app)}</span>${esc(body)}</span></div>`).join("")}</div>
+    <i class="handle"></i></div>`;
+}
+
 function hudHTML(level) {
   return `<div class="hud" role="status">${icon("volume-2", 26)}<div class="segs">${Array.from({ length: 16 }, (_, i) => `<i class="${i < Math.round(level / 100 * 16) ? "lit" : ""}"></i>`).join("")}</div><span class="n">${level}</span></div>`;
 }
 
 /* ---------------------------------------------------------------- gallery */
 const SCREENS = [
-  ["Home · live", "Click a key, a page station, the gear or a player control. Daily profile, page 1.", () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true } }), true],
+  ["Home · live", "Keys on the left 420 px, the quick bar in the right 60. Click a key, a page station, a bar button or the status chip. Daily profile, page 1.", () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true } }), true],
   ["Key states", "Pressed hard (Copy: the glass brightens with pressure), confirmed (Paste), refused with no host (GitHub), holding past half a second (Play), engaged toggle (Mic mute).",
     () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true, hold: 70 }, 6: { pressed: true, pr: .85 }, 7: { ring: "ok" }, 12: { ring: "alert" } })],
   ["Code profile", "Each profile owns a line colour; its pages are the stations along the bottom.", () => homeHTML(P[1], 0, {})],
   ["Stream profile, live", "Animated keys: recording blinks red, an open mic pulses.", () => homeHTML(P[2], 0, { 5: { on: true }, 6: { live: true } })],
-  ["Media player", "Album art, track, source, exact running times; tap the bar to seek.", () => homeHTML(P[0], 1, {}, { np: NP })],
-  ["Settings · Display", "A soft-key rail, the current tab in magenta.", () => statusBand(P[0], 0) + sheetHTML("display")],
+  ["Media player", "Album art, track, source, exact running times; tap the seek bar to seek. Stay active, under the art, keeps the PC awake by nudging the pointer.", () => homeHTML(P[0], 1, {}, { np: NP })],
+  ["Quick-bar panel", "A bar button opens a page of any profile over the keys, on the ply with its own page line. Its button is lit and the chip names it, Git 2/3 ×: a tap there or a swipe down closes it.",
+    () => homeHTML(P[0], 0, {}, { layer: { btn: 3, page: 1 } })],
+  ["Media layer", "The bar's top slot (or a swipe up) raises Media over whatever is open, here the Code profile. Media is lit, the chip says Media 2/3 ×, Stay active is on.",
+    () => homeHTML(P[1], 0, {}, { layer: { btn: 1, page: 1 }, np: { ...NP, jig: true } })],
+  ["Shade", "Pulled down from the status band or the bell, over the keys and the bar: brightness and the profile stepper, the hosts, the newest notifications.",
+    () => homeHTML(P[0], 0, { 1: { on: true }, 2: { playing: true } }) + shadeHTML()],
+  ["Settings · Display", "Settings, the bar's last button, covers the bar: a soft-key rail, the current tab in magenta.", () => statusBand(P[0], 0) + sheetHTML("display")],
   ["Settings · Profiles", "Eight slots; three ship filled.", () => statusBand(P[0], 0) + sheetHTML("profiles")],
   ["Settings · Bluetooth", "Up to three hosts: switch, forget, pair another.", () => statusBand(P[0], 0) + sheetHTML("bluetooth")],
   ["Settings · LED", "The board's status LED: rainbow by default.", () => statusBand(P[0], 0) + sheetHTML("led")],
@@ -383,14 +474,19 @@ gallery.innerHTML = SCREENS.map(([t, note, fn, live, cls], i) =>
   `<figure><div class="frame"><div class="scr ${cls || ""}" id="${live ? "live" : `s${i}`}">${fn()}</div></div><figcaption><b>${esc(t)}</b><span>${esc(note)}</span></figcaption></figure>`).join("");
 
 /* ---------------------------------------------------------------- the live screen */
-const live = { prof: 0, page: 0, sheet: null, np: { ...NP }, on: { 1: true } };
+const live = { prof: 0, page: 0, sheet: null, np: { ...NP }, on: { 1: true }, layer: null };
 const liveEl = document.getElementById("live");
+function viewKeys() {   // the page on show: the open layer's, else the home page
+  const e = live.layer && QB[live.layer.btn - 1];
+  return (e ? P[e.profile - 1].pages[live.layer.page] : P[live.prof].pages[live.page]).keys;
+}
+function goPage(i) { if (live.layer) live.layer.page = i; else live.page = i; renderLive("page"); }
 function renderLive(enter) {
-  const st = {};
-  for (const id in live.on) if (live.on[id]) st[id] = { on: true };
+  const st = {}, keys = viewKeys();
+  for (const id in live.on) if (live.on[id] && keys[id - 1] && keys[id - 1].toggle) st[id] = { on: true };
   st[2] = { ...(st[2] || {}), playing: live.np.playing };
-  liveEl.innerHTML = live.sheet ? statusBand(P[live.prof], live.page) + sheetHTML(live.sheet, enter === "sheet")
-    : homeHTML(P[live.prof], live.page, st, { enter: enter === "page", np: live.np });
+  liveEl.innerHTML = live.sheet ? statusBand(P[live.prof], live.page, "", live.layer) + sheetHTML(live.sheet, enter === "sheet")
+    : homeHTML(P[live.prof], live.page, st, { enter: enter === "page", np: live.np, layer: live.layer });
 }
 let prRaf = 0;
 liveEl.addEventListener("pointerdown", (e) => {
@@ -405,27 +501,41 @@ liveEl.addEventListener("pointerup", (e) => {
   const c = e.target.closest(".cell");
   cancelAnimationFrame(prRaf);
   liveEl.querySelectorAll(".cell.pressed").forEach((x) => { x.classList.remove("pressed"); x.style.removeProperty("--pr"); });
-  const act = e.target.closest("[data-act]"), pg = e.target.closest("[data-page]"), tab = e.target.closest("[data-tab]");
+  const act = e.target.closest("[data-act]"), pg = e.target.closest("[data-page]"), tab = e.target.closest("[data-tab]"), qb = e.target.closest("[data-qb]");
   if (tab) { live.sheet = tab.dataset.tab; return renderLive(); }
   if (act) {
     const a = act.dataset.act;
     if (a === "sheet") { live.sheet = "display"; return renderLive("sheet"); }
     if (a === "close") { live.sheet = null; return renderLive(); }
+    if (a === "chip") { if (live.layer) { live.layer = null; return renderLive("page"); } live.sheet = "profiles"; return renderLive("sheet"); }   // closes the layer it names, else Profiles
     if (a === "play") { live.np.playing = !live.np.playing; return renderLive(); }
+    if (a === "jig") { live.np.jig = !live.np.jig; return renderLive(); }
     if (a === "seek") { const r = act.getBoundingClientRect(); live.np.pos = Math.round((e.clientX - r.left) / r.width * live.np.len); return renderLive(); }
   }
-  if (pg) { live.page = +pg.dataset.page; return renderLive("page"); }
+  if (qb) {   // a bar button opens its layer; its lit button closes it
+    const btn = +qb.dataset.qb;
+    live.layer = live.layer && live.layer.btn === btn ? null : { btn, page: QB[btn - 1].page - 1 };
+    return renderLive("page");
+  }
+  if (pg) return goPage(+pg.dataset.page);
   if (!c) return;
-  const k = P[live.prof].pages[live.page].keys[c.dataset.id - 1];
+  const k = viewKeys()[c.dataset.id - 1];
+  if (!k) return;
   const a = (k.actions || [])[0] || {};
   if (k.toggle) { live.on[k.id] = !live.on[k.id]; renderLive(); }
-  if (a.type === "page") { live.page = a.value - 1; return renderLive("page"); }
-  if (a.type === "back") { live.page = 0; return renderLive("page"); }
+  if (a.type === "page") return goPage(a.value - 1);
+  if (a.type === "back") {   // in a layer: its first page, then the layer goes
+    const start = live.layer && QB[live.layer.btn - 1].page - 1;
+    if (live.layer && live.layer.page === start) { live.layer = null; return renderLive("page"); }
+    return goPage(live.layer ? start : 0);
+  }
   if (a.type === "media" && a.value === "PLAY_PAUSE") { live.np.playing = !live.np.playing; renderLive(); }
   const cell = liveEl.querySelector(`.cell[data-id="${k.id}"]`);
   if (cell) { const r = document.createElement("span"); r.className = "ring stamp"; cell.appendChild(r); setTimeout(() => r.remove(), 750); }
 });
 renderLive();
+// The labels were measured before B612 arrived: once it has, measure them again.
+document.fonts.load('400 13px "B612"').then(() => document.querySelectorAll(".lbl").forEach((l) => l.classList.toggle("sm", small(l.textContent))));
 
 document.querySelectorAll(".zoom button").forEach((b) => b.addEventListener("click", () => {
   document.querySelectorAll(".zoom button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
