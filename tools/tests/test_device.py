@@ -773,6 +773,38 @@ def test_stay_active_pill_jumps_the_pointer_and_back_until_tapped_off(d):
         d.ok("page 1")
 
 
+# Real taps on the Stay active pill, recorded on the owner's keypad (2026-11-13, `log on`), one sample per 10 ms poll,
+# re-centred on the pill. A resistive panel reads wide while the finger lands and lifts: the first sample was up to
+# 35 px off, the last two up to 50 px. Measured from the first sample, 12 of 28 taps crossed the slide lock and slid.
+REAL_TAPS = [
+    (8, "73,200 68,201 87,193 103,193"),
+    (10, "94,196 80,197 79,196"),
+    (12, "94,193 86,195 85,195 84,195 83,196 85,195 83,195 82,195 80,196 80,196 80,196 80,196 80,196 80,196 79,196 79,196 80,196 80,196 81,196 101,188"),
+    (13, "115,187 86,195 81,196 80,196 80,196 81,196 80,196 81,197 90,197"),
+    (16, "91,195 86,195 80,196 86,193 76,196 81,197 96,193"),
+    (17, "104,192 84,195 81,195 80,195 80,196 80,196 81,196 81,196 96,194"),
+    (27, "71,200 73,198 80,196 77,198 123,182"),
+    (28, "93,193 85,196 80,195 80,195 80,196 81,196 83,196 81,196 77,196 77,196 77,196 77,196 78,196 91,193"),
+    (30, "81,198 78,197 80,196 98,194"),
+]
+
+
+def test_real_resistive_taps_tap_and_never_slide(d):
+    """Each recorded tap, replayed sample by sample, toggles the pill: the landing and lifting samples never start a slide."""
+    try:
+        d.ok("page 2"); time.sleep(0.6)
+        for n, path in REAL_TAPS:
+            d.ok("jiggle off"); d.clear_events()
+            d.cmd(f"tpath {path}", timeout=3)
+            time.sleep(0.2)
+            st = dict(kv.split(":", 1) for kv in d.cmd("status")[0].split() if ":" in kv)
+            assert d.ok("jiggle")[0].startswith("jiggle on"), f"tap #{n} did not register (slide:{st.get('slide')})"
+            assert st.get("page") == "2" and not [l for _, l in d.events if l.startswith("EVT:PAGE")], f"tap #{n} turned the page"
+    finally:
+        d.ok("jiggle off")
+        d.ok("page 1")
+
+
 def test_media_player_page(d):
     d.ok('widget now_playing {"title":"Paper Moon","album":"Test","artist":"Band","app":"Spotify","pos":10,"len":200,"playing":false}')
     d.ok("page 2")

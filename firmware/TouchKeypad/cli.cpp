@@ -428,6 +428,12 @@ static bool runCommand(char *s) {
     e = cmd == "touch" ? 80 : 800;
     if (sscanf(arg, "%d %d %d", &a, &b, &e) < 2) Con.printf("%s <x> <y> [ms]\n", cmd.c_str());
     else { touchInject(a, b, a, b, e); return false; }
+  } else if (cmd == "tpath") {   // tests: a recorded press, "x,y" a poll (screen px), up to 32
+    int16_t pts[32][2];
+    int n = 0, k = 0;
+    for (const char *p = arg; n < 32 && sscanf(p, "%hd,%hd%n", &pts[n][0], &pts[n][1], &k) == 2; p += k) n++;
+    if (!n) Con.println("tpath <x,y> [x,y ...]");
+    else { touchInjectPath(pts, n); return false; }
   } else if (cmd == "swipe") {
     e = 250;
     if (sscanf(arg, "%d %d %d %d %d", &a, &b, &c, &d, &e) < 4) Con.println("swipe <x1> <y1> <x2> <y2> [ms]");

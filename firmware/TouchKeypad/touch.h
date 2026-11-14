@@ -10,6 +10,7 @@ void scanTouch();      // call every loop(); also watches the BOOT button (hold 
 // Prints "OK" and the prompt when the gesture has been processed.
 void touchInject(int x1, int y1, int x2, int y2, uint32_t ms);
 void touchInjectRaw(int rx, int ry, uint32_t ms);   // a press at raw ADC values (calibration tests)
+void touchInjectPath(const int16_t (*pts)[2], int n);   // a recorded press: one screen point per poll, up to 32
 void touchLog(bool on);
 
 // Calibration: screen = affine(raw), x = m0*rx + m1*ry + m2, y = m3*rx + m4*ry + m5.

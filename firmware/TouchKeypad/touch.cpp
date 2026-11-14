@@ -119,6 +119,15 @@ void touchInject(int x1, int y1, int x2, int y2, uint32_t ms) {
   inj = { true, false, x1, y1, x2, y2, millis(), ms < 20 ? 20 : ms };
 }
 
+static int16_t path[32][2];
+static uint8_t pathN = 0, pathI = 0;   // touchInjectPath: the points, and the next one
+void touchInjectPath(const int16_t (*pts)[2], int n) {
+  pathN = constrain(n, 1, 32);
+  memcpy(path, pts, pathN * sizeof *path);
+  pathI = 0;
+  inj = { true, false, 0, 0, 0, 0, millis(), 0 };
+}
+
 void touchInjectRaw(int rx, int ry, uint32_t ms) {
   inj = { true, true, rx, ry, rx, ry, millis(), ms < 20 ? 20 : ms };
 }
@@ -161,7 +170,14 @@ void scanTouch() {
   bool pressed;
   int x = lx, y = ly, rx = 0, ry = 0;
   bool injEnd = false;
-  if (inj.active) {
+  if (inj.active && pathN) {   // a recorded press, a point a poll; it lifts as a real one does
+    pressed = pathI < pathN;
+    const int16_t *p = path[pressed ? pathI++ : pathN - 1];
+    x = p[0];
+    y = p[1];
+    injEnd = !pressed;
+    unmap(x, y, &rx, &ry);
+  } else if (inj.active) {
     uint32_t t = now - inj.t0;
     pressed = t < inj.ms;
     if (pressed) {
@@ -187,25 +203,38 @@ void scanTouch() {
   x = constrain(x, 0, SCR_W - 1);
   y = constrain(y, 0, SCR_H - 1);
 
+  // The panel reads wide while the finger lands and lifts (recorded on the owner's keypad, 2026-11-13: the first
+  // sample up to 35 px off, the last two up to 50 and 33 px), and 12 of 28 taps slid. So a press starts at its
+  // second sample, and each move is reported two samples late: the two read while lifting are never used.
+  static int nIn, qn;
+  static int16_t qx[2], qy[2];   // the newest samples, not yet reported (oldest first)
   if (pressed) {
     misses = 0;
-    lx = x;
-    ly = y;
     if (!down) {
       down = true;
-      sx = x;
-      sy = y;
+      nIn = qn = 0;
+      sx = lx = x;   // provisional: a press of one sample starts and ends here
+      sy = ly = y;
       tDown = now;
       holdSent = false;
       rawN = 0;
       swallow = uiWake();   // first touch on a dark screen only wakes it
+    }
+    if (++nIn == 2) {
+      sx = lx = x;
+      sy = ly = y;
       if (!swallow) uiGesture(G_DOWN, sx, sy, x, y);
-    } else if (!swallow) {
-      if (!holdSent && now - tDown >= HOLD_MS && abs(lx - sx) < 20 && abs(ly - sy) < 20) {
-        holdSent = true;
-        uiGesture(G_HOLD, sx, sy, lx, ly);
-      } else {
-        uiGesture(G_MOVE, sx, sy, lx, ly);
+    } else if (nIn > 2) {
+      bool move = qn == 2;
+      if (move) { lx = qx[0]; ly = qy[0]; qx[0] = qx[1]; qy[0] = qy[1]; qn = 1; }
+      qx[qn] = x; qy[qn] = y; qn++;
+      if (move && !swallow) {
+        if (!holdSent && now - tDown >= HOLD_MS && abs(lx - sx) < 20 && abs(ly - sy) < 20) {
+          holdSent = true;
+          uiGesture(G_HOLD, sx, sy, lx, ly);
+        } else {
+          uiGesture(G_MOVE, sx, sy, lx, ly);
+        }
       }
     }
     if (rawN < RAW_MAX) { rawX[rawN] = rx; rawY[rawN] = ry; rawN++; }
@@ -214,11 +243,15 @@ void scanTouch() {
   }
   if (down && (injEnd || ++misses >= TOUCH_RELEASE_MISSES)) {
     down = false;
-    if (injEnd) { lx = x; ly = y; }
-    if (!swallow) classifyRelease();
+    if (injEnd && !pathN) { lx = x; ly = y; }   // a drawn gesture ends exactly where it was sent
+    if (!swallow) {
+      if (nIn < 2) uiGesture(G_DOWN, sx, sy, sx, sy);   // one sample: it still taps
+      classifyRelease();
+    }
   }
   if (injEnd) {
     inj.active = false;
+    pathN = 0;
     Con.println("OK");
     Con.print("macropad:$ ");
   }
