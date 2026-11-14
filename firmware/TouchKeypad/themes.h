@@ -123,7 +123,7 @@ static const Theme THEMES[] = {
     HEXC(0x9bbc0f), HEXC(0x8bac0f),
     HEXC(0x9bbc0f), HEXC(0x9bbc0f), HEXC(0x9bbc0f),
     HEXC(0x8bac0f), HEXC(0x0f380f), 255,
-    HEXC(0x0f380f), HEXC(0x306230), HEXC(0x6c8c1f), HEXC(0x0f380f),
+    HEXC(0x0f380f), HEXC(0x0f380f), HEXC(0x6c8c1f), HEXC(0x0f380f),   // txt2 = txt: no lighter green reads 4.5:1 on the lime (the DMG's text is its darkest shade)
     HEXC(0x306230), HEXC(0x0f380f), HEXC(0x306230), HEXC(0x306230), HEXC(0x0f380f), HEXC(0x306230),
     HEXC(0x9bbc0f),
     HEXC(0x9bbc0f), HEXC(0x9bbc0f), HEXC(0x9bbc0f), HEXC(0x8bac0f), HEXC(0x8bac0f), HEXC(0x0f380f), HEXC(0x0f380f),

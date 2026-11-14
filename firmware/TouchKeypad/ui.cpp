@@ -300,11 +300,25 @@ static C3 onTagInk() {
   return contrast(WHITE, GREEN) >= contrast(dark, GREEN) ? WHITE : dark;
 }
 
+// The whole ground counts, top (g0) to bottom (g2): Aurora's magenta read 3.4:1 on its g2. Memoised per render
+// task: each answer costs up to 50 powf, and the sheet asks for the same few words every frame.
 static C3 legible(C3 c) {
+  static __thread struct { const Theme *t; C3 c, out; } memo[8];
+  static __thread uint8_t next = 0;
+  for (auto &m : memo) if (m.t == T && m.c.r == c.r && m.c.g == c.g && m.c.b == c.b) return m.out;
+  C3 out = T->txt;
   for (int a = 0; a < 256; a += 32) {
     C3 m = mix(c, T->txt, a);
-    if (contrast(m, T->ply) >= 4.5f && contrast(m, T->card) >= 4.5f && contrast(m, T->g1) >= 4.5f) return m;
+    if (contrast(m, T->ply) >= 4.5f && contrast(m, T->card) >= 4.5f && contrast(m, T->g0) >= 4.5f &&
+        contrast(m, T->g1) >= 4.5f && contrast(m, T->g2) >= 4.5f) { out = m; break; }
   }
+  memo[next] = { T, c, out };
+  next = (next + 1) % 8;
+  return out;
+}
+// c moved toward the text ink just far enough to read (4.5:1) on bg: a state colour set on its own tint.
+static C3 readOn(C3 c, C3 bg) {
+  for (int a = 0; a < 256; a += 32) { C3 m = mix(c, T->txt, a); if (contrast(m, bg) >= 4.5f) return m; }
   return T->txt;
 }
 static C3 inkOn(C3 fill) { return luma(fill) > 150 ? TXT : T->ks == KS_PIXEL ? T->g1 : WHITE; }   // readable ink on a filled shape
@@ -328,11 +342,12 @@ static Fill cardFill() {
 }
 
 static void button(int x, int y, int w, int h, const char *label, const char *icon, uint8_t kind, bool down, int alpha = 255) {
-  // kind 0 normal, 1 primary (cyan), 2 quiet destructive
+  // kind 0 normal, 1 primary (cyan), 2 quiet destructive, 3 engaged (green: a latched toggle that is on)
   Fill f = ctlFill();
-  if (kind == 1) {
-    if (T->ks == KS_GLASS) f = glassFill(CYAN, down ? 60 : 0);
-    else { f = solidFill(down ? mix(CYAN, BLACK, 40) : CYAN); if (!T->crisp) f.top = mix(f.top, WHITE, 36); }
+  if (kind == 1 || kind == 3) {
+    C3 hue = kind == 3 ? GREEN : CYAN;
+    if (T->ks == KS_GLASS) f = glassFill(hue, down ? 60 : 0);
+    else { f = solidFill(down ? mix(hue, BLACK, 40) : hue); if (!T->crisp) f.top = mix(f.top, WHITE, 36); }
   }
   if (kind == 2) f = solidFill(PLY);
   if (down && kind == 0) {
@@ -342,8 +357,9 @@ static void button(int x, int y, int w, int h, const char *label, const char *ic
   }
   rrFill(x, y, w, h, T->crisp ? 4 : 12, f, alpha);
   if (kind == 2) rrRing(x + 0.5f, y + 0.5f, w - 1, h - 1, T->crisp ? 4 : 11.5f, T->crisp ? 2 : 1, T->crisp ? RED : mix(PLY, RED, 102), alpha);
-  if (kind == 1 && T->crisp) rrRing(x + 1, y + 1, w - 2, h - 2, 3, 2, TXT, alpha);
-  C3 ink = kind == 2 ? legible(RED) : kind == 1 ? (T->ks == KS_GLASS ? WHITE : inkOn(CYAN)) : TXT;
+  if ((kind == 1 || kind == 3) && T->crisp) rrRing(x + 1, y + 1, w - 2, h - 2, 3, 2, TXT, alpha);
+  C3 ink = kind == 2 ? legible(RED) : kind == 1 ? (T->ks == KS_GLASS ? WHITE : inkOn(CYAN))
+         : kind == 3 ? (T->ks == KS_GLASS ? WHITE : onTagInk()) : TXT;
   int tw = textW(fBodyB, label), gw = icon ? 18 + 7 : 0, x0 = x + (w - tw - gw) / 2;
   if (icon) glyph(iconFind(icon, true), true, x0 + 9, y + h / 2, 18, ink, alpha);
   text(fBodyB, x0 + gw, y + h / 2 + 5, label, ink, alpha);
@@ -865,7 +881,7 @@ static void drawStatus() {
   if (hidDry()) { tag(left, 6, "DRY", RED, false, RED, inkOn(RED), 255); left -= 38; }
   bellX = left - 30;
   rrFill(bellX, 2, 26, 24, 12, ctlFill());
-  glyph(iconFind(noteUnread ? "bell-ring" : "bell", true), true, bellX + 13, 14, 16, noteUnread ? TXT : noteN ? TXT2 : TXT3);
+  glyph(iconFind(noteUnread ? "bell-ring" : "bell", true), true, bellX + 13, 14, 16, noteUnread ? TXT : TXT2);   // never TXT3: the bell opens the shade even with nothing in it
   if (noteUnread) {   // the unread count on a badge
     char b[4];
     snprintf(b, sizeof b, noteUnread > 9 ? "9+" : "%d", noteUnread);
@@ -1029,7 +1045,7 @@ static void drawPlayer(uint32_t now) {
     if (keyInkDrop(*T)) glyphLit(ic, false, gx, gy, gs, ink, mix(t, BLACK, 150));
     else glyph(iconFind(ic, false), false, gx, gy, gs, ink);
   }
-  if (gfxHits(JIG_X, JIG_Y, JIG_W, JIG_H)) button(JIG_X, JIG_Y, JIG_W, JIG_H, "Stay active", nullptr, hidJiggling() ? 1 : 0, pressedBtn == JIG_BTN);
+  if (gfxHits(JIG_X, JIG_Y, JIG_W, JIG_H)) button(JIG_X, JIG_Y, JIG_W, JIG_H, "Stay active", nullptr, hidJiggling() ? 3 : 0, pressedBtn == JIG_BTN);   // engaged: green
 }
 
 // ---------------------------------------------------------------- settings sheet
@@ -1925,8 +1941,10 @@ static void qbCheck() {
 static void barButton(int top, const IconDef *ic, bool uiIcon, const char *label, bool lit) {
   const int cx = BAR_X + BAR_W / 2;
   bool inked = T->crisp && T->light;   // Retro: an ink fill
-  C3 ink = lit ? (inked ? T->g1 : ACCENT) : TXT;
-  if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(inked ? TXT : mix(BARC, ACCENT, T->light ? 34 : 41)));
+  // The lit fill is a clear tint of the accent; its ink the accent lifted to 4.5:1 on that tint (raw, Synth read 2.2:1).
+  C3 fill = inked ? TXT : mix(BARC, ACCENT, T->light ? 60 : 70);
+  C3 ink = lit ? (inked ? T->g1 : readOn(ACCENT, fill)) : TXT;
+  if (lit) rrFill(BAR_X + 4, top + 2, BAR_W - 8, QB_H - 4, T->crisp ? 4 : 12, solidFill(fill));
   if (ic) glyph(ic, uiIcon, cx, top + 22, 22, ink);
   text(fLabelS, cx, top + 46, ellipsize(fLabelS, label, BAR_W - 4).c_str(), lit ? ink : TXT2, 255, AL_C);
 }
