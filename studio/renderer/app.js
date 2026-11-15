@@ -76,17 +76,36 @@ const blankProfile = (n) => ({ schema_version: 2, profile_name: `Profile ${n}`, 
 const K = (id, name, icon, led_color, actions) => ({ id, name, icon, led_color, actions });
 const luma = ([r, g, b]) => (r * 77 + g * 150 + b * 29) >> 8;
 const mixc = (a, b, t) => a.map((v, i) => Math.round(v + ((b[i] - v) * t) / 255));
-// Glyph ink where the theme does not use one ink for every key (the firmware's keyInk).
-function keyInk(tint) {
-  if (state.theme === "paper") return luma(mixc(tint, [239, 228, 204], 46)) > 165 ? "#1f1a14" : "#fffaf0";
-  if (state.theme === "daylight") { let c = tint; for (let i = 0; i < 6 && luma(c) > 118; i++) c = mixc(c, [0, 0, 0], 45); return rgb(c); }
-  return "";
+const relLum = (c) => { const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+const contrast = (a, b) => { const x = relLum(a), y = relLum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };   // WCAG, as ui.cpp
+const hexRgb = (h) => { h = h.trim().replace("#", ""); if (h.length === 3) h = [...h].map((x) => x + x).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+// A theme's roles as the preview CSS sets them (styles.css, themes_gen.css; themes.test.js holds them to themes.h).
+const ROLES = {};
+function roles(id = state.theme) {
+  if (!ROLES[id]) {
+    const d = document.body.appendChild(Object.assign(document.createElement("div"), { className: "dev", hidden: true }));
+    d.dataset.theme = id;
+    const s = getComputedStyle(d), v = (k) => s.getPropertyValue(k).trim(), c = (k) => hexRgb(v(k));
+    ROLES[id] = { ks: v("--ks"), light: v("--light") === "1", g1: c("--dg1"), txt: c("--txt"), txt2: c("--txt-2"), ink: c("--ink"), bar: c("--bar"), accent: c("--accent") };
+    d.remove();
+  }
+  return ROLES[id];
 }
-// The profile line as the keypad draws it: four greens in Retro, darkened to read on light grounds.
+// Glyph ink on an unpressed key in the theme's key style (ui.cpp keyInk()).
+function keyInk(tint) {
+  const r = roles();
+  if (r.ks === "paper") { const card = mixc(tint, r.g1, 46), dark = r.light ? r.txt : mixc(card, [0, 0, 0], 190); return rgb(contrast(dark, card) >= contrast(r.ink, card) ? dark : r.ink); }
+  if (r.ks === "frost") { let c = tint; for (let i = 0; i < 6 && luma(c) > 118; i++) c = mixc(c, [0, 0, 0], 45); return rgb(c); }
+  if (r.ks === "pane") return rgb(mixc(tint, [255, 255, 255], 130));
+  if (r.ks === "flat") return rgb(r.ink);
+  if (r.ks === "pixel") return rgb(r.txt);
+  return "#fff";   // glass
+}
+// The profile line as the keypad draws it (ui.cpp lineOf()): Retro's txt2, darkened to read on light grounds.
 function lineFor(c) {
-  if (state.theme === "retro") return [48, 98, 48];
-  const light = ["paper", "daylight", "synth"].includes(state.theme);
-  for (let i = 0; light && i < 4 && luma(c) > 140; i++) c = mixc(c, [0, 0, 0], 50);
+  const r = roles();
+  if (r.ks === "pixel") return r.txt2;
+  for (let i = 0; r.light && i < 4 && luma(c) > 140; i++) c = mixc(c, [0, 0, 0], 50);
   return c;
 }
 const mmss = (s) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padStart(2, "0")}`;
@@ -222,8 +241,16 @@ function qbarHTML() {
   const qb = state.quickbar || [null, null, null, null];
   // Entry 1 opens with a swipe up and sits in the top slot while nothing is suggested (the preview never
   // suggests); the bar shows entries 2-4, then Settings.
-  const btn = (b) => (b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : "");
-  return `<div class="qbar" aria-label="Quick bar"><div class="sug qb">${btn(qb[0])}</div>${qb.slice(1).map((b) => `<div class="qb">${btn(b)}</div>`).join("")}<div class="qb">${kicon("settings", 22)}<span>Settings</span></div></div>`;
+  // The entry for the page in the editor is lit as the keypad lights an open one (ui.cpp barButton()): a tint of the
+  // accent, its ink the accent moved toward the text until it reads 4.5:1 on it; Retro an ink fill.
+  const r = roles(), inked = r.ks === "pixel" && r.light, fill = inked ? r.txt : mixc(r.bar, r.accent, r.light ? 60 : 70);
+  let ink = inked ? r.g1 : r.txt;
+  for (let a = 0; !inked && a < 256; a += 32) { const m = mixc(r.accent, r.txt, a); if (contrast(m, fill) >= 4.5) { ink = m; break; } }
+  const btn = (b, cls) => {
+    const lit = b && b.profile === state.slot && b.page === state.page + 1;
+    return `<div class="${cls}${lit ? " lit" : ""}"${lit ? ` style="--lit:${rgb(fill)};--lit-ink:${rgb(ink)}"` : ""}>${b ? `${kicon(b.icon, 22)}<span>${esc(b.label)}</span>` : ""}</div>`;
+  };
+  return `<div class="qbar" aria-label="Quick bar">${btn(qb[0], "sug qb")}${qb.slice(1).map((b) => btn(b, "qb")).join("")}<div class="qb">${kicon("settings", 22)}<span>Settings</span></div></div>`;
 }
 function keyHTML(k, i) {
   const sel = i === state.sel ? " sel" : "";
@@ -234,7 +261,7 @@ function keyHTML(k, i) {
   const face = tileFace(k) || (k.icon && window.KEY_ICONS?.[k.icon] ? kicon(k.icon, 36) : `<span class="ini">${esc((k.name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2))}</span>`);
   const folder = (k.actions || []).length === 1 && k.actions[0].type === "page";   // drawn as a stack, like the keypad
   return `<div class="cell${sel}${folder ? " folder" : ""}" data-k="${i}" draggable="true" role="button" tabindex="0" aria-label="${esc(k.name || `Key ${i + 1}`)}${folder ? ` (folder: page ${k.actions[0].value})` : ""}">
-    ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])}${keyInk(k.led_color || [138, 152, 171]) ? `;--ink:${keyInk(k.led_color || [138, 152, 171])}` : ""}">${face}</span>${tag}${anim}<span class="lbl${labelSmall(k.name) ? " sm" : ""}">${esc(k.name || " ")}</span></div>`;
+    ${folder ? `<span class="stack" style="--t:${rgb(k.led_color || [138, 152, 171])}"></span>` : ""}<span class="key" style="--t:${rgb(k.led_color || [138, 152, 171])};color:${keyInk(k.led_color || [138, 152, 171])}">${face}</span>${tag}${anim}<span class="lbl${labelSmall(k.name) ? " sm" : ""}">${esc(k.name || " ")}</span></div>`;
 }
 function playerHTML(sel) {
   const np = state.np, pct = np.len ? Math.min(100, (np.pos / np.len) * 100) : 0;
@@ -412,7 +439,7 @@ function renderSide() {
     <label class="check"><input type="checkbox" id="k-htf" aria-describedby="k-htf-h" ${htf ? "checked" : ""}> Hold to fire</label>
     <p class="hint" id="k-htf-h">For keys that type passwords or do something you can't undo: a tap does nothing, and holding the key for half a second fires it.</p>
     <details class="pick" id="k-look" ${state.lookOpen ? "open" : ""}>
-      <summary><span class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)}${keyInk(k.led_color) ? `;--ink:${keyInk(k.led_color)}` : ""}">${tileFace(k) || (k.icon ? kicon(k.icon, 36) : "")}</span></span>
+      <summary><span class="dev keyprev" data-theme="${state.theme}"><span class="key" style="--t:${rgb(k.led_color)};color:${keyInk(k.led_color)}">${tileFace(k) || (k.icon ? kicon(k.icon, 36) : "")}</span></span>
         <span class="pick-sum"><b>Icon and colour</b><span class="hint">${k.icon ? esc(iconTitle(k.icon)) : "No icon"} on ${tintName(k.led_color).toLowerCase()}</span></span></summary>
       <div class="pick-body">
         <div class="swatches" role="group" aria-label="Colour">${TINTS.map((c, i) => `<button style="background:${rgb(c)}" aria-pressed="${c.join() === k.led_color.join()}" data-sw="${c.join(",")}" aria-label="${TINT_NAMES[i]}" title="${TINT_NAMES[i]}"></button>`).join("")}</div>

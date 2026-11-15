@@ -469,7 +469,10 @@ static void keyBody(const Theme &th, float x, float y, float w, float h, float r
 // Glyph ink on a key, and whether the glyph gets a one-pixel drop.
 static C3 keyInk(const Theme &th, C3 tint, bool down, bool on) {
   switch (th.ks) {
-    case KS_PAPER: { C3 card = mix(tint, th.g1, 46); return luma(card) > 165 ? (th.light ? th.txt : mix(card, BLACK, 190)) : th.ink; }
+    case KS_PAPER: {   // whichever ink reads better on the card (a luma cut left cream at 2-3:1 on Ember's cards, Paper's cobalt)
+      C3 card = mix(tint, th.g1, 46), dark = th.light ? th.txt : mix(card, BLACK, 190);
+      return contrast(dark, card) >= contrast(th.ink, card) ? dark : th.ink;
+    }
     case KS_FROST: {
       if (on) return luma(tint) > 175 ? th.txt : WHITE;
       C3 c = tint;

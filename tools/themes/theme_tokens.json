@@ -254,15 +254,15 @@
       "description": "Professional graphite/slate work surface with quiet neutral keys and cyan interaction cues. Lifted dark values make it safer for this TFT than OLED-black themes.",
       "ground": [
         "#344352",
-        "#3F5060",
-        "#435767"
+        "#3C4C5B",
+        "#3D4F5E"
       ],
       "sheet": "#3B4B5A",
       "shade": "#3A4B5A",
       "panel": "#45596A",
       "bar": "#314150",
       "well": "#303F4D",
-      "control": "#506475",
+      "control": "#485A6A",
       "track": "#738595",
       "hairline": "#647786",
       "text": {
@@ -282,7 +282,7 @@
       "key_style": "flat",
       "key_radius": 11,
       "light": false,
-      "crisp": true,
+      "crisp": false,
       "texture": "none"
     },
     {
@@ -292,7 +292,7 @@
       "description": "Soft cool whites and muted teal; an easy-on-the-eyes light theme with less glare than pure white.",
       "ground": [
         "#DCE5E8",
-        "#E9EFF0",
+        "#DFE7E9",
         "#DDE7E8"
       ],
       "sheet": "#F1F5F5",
@@ -329,16 +329,16 @@
       "role": "recommended_natural",
       "description": "Muted botanical greens with lime and amber accents. Use medium-value green surfaces rather than near-black forest backgrounds.",
       "ground": [
-        "#3E5948",
-        "#4E6956",
-        "#5D7864"
+        "#364E3F",
+        "#3F5545",
+        "#425747"
       ],
-      "sheet": "#4C6855",
-      "shade": "#526E5B",
-      "panel": "#5A7562",
-      "bar": "#455F4E",
-      "well": "#3F5A49",
-      "control": "#5E7966",
+      "sheet": "#405847",
+      "shade": "#435A4A",
+      "panel": "#485E4F",
+      "bar": "#3A5041",
+      "well": "#33493B",
+      "control": "#4A6151",
       "track": "#829A82",
       "hairline": "#90A88F",
       "text": {
@@ -355,10 +355,10 @@
         "red": "#E58C80",
         "slate": "#C1D0C5"
       },
-      "key_style": "pane",
+      "key_style": "flat",
       "key_radius": 12,
       "light": false,
-      "crisp": true,
+      "crisp": false,
       "texture": "none"
     },
     {
@@ -369,14 +369,14 @@
       "ground": [
         "#5C4849",
         "#6E5654",
-        "#805F57"
+        "#72554E"
       ],
       "sheet": "#654E4D",
       "shade": "#705652",
-      "panel": "#765956",
+      "panel": "#705552",
       "bar": "#554444",
       "well": "#503F40",
-      "control": "#81645D",
+      "control": "#6A524C",
       "track": "#A38476",
       "hairline": "#9B7C72",
       "text": {
@@ -390,7 +390,7 @@
         "magenta": "#E28BB7",
         "green": "#8FC49A",
         "amber": "#E9B86C",
-        "red": "#F28B73",
+        "red": "#FF5A5A",
         "slate": "#C5B5AD"
       },
       "key_style": "paper",
