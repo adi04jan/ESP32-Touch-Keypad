@@ -3,6 +3,7 @@
 #include "console.h"
 #include "display.h"
 #include "ui.h"
+#include "motion.h"
 #include <Preferences.h>
 #include <algorithm>
 
@@ -149,6 +150,28 @@ static void classifyRelease() {
   uiGesture(kind, sx, sy, lx, ly);
 }
 
+// The panel reads wide while the finger lands and lifts (recorded on the owner's keypad, 2026-11-13: the first
+// sample up to 35 px off, the last two up to 50 and 33 px), and 12 of 28 taps slid. So a press starts at its
+// second sample, and each move is reported two samples late: the two read while lifting are never used to drag.
+static int nIn, qn, pd, fx, fy;   // samples in this press, held back, the last reported step; the first sample
+static int16_t qx[2], qy[2];      // the newest samples, not yet reported (oldest first)
+
+// At the lift, what was held back may be the finger still travelling: a natural flick gives the panel 2-8 samples,
+// far apart while a frame draws, and dropping them left 24 of 36 recorded swipes reading as taps (2026-11-15). The
+// owner's taps never strayed 50 px landing or lifting, so a step of STEP_REAL is the finger, in the stroke's
+// direction; a smaller one counts once the stroke is a drag and the step keeps its pace.
+#define STEP_REAL 60
+static void keepStroke() {
+  int jx = sx - fx, jy = sy - fy;
+  if (std::max(abs(jx), abs(jy)) >= STEP_REAL && jx * (lx - sx) + jy * (ly - sy) >= 0) { sx = fx; sy = fy; }
+  for (int i = 0; i < qn; i++) {
+    int ex = lx - sx, ey = ly - sy, tx = qx[i] - lx, ty = qy[i] - ly, st = std::max(abs(tx), abs(ty));
+    if (tx * ex + ty * ey < 0) break;
+    if (st < STEP_REAL && (std::max(abs(ex), abs(ey)) <= LOCK_PX || st > 2 * pd + 10)) break;
+    lx = qx[i]; ly = qy[i]; pd = st;
+  }
+}
+
 static void bootButton(uint32_t now) {   // hold BOOT 2 s: calibration, even when touch is unusable
   static uint32_t since = 0;
   static bool fired = false;
@@ -203,16 +226,13 @@ void scanTouch() {
   x = constrain(x, 0, SCR_W - 1);
   y = constrain(y, 0, SCR_H - 1);
 
-  // The panel reads wide while the finger lands and lifts (recorded on the owner's keypad, 2026-11-13: the first
-  // sample up to 35 px off, the last two up to 50 and 33 px), and 12 of 28 taps slid. So a press starts at its
-  // second sample, and each move is reported two samples late: the two read while lifting are never used.
-  static int nIn, qn;
-  static int16_t qx[2], qy[2];   // the newest samples, not yet reported (oldest first)
   if (pressed) {
     misses = 0;
     if (!down) {
       down = true;
-      nIn = qn = 0;
+      nIn = qn = pd = 0;
+      fx = x;
+      fy = y;
       sx = lx = x;   // provisional: a press of one sample starts and ends here
       sy = ly = y;
       tDown = now;
@@ -226,7 +246,7 @@ void scanTouch() {
       if (!swallow) uiGesture(G_DOWN, sx, sy, x, y);
     } else if (nIn > 2) {
       bool move = qn == 2;
-      if (move) { lx = qx[0]; ly = qy[0]; qx[0] = qx[1]; qy[0] = qy[1]; qn = 1; }
+      if (move) { pd = std::max(abs(qx[0] - lx), abs(qy[0] - ly)); lx = qx[0]; ly = qy[0]; qx[0] = qx[1]; qy[0] = qy[1]; qn = 1; }
       qx[qn] = x; qy[qn] = y; qn++;
       if (move && !swallow) {
         if (!holdSent && now - tDown >= HOLD_MS && abs(lx - sx) < 20 && abs(ly - sy) < 20) {
@@ -244,6 +264,7 @@ void scanTouch() {
   if (down && (injEnd || ++misses >= TOUCH_RELEASE_MISSES)) {
     down = false;
     if (injEnd && !pathN) { lx = x; ly = y; }   // a drawn gesture ends exactly where it was sent
+    else if (nIn >= 2) keepStroke();
     if (!swallow) {
       if (nIn < 2) uiGesture(G_DOWN, sx, sy, sx, sy);   // one sample: it still taps
       classifyRelease();

@@ -805,6 +805,39 @@ def test_real_resistive_taps_tap_and_never_slide(d):
         d.ok("page 1")
 
 
+# Natural swipes recorded on the owner's keypad (2026-11-15), sample by sample: 2-8 samples, steps up to 200 px
+# where a frame held up the poll. Each read as a tap (the panel rose a few mm and fell back) until the lift kept
+# the samples that carry the stroke on.
+REAL_SWIPES_UP = [
+    (4, "175,274 177,272 177,259 177,243 183,224 178,195"),
+    (8, "175,292 174,290 181,287 171,280 173,269 171,257 172,249 178,45"),
+    (19, "210,287 212,179"),
+    (31, "198,288 190,292 194,289 195,280 192,267 197,232 201,215"),
+]
+REAL_SWIPES_DOWN = [
+    (18, "230,90 219,103 222,114 216,132 220,147 218,163"),
+    (22, "213,111 207,118 203,127 203,140 205,160 205,185"),
+    (25, "206,161 196,270 209,285"),
+]
+
+
+def test_real_resistive_swipes_open_media_and_the_shade(d):
+    set_qb(d)
+    try:
+        for n, path in REAL_SWIPES_UP:
+            since = len(d.events)
+            d.cmd(f"tpath {path}", timeout=3)
+            d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)
+            d.ok("panel 0"); time.sleep(0.6)
+        for n, path in REAL_SWIPES_DOWN:
+            since = len(d.events)
+            d.cmd(f"tpath {path}", timeout=3)
+            d.wait_event(r"^EVT:UI shade$", 1.5, since)
+            d.cmd("shade close"); time.sleep(0.6)
+    finally:
+        d.cmd("panel 0"); d.cmd("shade close")
+
+
 def test_media_player_page(d):
     d.ok('widget now_playing {"title":"Paper Moon","album":"Test","artist":"Band","app":"Spotify","pos":10,"len":200,"playing":false}')
     d.ok("page 2")
