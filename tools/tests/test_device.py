@@ -982,7 +982,7 @@ def swipe_bent(d, a, b, c, ms1, ms2):
 
 
 # A quick swipe counts wherever the spring would land (the owner flicks; frames run ~35 ms, so a flick
-# gives the drag one or two samples): 3.13's swipe (44 px up/down, 86 px sideways) inside QUICK_MS.
+# gives the drag one or two samples): the swipe (44 px up/down, 76 px sideways) inside QUICK_MS.
 def test_a_quick_short_swipe_up_opens_media_and_down_closes_it(d):
     set_qb(d); since = len(d.events)
     d.swipe(210, 290, 210, 240, 250); d.wait_event(rf"^EVT:PANEL 1 {SLOT} 1$", 1.5, since)   # 50 px in 250 ms

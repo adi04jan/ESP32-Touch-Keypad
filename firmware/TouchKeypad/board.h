@@ -55,7 +55,7 @@
 
 // ----- Touch / gestures -----
 #define HOLD_MS             500
-#define SWIPE_X_PX          (SCR_W * 18 / 100)
+#define SWIPE_X_PX          (SCR_W * 16 / 100)   // 76 px: measured from a press's second sample (touch.cpp), a 90 px swipe reads 84-87
 #define SWIPE_Y_PX          (SCR_H * 14 / 100)
 #define TOUCH_POLL_MS       10
 #define TOUCH_RELEASE_MISSES 3

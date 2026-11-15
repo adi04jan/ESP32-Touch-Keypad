@@ -6,7 +6,7 @@
 
 #define LOCK_PX 18       // a finger that moves this far along one axis has started a drag (a recorded tap rolled 17)
 #define FLICK_S 0.18f    // where a release lands: position + velocity x this
-#define QUICK_MS 400     // a swipe (touch.cpp's: 44 px up/down, 86 px sideways) done this soon after the touch
+#define QUICK_MS 400     // a swipe (touch.cpp's: 44 px up/down, 76 px sideways) done this soon after the touch
                          // goes where it went, wherever the spring would land: a flick gets the drag only a
                          // sample or two (touch is read between frames), too few for its speed
 
