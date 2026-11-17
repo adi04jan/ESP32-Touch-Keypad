@@ -32,11 +32,20 @@ check x plus minus circle-dot square circle triangle arrow-up arrow-down arrow-l
 chevron-right chevrons-left chevrons-right layers sparkles wand-sparkles lightbulb eye eye-off shield key-round
 fingerprint printer shopping-cart gift trophy film clapperboard tv monitor-play radio-tower airplay smartphone
 watch car plane dumbbell pizza beer cake leaf umbrella snowflake thermometer droplet wind crosshair info
+chevron-up chevron-down chevrons-up chevrons-down corner-down-left zoom-in zoom-out columns-2 rows-2
+panel-left panel-bottom fullscreen grid-3x3 fold-vertical unfold-vertical replace strikethrough
+list-ordered case-sensitive text-cursor-input square-dashed crop funnel hash delete square-pen paperclip
+reply forward smile thumbs-up hand captions history archive save-all square-x square-plus file-search
+folder-tree redo-dot arrow-down-to-dot arrow-up-from-dot bug-play circle-stop triangle-alert
+circle-question-mark diff circuit-board microchip usb binary activity gauge chart-line plug
+calculator box ruler route group log-out log-in bot brain book-open
+unlink bluetooth-searching rotate-cw flip-horizontal
 `.trim().split(/\s+/);
 
 const BRANDS = `github gitlab spotify discord obsstudio twitch youtube figma googlechrome steam zoom notion apple
 x reddit whatsapp telegram signal netflix applemusic soundcloud docker npm python nodedotjs arduino espressif
-raspberrypi linux ubuntu android firefoxbrowser openai anthropic`.trim().split(/\s+/);
+raspberrypi linux ubuntu android firefoxbrowser openai anthropic claude git googlemeet bruno
+autodesk bambulab nordicsemiconductor`.trim().split(/\s+/);
 
 const UI_ICONS = `bluetooth bluetooth-off bluetooth-searching settings plug-zap battery-full battery-medium battery-low
 x check chevron-left chevron-right sun moon lightbulb volume-1 volume-2 volume-x sliders-horizontal palette cpu

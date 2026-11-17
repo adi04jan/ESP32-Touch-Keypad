@@ -18,7 +18,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const ICONS_H = path.join(ROOT, "firmware/TouchKeypad/icons_gen.h");
 const KEYICONS = path.join(ROOT, "studio/renderer/keyicons.js");
 const OUT = path.join(ROOT, "firmware/TouchKeypad/anims_gen.h");
-const PX = 36, STROKE = 2.2, FRAME_MS = 60;
+const PX = 36, STROKE = 2.2, FRAME_MS = 60, GAP = 8;
 
 // ---------------------------------------------------------------- geometry
 // An SVG path as polylines (one per subpath), in the icon's 24-unit space.
@@ -207,12 +207,12 @@ function delta(frame, base) {
     let s = pos;
     while (s < n && frame[s] === base[s]) s++;
     if (s >= n) break;
-    let e = s;   // run over the changes, bridging gaps of up to 3 unchanged pixels
+    let e = s;   // run over the changes, bridging gaps under GAP unchanged pixels (8 deflates smallest for about the same inflated size)
     while (e < n) {
       if (frame[e] !== base[e]) { e++; continue; }
       let g = e;
-      while (g < n && g - e < 4 && frame[g] === base[g]) g++;
-      if (g < n && g - e < 4) e = g; else break;
+      while (g < n && g - e < GAP && frame[g] === base[g]) g++;
+      if (g < n && g - e < GAP) e = g; else break;
     }
     let skip = s - pos;
     while (skip > 255) { out.push(255, 0); skip -= 255; }
