@@ -133,10 +133,26 @@ class Device extends EventEmitter {
   // keypad gave no readable answer (a timeout, a garbled reply): an editor that took that for an
   // empty slot would autosave a blank or stale copy over the owner's profile.
   async readProfile(slot, quiet = false) {
-    const raw = await this.link.readFile(`profile${slot}.json`, quiet);
+    const name = `profile${slot}.json`;
+    const raw = await this.link.readFile(name, quiet);
     if (/^ERR no such file/.test(raw)) return null;
+    // A reply that lost bytes on the way can still parse: over Bluetooth, firmware before 3.15.1 dropped
+    // two lines of every `cat` and a key came back without its name and icon, valid JSON that an autosave
+    // would have written back. So the reply's length must match the file's size from `ls` (less the final
+    // newline `cat` leaves off, and a CR or two).
+    const size = (await this._fileSizes())[name], got = Buffer.byteLength(raw, "utf8");
+    if (size != null && (size - got < 0 || size - got > 2)) throw new Error(`could not read profile ${slot} from the keypad whole (${got} of ${size} bytes)`);
     try { return schema.repairProfile(JSON.parse(raw)); } catch (_) {}
     throw new Error(`could not read profile ${slot} from the keypad${raw ? "" : " (no answer)"}`);
+  }
+
+  // Profile sizes from one `ls`, kept for a read pass (a connect reads all 16) and dropped by any save.
+  async _fileSizes() {
+    if (this._sizes && Date.now() - this._sizes.at < 3000) return this._sizes.of;
+    const of = {};
+    for (const m of (await this.link.command("ls", undefined, true)).matchAll(/^(profile\d+\.json)\t(\d+)\s*$/gm)) of[m[1]] = +m[2];
+    this._sizes = { at: Date.now(), of };
+    return of;
   }
 
   async loadProfile(slot) {
@@ -236,6 +252,7 @@ class Device extends EventEmitter {
     const t = await this.syncTiles(clean);
     if (!t.ok) { this.emit("save-state", { slot, state: "error", errors: [t.error] }); return { ok: false, error: t.error, backup: bk }; }
     const r = await this.link.uploadJson(`profile${slot}.json`, clean);
+    this._sizes = null;   // its size changed (or may have)
     if (!r.ok) { this.emit("save-state", { slot, state: "error", errors: [r.reply] }); return { ok: false, error: r.reply, backup: bk }; }
     if (this.onDevice) { this.onDevice[slot] = clean; this._applySlots(); }
     if (slot === this.activeSlot) {

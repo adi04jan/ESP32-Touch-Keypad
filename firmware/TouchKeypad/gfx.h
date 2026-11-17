@@ -80,7 +80,9 @@ void glyphFrame(const IconDef *ic, int frame, float cx, float cy, C3 c, int alph
 bool iconAnimAcquire(const IconDef *ic);
 void iconAnimRelease(const IconDef *ic);
 void iconAnimReleaseAll();   // nothing is playing: free whatever is left
-void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha = 255);
+// img2: rows split.. of the image in a second block (a cover in two 16 KB halves); null when img holds them all
+void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha = 255,
+               const uint16_t *img2 = nullptr, int split = 0);
 
 // ---- text
 struct VGlyph { uint16_t u; uint8_t w, h, adv; int8_t dy, dx; uint32_t off; };

@@ -79,6 +79,30 @@ test("create a key, live push, autosave with backup, read back with cat", async 
   link.disconnect();
 });
 
+test("a profile read that lost bytes on the way is refused, though it parses", async () => {
+  const { sim, dev } = rig();
+  assert.equal((await dev.connect()).ok, true);
+  const p = schema.blankProfile("Daily");
+  p.pages[0].keys[0] = { id: 1, name: "Mic mute", icon: "mic", led_color: [242, 183, 70], actions: [{ type: "key", value: "F13" }] };
+  assert.equal((await dev.save(3, p)).ok, true);
+  assert.equal((await dev.readProfile(3)).pages[0].keys[0].name, "Mic mute");   // whole: read as it is
+
+  // What Bluetooth did before 3.15.1: two lines of the reply gone. Here, key 1's name and icon:
+  // still valid JSON, so only the size can tell.
+  const cat = sim.files.get("/profile3.json").toString("utf8");
+  const lost = cat.replace(/\n\s*"name": "Mic mute",\n\s*"icon": "mic",/, "");
+  assert.notEqual(lost, cat);
+  assert.doesNotThrow(() => JSON.parse(lost));
+  const line = sim.line;
+  sim.line = function (raw) {
+    if (raw.trim() !== "cat /profile3.json") return line.call(this, raw);
+    this.println(lost.replace(/\n$/, ""));
+    this.prompt();
+  };
+  await assert.rejects(dev.readProfile(3), /could not read profile 3 from the keypad whole/);
+  sim.line = line;
+});
+
 test("rapid edits coalesce into one push per key and one upload", async () => {
   const { sim, link, dev } = rig();
   dev.pushMs = 60; dev.saveMs = 150;

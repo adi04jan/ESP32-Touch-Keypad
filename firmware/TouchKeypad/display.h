@@ -18,6 +18,6 @@ void displayBegin();             // init panel, backlight, NVS knobs (invert/bgr
 void displaySetBacklight(uint8_t level);
 uint8_t displayBacklight();         // the level last set (0: off, the panel asleep)
 void displayShot();              // stream the screen as ###SHOT### + base64 lines + ###END###
-bool displayDecodeJpg(const uint8_t *jpg, size_t len, uint16_t *out, int w, int h);   // into big-endian RGB565
+bool displayDecodeJpg(const uint8_t *jpg, size_t len, uint16_t *out, int w, int h, int offY = 0);   // rows offY.. into big-endian RGB565
 void displayLcdCmd(const char *arg);   // `lcd` CLI: show/set invert, bgr, mhz
 void displayBench();             // `bench` CLI: fill and push timings at the current SPI clock

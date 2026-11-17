@@ -514,20 +514,22 @@ void glyphLit(const char *name, bool ui, float cx, float cy, float size, C3 c, C
 }
 
 // Big-endian RGB565 image scaled into a rounded box (album art, custom tiles).
-IRAM_ATTR void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha) {
+IRAM_ATTR void blitImage(const uint16_t *img, int iw, int ih, float x, float y, float w, float h, float r, int alpha,
+                         const uint16_t *img2, int split) {
   int x0 = (int)floorf(x), y0 = (int)floorf(y), x1 = (int)ceilf(x + w), y1 = (int)ceilf(y + h);
   if (!img || !clipBox(x0, y0, x1, y1)) return;
   float cx = x + w * 0.5f, cy = y + h * 0.5f;
   for (int py = y0; py < y1; py++) {
     int sy = (int)((py + 0.5f - y) * ih / h);
     if (sy < 0 || sy >= ih) continue;
+    const uint16_t *row = img2 && sy >= split ? img2 + (sy - split) * iw : img + sy * iw;
     for (int px = x0; px < x1; px++) {
       int sx = (int)((px + 0.5f - x) * iw / w);
       if (sx < 0 || sx >= iw) continue;
       float d = sdRR(px + 0.5f, py + 0.5f, cx, cy, w * 0.5f, h * 0.5f, r);
       if (d >= 0.5f) continue;
       int a = d < -0.5f ? alpha : (int)((0.5f - d) * alpha);
-      blend(px, py, upk(img[sy * iw + sx]), a);
+      blend(px, py, upk(row[sx]), a);
     }
   }
 }

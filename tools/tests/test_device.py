@@ -716,6 +716,31 @@ def test_jpeg_cover_decodes_when_the_player_opens_and_frees_after(d):
     assert art_state(d)["decoded"] == "0" and heap_free(d) >= free0 - 1024
 
 
+def test_jpeg_cover_halves_meet_where_they_should(d):
+    """The cover decodes into two 16 KB halves (rows 0-63, 64-127): four quadrants of four colours land in
+    their own corners, and the rows either side of the seam belong to their own half."""
+    import io
+    from PIL import Image
+    quads = [(230, 30, 30), (30, 200, 60), (40, 60, 230), (240, 220, 40)]   # TL, TR, BL, BR
+    im = Image.new("RGB", (128, 128))
+    for i, c in enumerate(quads):
+        im.paste(c, ((i % 2) * 64, (i // 2) * 64, (i % 2) * 64 + 64, (i // 2) * 64 + 64))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=95, subsampling=0)
+    r = d.upload_bin("ram:artj", b.getvalue())
+    assert any(l.startswith("SAVED ram:artj") for l in r), r
+    try:
+        d.ok("page 2"); time.sleep(0.6)
+        st = art_state(d)
+        assert st["decoded"] == "1" and int(st["ms"]) < 150, st
+        s = d.shot()
+        for (x, y), c in zip([(32, 32), (96, 32), (32, 96), (96, 96), (32, 61), (96, 61), (32, 66), (96, 66)], quads + quads):
+            got = s.getpixel((16 + x, 44 + y))
+            assert close(got, c, 40), ((x, y), got, c)
+    finally:
+        d.ok("page 1")
+
+
 def test_a_new_track_frees_the_decoded_cover(d):                   # final review: the 32 KB image stayed held
     np = lambda t: d.ok('widget now_playing {"title":"%s","album":"A","artist":"B","app":"Spotify","pos":1,"len":200,"playing":false}' % t)
     try:

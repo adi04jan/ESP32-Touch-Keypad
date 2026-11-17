@@ -101,7 +101,12 @@ static int litLevel() {
 static int tzMin = 0, lastMinute = -1;
 
 static struct { char title[65], album[65], artist[65], app[33]; int pos, len; bool playing; uint32_t at; bool have; } np;
-static uint16_t *art = nullptr;
+// The cover, 128x128 RGB565. A JPEG cover is decoded into two 16 KB halves, art (rows 0-63) and artB
+// (64-127): two blocks of 16 KB are there when one of 32 KB is not (the heap splits). A raw cover
+// (`ram:art`, tests) arrives in one 32 KB block: art holds every row and artB is null.
+#define ART_HALF (128 * 64 * 2)
+static uint16_t *art = nullptr, *artB = nullptr;
+static void artFree() { free(art); free(artB); art = artB = nullptr; }
 static bool artOk = false, artBad = false;   // artBad: this JPEG failed to decode; the next one gets a try
 static uint8_t *artJpg = nullptr;   // the cover as a JPEG: the 32 KB image is made from it only while a player shows
 static size_t artJpgLen = 0;
@@ -971,7 +976,7 @@ static void drawPlayer(uint32_t now) {
     float ar = T->crisp ? 4 : T->keyR < 12 ? 10 : 16;
     if (artOk) {
       softShadow(16, 44, 128, 128, 255);
-      blitImage(art, 128, 128, 16, 44, 128, 128, ar);
+      blitImage(art, 128, 128, 16, 44, 128, 128, ar, 255, artB, 64);
       if (T->light) rrRing(16.5f, 44.5f, 127, 127, ar - 0.5f, T->crisp ? 2 : 1, HAIR, T->hairA);
     } else {
       keyBody(*T, 16, 44, 128, 128, ar, T->art, -1, false, 255);
@@ -2299,17 +2304,22 @@ static void artSync() {
   static bool dropped;   // the tile cache, given up once per player visit: not every loop pass if RAM stays short
   bool want = playerPage() || (media.btn && mediaPlayer());
   if (want && !artOk && !artBad) {
-    if (!art) art = (uint16_t *)malloc(128 * 128 * 2);
-    if (!art && !dropped) { dropped = true; uiDropTileCache(); art = (uint16_t *)malloc(128 * 128 * 2); }
+    auto halves = [] {   // both or neither
+      if (!art) art = (uint16_t *)malloc(ART_HALF);
+      if (!artB) artB = (uint16_t *)malloc(ART_HALF);
+      if (!art || !artB) artFree();
+    };
+    if (!art) halves();
+    if (!art && !dropped) { dropped = true; uiDropTileCache(); halves(); }
     if (!art) return;   // no room: the player shows its placeholder
     uint32_t t = millis();
-    artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 128);
+    uint16_t *bottom = artB ? artB : art + 128 * 64;   // a raw cover's 32 KB block, if one is held, takes it whole
+    artOk = displayDecodeJpg(artJpg, artJpgLen, art, 128, 64, 0) && displayDecodeJpg(artJpg, artJpgLen, bottom, 128, 64, 64);
     artBad = !artOk;   // a JPEG that won't decode is tried once, not on every loop pass
     artMs = millis() - t;
     mark(0, STATUS_H, 160, 160);
   } else if (!want && art) {
-    free(art);
-    art = nullptr;
+    artFree();
     artOk = false;
   }
   if (!want) dropped = false;
@@ -2819,8 +2829,7 @@ void uiNowPlaying(JsonObjectConst o) {
     free(artJpg);   // or artSync would decode the old one again
     artJpg = nullptr;
     artJpgLen = 0;
-    free(art);      // and its 32 KB image: artSync frees it only while a JPEG is held, and there is none now
-    art = nullptr;
+    artFree();      // and its 32 KB image: artSync frees it only while a JPEG is held, and there is none now
   }
   strlcpy(np.title, o["title"] | "", sizeof np.title);
   strlcpy(np.album, o["album"] | "", sizeof np.album);
@@ -2863,6 +2872,7 @@ uint8_t *uiArtBuffer(size_t size) {   // a raw cover: held as it is, whatever pa
   free(artJpg);
   artJpg = nullptr;
   artJpgLen = 0;
+  if (artB) artFree();   // a JPEG cover's halves: a raw upload writes one 32 KB block
   if (!art) art = (uint16_t *)malloc(size);
   artOk = false;
   return (uint8_t *)art;
