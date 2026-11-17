@@ -35,7 +35,7 @@ test("the installer ships the Bluetooth helper where bleport.js looks for it", (
 
 test("every built-in icon has its animated GIF in every theme (tools/icons/build_icon_gifs.py)", () => {
   const icons = [...fs.readFileSync(path.join(__dirname, "..", "renderer", "keyicons.js"), "utf8").matchAll(/"([a-z0-9-]+)":\{"f":/g)].map((m) => m[1]);
-  const themes = ["glass", "paper", "daylight", "aurora", "synth", "retro"];
+  const themes = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"];
   const gifs = new Set(themes.flatMap((t) => fs.readdirSync(path.join(__dirname, "..", "assets", "icon-gifs", t)).map((f) => `${t}/${f.replace(/\.gif$/, "")}`)));
   const h = fs.readFileSync(path.join(__dirname, "..", "..", "firmware", "TouchKeypad", "icons_gen.h"), "utf8");
   const keyTable = h.slice(h.indexOf("static const IconDef ICONS[]"), h.indexOf("};", h.indexOf("static const IconDef ICONS[]")));   // key icons, not the UI's

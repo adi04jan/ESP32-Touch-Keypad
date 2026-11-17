@@ -47,15 +47,38 @@ def frost_ink(c):
 
 
 SHADOW = mix(TINT, (0, 0, 0), 150)
-# theme -> (ink, drop shadow under the glyph, hard pixels): ui.cpp keyInk(), keyInkDrop(), crisp
-THEMES = {
-    "glass": ((255, 255, 255), True, False),
-    "paper": ((0x1f, 0x1a, 0x14) if luma(mix(TINT, (0xef, 0xe4, 0xcc), 46)) > 165 else (0xff, 0xfa, 0xf0), False, False),
-    "daylight": (frost_ink(TINT), False, False),
-    "aurora": (mix(TINT, (255, 255, 255), 130), True, False),
-    "synth": ((0x1b, 0x1b, 0x1b), False, False),
-    "retro": ((0x0f, 0x38, 0x0f), False, True),
-}
+def contrast(a, b):   # WCAG, as ui.cpp contrast()
+    def lum(c):
+        f = [v / 255 for v in c]
+        f = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in f]
+        return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]
+    x, y = lum(a), lum(b)
+    return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+
+
+def themes():
+    """theme -> (ink, drop shadow under the glyph, hard pixels), read from themes.h and themes_gen.h as ui.cpp
+    keyInk(), keyInkDrop() and crisp give them for an unpressed key in TINT."""
+    fw = ROOT / "firmware" / "TouchKeypad"
+    src = (fw / "themes.h").read_text() + (fw / "themes_gen.h").read_text()
+    out = {}
+    for tid, ks, light, crisp, body in re.findall(r'\{ "(\w+)", "[^"]*", KS_(\w+), (true|false), (true|false), \d+,(.*?)(?:true|false) \}', src, re.S):
+        c = [tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) for h in re.findall(r"HEXC\(0x([0-9a-fA-F]{6})\)", body)]
+        g1, txt, ink = c[1], c[12], c[33]   # Theme's field order: g0 g1 g2 ... txt (13th colour) ... ink (34th)
+        if ks == "PAPER":
+            card = mix(TINT, g1, 46)
+            dark = txt if light == "true" else mix(card, (0, 0, 0), 190)
+            ink = dark if contrast(dark, card) >= contrast(ink, card) else ink
+        elif ks == "FROST":
+            ink = frost_ink(TINT)
+        elif ks == "PANE":
+            ink = mix(TINT, (255, 255, 255), 130)
+        elif ks == "PIXEL":
+            ink = txt
+        elif ks == "GLASS":
+            ink = (255, 255, 255)
+        out[tid] = (ink, ks in ("GLASS", "PANE"), crisp == "true")
+    return out
 
 
 # ---------------------------------------------------------------- the frames
@@ -124,7 +147,7 @@ def frame(key, px, ink, drop, crisp):
 def main():
     frame_ms, data, rows = anims()
     icons = [(name, px, frames_of(px, data, off, z, n)) for (name, px), (off, z, n) in zip(masks(), rows)]
-    for theme, (ink, drop, crisp) in THEMES.items():
+    for theme, (ink, drop, crisp) in themes().items():
         key = Image.open(KEYS / f"{theme}.png").convert("RGB")
         out = OUT / theme
         out.mkdir(parents=True, exist_ok=True)

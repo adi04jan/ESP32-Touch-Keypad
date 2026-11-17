@@ -227,10 +227,14 @@ def test_status_identifies_touch_keypad(d):
 
 
 def test_default_profiles_are_installed(dev):
-    for n, name in [(1, "Daily"), (2, "Code"), (3, "Stream")]:
-        p = json.loads("\n".join(dev.cmd(f"cat /profile{n}.json")))
-        assert p["profile_name"] == name and len(p["pages"]) == 3
-        assert all(len(pg["keys"]) == 15 for pg in p["pages"])
+    """Every profile in slots 1-15 is whole (a fresh keypad: Daily, Code, Stream in 1-3; the owner renames,
+    reshapes and deletes them)."""
+    names = owner_profiles(dev)
+    assert names, "no profiles in slots 1-15"
+    for n in names:
+        p = json.loads("\n".join(dev.cmd(f"cat /{n}")))
+        assert isinstance(p["profile_name"], str) and p["profile_name"].strip(), f"slot {n} has no name"
+        assert 1 <= len(p["pages"]) <= 16 and all(len(pg["keys"]) == 15 for pg in p["pages"]), f"slot {n} is malformed"
 
 
 def test_profile_round_trip(dev):

@@ -17,9 +17,9 @@ sys.path.insert(0, str(ROOT / "tools"))
 from kp import Device  # noqa: E402
 
 OUT = Path(__file__).parent / "keys"
-THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro"]
+THEMES = ["glass", "paper", "daylight", "aurora", "synth", "retro", "nordic_calm", "focus_slate", "forest_field", "ember_atelier"]
 SLOT, TINT = 16, [79, 140, 255]
-CROP = (12, 31, 84, 103)   # 72 x 72 around cell 1's key (66 px at 15, 34)
+CROP = (6, 31, 78, 103)    # 72 x 72 around cell 1's key (66 px at 9, 34: ui.cpp cellX + (CELL_W - KEY) / 2)
 
 
 def main():
