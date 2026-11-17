@@ -109,10 +109,16 @@ class NusTx : public NimBLECharacteristicCallbacks {
   }
 };
 
+// A chunk waits for room in the notify queue: after a quiet spell the link may sleep through LATENCY
+// connection events (0.45 s) before it drains, and a chunk given up on is a hole in a reply (a profile
+// read back without two of its lines). Only a host that has stopped listening is given up on, and
+// then at once for each chunk after, until one goes out again.
 static void txSend() {
+  static bool stalled;
   if (!txLen) return;
-  if (nusOn && linkUp)
-    for (int t = 0; t < 60 && !nusTx->notify(txBuf, txLen); t++) delay(3);   // the queue drains
+  bool sent = false;
+  for (int t = 0; t < (stalled ? 1 : 500) && nusOn && linkUp && !(sent = nusTx->notify(txBuf, txLen)); t++) delay(3);   // 1.5 s at most
+  stalled = !sent;
   txLen = 0;
 }
 void bleConsoleWrite(const uint8_t *b, size_t n) {
