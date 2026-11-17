@@ -2,7 +2,7 @@
    and firmware limits. Arduino-ESP32 core 3.2.1. */
 #pragma once
 
-#define FW_VERSION      "3.15.1"
+#define FW_VERSION      "3.16.0"
 #define SCHEMA_VERSION  2
 
 #ifndef KP_TEST                 // tools/kp.py builds with -DKP_TEST=1

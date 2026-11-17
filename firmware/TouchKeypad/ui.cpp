@@ -549,10 +549,14 @@ static const uint16_t *tileImage(const char *crc) {
   return t.img;
 }
 
+// The RAM caches given up when a big buffer (a cover, an upload) finds no room: the tiles kept decoded,
+// and the icon animations kept inflated (scattered blocks up to 10 KB that split the heap). Both come
+// back from flash on their next use; a key playing its animation now finishes it still.
 void uiDropTileCache() {
   if (tileMux) xSemaphoreTake(tileMux, portMAX_DELAY);
   for (auto &t : tileCache) { free(t.img); t.img = nullptr; t.crc[0] = 0; }
   if (tileMux) xSemaphoreGive(tileMux);
+  iconAnimReleaseAll();
 }
 
 static bool drawTile(const char *crc, float x, float y, float sz, int alpha) {

@@ -92,11 +92,19 @@ def masks():
     data = hex_bytes(text, "ICON_DATA[] PROGMEM = {")
     table = text[text.index("static const IconDef ICONS[] = {"):]
     for name, off in re.findall(r'\{"([a-z0-9-]+)",\s*(\d+)\}', table[:table.index("};")]):
-        off = int(off)
-        px = []
-        for b in data[off:off + SRC * SRC // 2]:
-            px += [b >> 4, b & 15]
-        yield name, px
+        p, px = int(off), []   # run-length coded as gfx.cpp unpackMask reads it (build_icons.js packMask)
+        while len(px) < SRC * SRC:
+            t = data[p]
+            p += 1
+            if t < 0x80:
+                px += [0] * (t + 1)
+            elif t < 0xC0:
+                px += [15] * (t - 0x7F)
+            else:
+                n = t - 0xBF
+                px += [data[p + (k >> 1)] & 15 if k & 1 else data[p + (k >> 1)] >> 4 for k in range(n)]
+                p += (n + 1) // 2
+        yield name, px[:SRC * SRC]
 
 
 def anims():

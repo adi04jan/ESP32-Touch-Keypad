@@ -240,8 +240,13 @@ function loadMasks() {
   const table = text.slice(text.indexOf("static const IconDef ICONS[] = {"));
   const out = [];
   for (const [, name, off] of table.slice(0, table.indexOf("};")).matchAll(/\{"([a-z0-9-]+)",\s*(\d+)\}/g)) {
-    const m = new Uint8Array(PX * PX);
-    for (let i = 0; i < PX * PX; i++) { const b = data[+off + (i >> 1)]; m[i] = i & 1 ? b & 15 : b >> 4; }
+    const m = new Uint8Array(PX * PX);   // run-length coded as gfx.cpp unpackMask reads it (build_icons.js packMask)
+    for (let i = 0, p = +off; i < PX * PX;) {
+      const t = data[p++];
+      if (t < 0x80) i += t + 1;
+      else if (t < 0xc0) for (let c = t - 0x7f; c-- && i < PX * PX; i++) m[i] = 15;
+      else { const c = t - 0xbf; for (let k = 0; k < c && i < PX * PX; k++, i++) m[i] = k & 1 ? data[p + (k >> 1)] & 15 : data[p + (k >> 1)] >> 4; p += (c + 1) >> 1; }
+    }
     out.push({ name, base: m });
   }
   return out;

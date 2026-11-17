@@ -389,9 +389,36 @@ static IRAM_ATTR void glyphMask(const uint8_t *d, int src, float cx, float cy, f
     }
 }
 
+// A key icon's mask is run-length coded in flash (tools/icons/build_icons.js, 188 KB -> 96 KB): a byte
+// t < 0x80 is t+1 clear pixels, t < 0xC0 is t-0x7F solid ones (15), else t-0xBF pixels follow as 4-bit
+// pairs, high nibble first. It is unpacked into this core's buffer when it differs from the last one
+// (a cell draws its shadow and its ink from one unpack).
+static void unpackMask(const uint8_t *p, uint8_t *dst) {
+  const int N = ICON_PX * ICON_PX;
+  memset(dst, 0, N / 2);
+  for (int i = 0; i < N;) {
+    int t = *p++;
+    if (t < 0x80) { i += t + 1; continue; }
+    if (t < 0xC0) { for (int n = t - 0x7F; n-- && i < N; i++) dst[i >> 1] |= i & 1 ? 15 : 15 << 4; continue; }
+    int n = t - 0xBF;
+    for (int k = 0; k < n && i < N; k++, i++) {
+      int v = k & 1 ? p[k >> 1] & 15 : p[k >> 1] >> 4;
+      dst[i >> 1] |= i & 1 ? v : v << 4;
+    }
+    p += (n + 1) / 2;
+  }
+}
+static const uint8_t *keyMask(const IconDef *ic) {
+  static uint8_t bufs[2][ICON_PX * ICON_PX / 2];   // one per core: both may draw at once
+  static const IconDef *ics[2];
+  int core = xPortGetCoreID() & 1;
+  if (ics[core] != ic) { unpackMask(ICON_DATA + ic->off, bufs[core]); ics[core] = ic; }
+  return bufs[core];
+}
+
 IRAM_ATTR void glyph(const IconDef *ic, bool ui, float cx, float cy, float size, C3 c, int alpha) {
   if (!ic || alpha <= 0) return;
-  glyphMask((ui ? UI_ICON_DATA : ICON_DATA) + ic->off, ui ? UI_ICON_PX : ICON_PX, cx, cy, size, c, alpha);
+  glyphMask(ui ? UI_ICON_DATA + ic->off : keyMask(ic), ui ? UI_ICON_PX : ICON_PX, cx, cy, size, c, alpha);
 }
 
 const int ICON_ANIM_MS = ANIM_FRAME_MS;
@@ -458,7 +485,7 @@ void glyphFrame(const IconDef *ic, int frame, float cx, float cy, C3 c, int alph
   const uint8_t *p = frame >= 0 && frame < iconAnimFrames(ic) ? animRuns(ic) : nullptr;
   if (!p) { glyph(ic, false, cx, cy, ICON_PX, c, alpha); return; }
   if (ic != bufIc || frame != bufFrame) {
-    memcpy(buf, ICON_DATA + ic->off, sizeof bufs[0]);
+    memcpy(buf, keyMask(ic), sizeof bufs[0]);
     for (int f = 0; f <= frame; f++) {
       int pos = 0;
       while (true) {
