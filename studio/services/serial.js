@@ -209,7 +209,9 @@ class SerialLink extends EventEmitter {
       let got = false;
       await this._runExclusive(() => new Promise((resolve) => {
         this._readResolve = () => { got = true; resolve(); };
-        this._capture(500, () => { this._readResolve = null; resolve(); });
+        // Unanswered in time: its prompt may still come (over Bluetooth an idle link takes ~0.5 s to hear a
+        // line), and would be taken for the next command's reply, so the next command drains it first.
+        this._capture(500, () => { this._readResolve = null; this._stale = true; resolve(); });
         this.send("");
       }));
       if (got) return true;

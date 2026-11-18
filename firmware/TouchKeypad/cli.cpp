@@ -478,16 +478,17 @@ static bool runCommand(char *s) {
     else if (!strcmp(arg, "sim usb")) powerSim(1);
     else if (!strcmp(arg, "sim off")) powerSim(-1);
     else if (sscanf(arg, "sleep %d", &a) == 1) powerSetSleepMin(constrain(a, 0, 120));
+    else if (sscanf(arg, "screenoff %d", &a) == 1) uiSetScreenOff(a);                // Settings › Display: on battery, 0 never
     else if (sscanf(arg, "divider %f", &k) == 1) powerSetDivider(k);
     else if (sscanf(arg, "nap %d", &a) == 1) powerDeepSleep(constrain(a, 1, 3600));   // deep sleep now; a touch or the timer wakes it
     else if (!strcmp(arg, "off")) powerOff();                                        // Settings › Device › Turn off: only RESET wakes it
-    else if (*arg) { Con.println("power [sim battery [mv]|usb|off | sleep <min, 0 never> | divider <k> | nap <s> | off]"); return true; }
+    else if (*arg) { Con.println("power [sim battery [mv]|usb|off | sleep <min, 0 never> | screenoff <s, 0 never> | divider <k> | nap <s> | off]"); return true; }
     float ms = 0;
     int lat = -1;
     bleLinkParams(&ms, &lat);
-    Con.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d sim:%d divider:%.3f link:%.2f/%d cpu:%d screen:%s bl:%d\n", powerOnUsb(), powerBatteryMv(),
-                  powerBatteryPct(), powerCharging(), powerSleepMin(), powerSimMode(), powerDivider(), ms, lat, (int)getCpuFrequencyMhz(), uiScreenState(),
-                  displayBacklight());
+    Con.printf("power usb:%d mv:%d pct:%d charging:%d sleep:%d screenoff:%d sim:%d divider:%.3f link:%.2f/%d cpu:%d screen:%s bl:%d\n", powerOnUsb(),
+                  powerBatteryMv(), powerBatteryPct(), powerCharging(), powerSleepMin(), uiScreenOff(), powerSimMode(), powerDivider(), ms, lat,
+                  (int)getCpuFrequencyMhz(), uiScreenState(), displayBacklight());
   } else if (cmd == "theme") {
     if (!strcmp(arg, "default")) uiThemeReset();
     int t = *arg && strcmp(arg, "default") ? uiThemeFind(arg) : uiTheme();

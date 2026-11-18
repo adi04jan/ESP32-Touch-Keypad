@@ -69,6 +69,8 @@ void uiIconWave();                   // `iconanim wave`: run the wave now
 bool uiIconMotion();
 void uiSetDim(int seconds);          // on battery dim after min(N, 20) s idle (0 = 20); USB stays lit. NVS; wakes the screen
 int  uiDim();
+void uiSetScreenOff(int seconds);    // on battery the screen goes off after N s idle (0 never, at most 3600). NVS; wakes it
+int  uiScreenOff();
 void uiSetTheme(int i, bool save = true);   // device theme (themes.h); wipes it in; NVS kp/theme
 int  uiTheme();
 int  uiThemeCount();

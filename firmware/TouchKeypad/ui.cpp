@@ -89,6 +89,8 @@ static uint32_t offArmedAt = 0;      // Settings › Device › Turn off, tapped
 static int forgetArmed = -1;         // Settings › Bluetooth › Forget, the same: the host row armed, and when
 static uint32_t forgetArmedAt = 0;
 static int brightness = 200, dimAfterS = DIM_DEFAULT_S, dimState = 0;   // 0 lit, 1 dim, 2 off
+static int screenOffS = SCREEN_OFF_DEFAULT_S;   // on battery, 0 never (NVS kp/scroff)
+static const uint16_t SCREEN_OFF[] = { 30, 60, 120, 300, 600, 1800, 0 };   // what Settings › Display steps through
 static uint32_t lastAct = 0;
 static uint32_t timeEpoch = 0, timeBase = 0;
 static int litPick = -1;   // a profile's own brightness, in force until the owner moves the slider
@@ -1448,6 +1450,15 @@ static void themeChips() {
   }
 }
 
+// The screen's timeout on battery, a button in the free cells after the last theme chip; a tap steps
+// through SCREEN_OFF.
+static_assert(THEME_COUNT % THEME_COLS && THEME_COUNT % THEME_COLS <= 2, "the screen-off button needs two free chip cells");
+static void screenOffRect(int &x, int &y, int &w) {
+  x = PANE_X + (int)((THEME_COUNT % THEME_COLS) * (themeChipW() + THEME_GAP));
+  y = THEME_Y + THEME_COUNT / THEME_COLS * THEME_ROW;
+  w = PANE_X + PANE_W - x;
+}
+
 // A profile card's name, whole where it can be: one line of the bold body face (15 px) when it fits, else
 // the label face (13 px), on two lines split at a space when one won't do, the second cut short last.
 static void cardName(float x, int y, const char *name, C3 ink) {
@@ -1473,6 +1484,11 @@ static void drawPane() {
       slider(PANE_X, 110, PANE_W, brightness / 255.0f);
       text(fBody, PANE_X, 170, "Theme", TXT);
       themeChips();
+      int x, y, w;
+      screenOffRect(x, y, w);
+      if (!screenOffS) strcpy(v, "Never off");
+      else snprintf(v, sizeof v, screenOffS < 60 ? "Off after %d s" : "Off after %d min", screenOffS < 60 ? screenOffS : screenOffS / 60);
+      button(x, y, w, THEME_H, v, "battery-medium", 0, pressedBtn == 50);   // the battery: on USB it stays lit
       break;
     }
     case 1: {   // all slots, 4 x 4: tap one to switch
@@ -2332,13 +2348,14 @@ void uiTick() {
   if (offArmedAt && (int32_t)(now - offArmedAt) > 3000) { offArmedAt = 0; mark(GEN_X, 42, GEN_W, 44); }   // signed: armed is now | 1
   if (forgetArmed >= 0 && (int32_t)(now - forgetArmedAt) > 3000) { forgetArmed = -1; if (mode == M_SHEET) mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H); }
   // On USB the screen stays lit at full power. On battery: dim within 20 s (CPU slowed, LED dark),
-  // the screen off after a minute (the panel asleep), and deep sleep after the chosen minutes.
+  // the screen off after the chosen time (the panel asleep), and deep sleep after the chosen minutes,
+  // dim or off.
   bool usb = powerOnUsb();
   if (!usb && mode != M_PAIR && mode != M_CAL) {
     uint32_t idle = now - lastAct, dimMs = min(dimAfterS ? dimAfterS : 20, 20) * 1000UL;   // setdim under 20 s: tests
     if (dimState == 0 && idle > dimMs) { dimState = 1; displaySetBacklight(litLevel() * DIM_LEVEL_PCT / 100); powerSave(true); }
-    else if (dimState == 1 && idle > BAT_OFF_MS) { dimState = 2; displaySetBacklight(0); }
-    else if (dimState == 2 && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning() && !hidJiggling()) powerDeepSleep();   // Stay active keeps it awake
+    else if (dimState == 1 && screenOffS && idle > screenOffS * 1000UL) { dimState = 2; displaySetBacklight(0); }
+    else if (dimState && powerSleepMin() && idle > powerSleepMin() * 60000UL && !macroEngine.isRunning() && !hidJiggling()) powerDeepSleep();   // Stay active keeps it awake
   }
   static bool lowWarned = false;   // once per drop under 15 %
   int pct = powerBatteryPct();
@@ -2462,6 +2479,7 @@ void uiBegin() {
   p.begin("kp", true);
   brightness = p.getUChar("bright", 200);
   dimAfterS = p.getUShort("dim", DIM_DEFAULT_S);
+  screenOffS = p.getUShort("scroff", SCREEN_OFF_DEFAULT_S);
   themeIdx = constrain(p.getUChar("theme", THEME_DEFAULT), 0, THEME_COUNT - 1);
   iconMotion = p.getBool("ianim", true);
   String bar = p.getString("qbar", "");
@@ -2526,6 +2544,16 @@ void uiSetDim(int seconds) {
   Preferences p;
   p.begin("kp", false);
   p.putUShort("dim", dimAfterS);
+  p.end();
+  uiWake();
+}
+
+int uiScreenOff() { return screenOffS; }
+void uiSetScreenOff(int seconds) {
+  screenOffS = constrain(seconds, 0, 3600);
+  Preferences p;
+  p.begin("kp", false);
+  p.putUShort("scroff", screenOffS);
   p.end();
   uiWake();
 }
@@ -3163,6 +3191,7 @@ static int sheetButtonAt(int x, int y) {   // ids match drawSheet's pressedBtn
   if (sheetTab == 4 && inRect(x, y, PANE_X + PANE_W - 130, 140, 130, 44)) return 40;
   if (sheetTab == 4 && inRect(x, y, GEN_X, 42, GEN_W, 44)) return 41;
   if (sheetTab == 1 && inRect(x, y, GEN_X, 42, GEN_W, 44)) return 60;
+  if (sheetTab == 0) { int bx, by, bw; screenOffRect(bx, by, bw); if (inRect(x, y, bx, by, bw, THEME_H)) return 50; }
   return -1;
 }
 
@@ -3185,6 +3214,13 @@ static void sheetTap(int x, int y) {
   }
   if (b == 30) { mode = M_HOME; blePairOpen(); return; }
   if (b == 40) { uiCalibrate(); return; }
+  if (b == 50) {
+    int i = 0, n = sizeof SCREEN_OFF / sizeof *SCREEN_OFF;
+    while (i < n - 1 && SCREEN_OFF[i] != screenOffS) i++;
+    uiSetScreenOff(SCREEN_OFF[(i + 1) % n]);   // a value set from the console that is not in the list: the first
+    mark(0, STATUS_H, SCR_W, SCR_H - STATUS_H);
+    return;
+  }
   if (b == 41) {
     if (offArmedAt) { offArmedAt = 0; uiCloseSheet(); powerOff(); }
     else { offArmedAt = millis() | 1; mark(GEN_X, 42, GEN_W, 44); }

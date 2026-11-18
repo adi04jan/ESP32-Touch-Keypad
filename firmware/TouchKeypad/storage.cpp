@@ -2,6 +2,7 @@
 #include "board.h"
 #include "console.h"
 #include <LittleFS.h>
+#include "esp_rom_crc.h"
 
 bool fsBegin() {
   if (!LittleFS.begin(true)) {
@@ -89,7 +90,17 @@ void catFile(const char *path) {
 
 void listFiles(const char *dir) {
   File d = LittleFS.open(dir);
-  if (!d || !d.isDirectory()) return;
+  if (!d) return;
+  // One file: its size and CRC-32. Studio checks a profile read against the size, and skips reading a profile
+  // it already holds with that CRC (each one costs the UI ~0.7 s over Bluetooth). The whole list opens every
+  // file: ~1.2 s.
+  if (!d.isDirectory()) {
+    uint32_t crc = 0;
+    uint8_t buf[256];
+    for (int n; (n = d.read(buf, sizeof buf)) > 0;) crc = esp_rom_crc32_le(crc, buf, n);
+    Con.printf("%s\t%u\t%08lx\n", d.path() + 1, (unsigned)d.size(), (unsigned long)crc);
+    return;
+  }
   for (File f = d.openNextFile(); f; f = d.openNextFile()) {
     String p = String(dir);
     if (!p.endsWith("/")) p += "/";

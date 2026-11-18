@@ -39,6 +39,7 @@ class Device extends EventEmitter {
     this._save = new Map();
     this._clock = null;
     this.onDevice = null;          // slot -> profile|null as the keypad holds it (read at connect), null: unknown
+    this._known = {};              // slot -> { crc, profile }: the last read, kept across reconnects (readProfile)
     this.hostConflicts = [];       // [{slot, profiles:[a, b]}]: one host slot, two commands
     this._np = null;
     this._art = null;
@@ -134,19 +135,29 @@ class Device extends EventEmitter {
   // empty slot would autosave a blank or stale copy over the owner's profile.
   async readProfile(slot, quiet = false) {
     const name = `profile${slot}.json`;
+    // `ls <file>` (3.16.2): that file's size and CRC; older firmware prints nothing for it. A profile Studio
+    // already read with that CRC is not read again: a `cat` over Bluetooth holds the keypad's screen for
+    // ~0.7 s, and a reconnect (every wake from sleep) reads all 16.
+    const one = (await this.link.command(`ls /${name}`, undefined, true)).match(/^profile\d+\.json\t(\d+)(?:\t([0-9a-f]{8}))?\s*$/m);
+    const crc = one && one[2], known = this._known[slot];
+    if (crc && known && known.crc === crc) return structuredClone(known.profile);
     const raw = await this.link.readFile(name, quiet);
     if (/^ERR no such file/.test(raw)) return null;
     // A reply that lost bytes on the way can still parse: over Bluetooth, firmware before 3.15.1 dropped
     // two lines of every `cat` and a key came back without its name and icon, valid JSON that an autosave
-    // would have written back. So the reply's length must match the file's size from `ls` (less the final
-    // newline `cat` leaves off, and a CR or two).
-    const size = (await this._fileSizes())[name], got = Buffer.byteLength(raw, "utf8");
+    // would have written back. So the reply's length must match the file's size (less the final newline
+    // `cat` leaves off, and a CR or two); before 3.16.2 the size comes from the whole list.
+    const size = one ? +one[1] : (await this._fileSizes())[name], got = Buffer.byteLength(raw, "utf8");
     if (size != null && (size - got < 0 || size - got > 2)) throw new Error(`could not read profile ${slot} from the keypad whole (${got} of ${size} bytes)`);
-    try { return schema.repairProfile(JSON.parse(raw)); } catch (_) {}
-    throw new Error(`could not read profile ${slot} from the keypad${raw ? "" : " (no answer)"}`);
+    let p;
+    try { p = schema.repairProfile(JSON.parse(raw)); } catch (_) {}
+    if (!p) throw new Error(`could not read profile ${slot} from the keypad${raw ? "" : " (no answer)"}`);
+    if (crc) this._known[slot] = { crc, profile: structuredClone(p) };
+    return p;
   }
 
-  // Profile sizes from one `ls`, kept for a read pass (a connect reads all 16) and dropped by any save.
+  // Firmware before 3.16.2: profile sizes from one `ls` (every file opened, ~1.2 s), kept for a read pass
+  // (a connect reads all 16) and dropped by any save.
   async _fileSizes() {
     if (this._sizes && Date.now() - this._sizes.at < 3000) return this._sizes.of;
     const of = {};

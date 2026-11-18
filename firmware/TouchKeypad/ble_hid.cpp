@@ -125,7 +125,7 @@ void bleConsoleWrite(const uint8_t *b, size_t n) {
   if (!nusOn) return;
   for (size_t i = 0; i < n; i++) {
     txBuf[txLen++] = b[i];
-    if (txLen >= nusChunk || b[i] == '\n') txSend();
+    if (txLen >= nusChunk) txSend();   // full chunks only: the prompt flushes a reply, blePoll an event line
   }
   txAt = millis();
 }
@@ -143,6 +143,7 @@ class ServerCb : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override {
     bondsAtConnect = NimBLEDevice::getNumBonds();
     s->updateConnParams(info.getConnHandle(), 6, 12, LATENCY, 400);   // 7.5-15 ms, 4 s timeout
+    s->setDataLen(info.getConnHandle(), 251);   // a 244-byte notification in one radio packet, not ten of 27
   }
   void onConnParamsUpdate(NimBLEConnInfo &info) override {   // what the host granted
     post(EV_PARAMS, slotOf(info.getIdAddress()), info.getConnInterval() | (uint32_t)info.getConnLatency() << 16);

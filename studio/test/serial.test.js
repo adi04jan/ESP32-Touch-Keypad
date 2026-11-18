@@ -33,6 +33,23 @@ test("line assembly: prompt split across chunks, prompt followed by EVT in one c
   assert.equal(link._partial, "");
 });
 
+test("a prompt that answers waitReady late is not taken for the next command's reply (Bluetooth)", async () => {
+  const link = new SerialLink();
+  const sent = [];
+  link.port = { isOpen: true, write: (d) => sent.push(String(d)) };
+  const until = async (ok) => { for (let i = 0; i < 300 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); };
+  const ready = link.waitReady(3000);
+  await until(() => sent.length === 2);     // the first empty line went unanswered for 500 ms: a second one
+  link._feed("macropad:$ ");                // the first one's prompt, late
+  assert.ok(await ready);
+  const st = link.command("status");
+  await new Promise((r) => setTimeout(r, 20));
+  link._feed("macropad:$ ");                // the second one's prompt
+  await until(() => sent.some((s) => s.startsWith("status")));
+  link._feed("Profile:1 model:touch\nmacropad:$ ");
+  assert.equal(await st, "Profile:1 model:touch");
+});
+
 test("detect picks the CH340 that reports model:touch", async () => {
   const ports = [{ path: "COM_OTHER", vendorId: "10c4", productId: "ea60" }, { path: "SIM1", vendorId: "1a86", productId: "7523" }];
   const { link } = await rig({ ports });

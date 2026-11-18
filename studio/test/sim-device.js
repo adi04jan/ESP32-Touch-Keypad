@@ -152,6 +152,7 @@ class SimDevice extends EventEmitter {
       case "fsinfo": return this.println(`FS_INFO:${this.fsTotal},${this._used()}`);
       case "ls": {
         const dir = arg.replace(/\/+$/, "");
+        if (this.files.has(dir)) { const b = this.files.get(dir); return this.println(`${dir.slice(1)}\t${b.length}\t${hex8(zlib.crc32(b))}`); }   // one file (3.16.2)
         for (const [name, buf] of this.files) {
           if (dir === "/t" ? name.startsWith("/t/") : !name.startsWith("/t/")) this.println(`${dir === "/t" ? name.split("/").pop() : name.slice(1)}\t${buf.length}`);
         }

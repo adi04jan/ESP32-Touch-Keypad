@@ -99,8 +99,31 @@ test("a profile read that lost bytes on the way is refused, though it parses", a
     this.println(lost.replace(/\n$/, ""));
     this.prompt();
   };
+  delete dev._known[3];   // a first read: Studio holds no copy of it yet
   await assert.rejects(dev.readProfile(3), /could not read profile 3 from the keypad whole/);
   sim.line = line;
+});
+
+test("a reconnect reads again only the profiles whose CRC changed", async () => {
+  const { sim, link, dev } = rig();
+  assert.equal((await dev.connect()).ok, true);
+  assert.equal((await dev.save(3, schema.blankProfile("Daily"))).ok, true);
+  assert.equal((await dev.save(4, schema.blankProfile("Code"))).ok, true);
+  await dev.readProfile(3);
+  await dev.readProfile(4);
+  link.disconnect();   // the keypad sleeps; meanwhile profile 4 changes there (another PC's Studio)
+  const p4 = JSON.parse(sim.files.get("/profile4.json"));
+  p4.profile_name = "Code 2";
+  sim.files.set("/profile4.json", Buffer.from(JSON.stringify(p4, null, 1) + "\n"));
+  const cats = [], line = sim.line;
+  sim.line = function (raw) { if (raw.startsWith("cat ")) cats.push(raw.trim()); return line.call(this, raw); };
+  assert.equal((await dev.connect()).ok, true);
+  sim.line = line;
+  assert.ok(cats.includes("cat /profile4.json"));
+  assert.ok(!cats.includes("cat /profile3.json"));
+  assert.equal(dev.onDevice[3].profile_name, "Daily");
+  assert.equal(dev.onDevice[4].profile_name, "Code 2");
+  link.disconnect();
 });
 
 test("rapid edits coalesce into one push per key and one upload", async () => {

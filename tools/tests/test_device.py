@@ -241,6 +241,17 @@ def test_profile_round_trip(dev):
     assert json.loads("\n".join(dev.cmd(f"cat /profile{SLOT}.json"))) == PROFILE
 
 
+def test_ls_of_one_file_gives_its_size_and_crc(dev):
+    """Studio checks a profile read against the size, and skips a read whose CRC it already holds (3.16.2).
+    One file costs one open, not the whole list's (~1.2 s, every file opened)."""
+    body = "\n".join(dev.cmd(f"cat /profile{SLOT}.json")) + "\n"
+    t = time.time()
+    got = dev.cmd(f"ls /profile{SLOT}.json")
+    assert time.time() - t < 0.4
+    assert got == [f"profile{SLOT}.json\t{len(body)}\t{zlib.crc32(body.encode()):08x}"], got
+    assert dev.cmd("ls /no-such-file.json") == []
+
+
 def test_bad_json_is_rejected_and_old_profile_kept(dev):
     r = dev.upload_text(f"profile{SLOT}.json", '{"schema_version": 2, "pages": [')
     assert any("Upload rejected" in l for l in r), r
@@ -1510,7 +1521,7 @@ def test_sheet_theme_chip_switches_the_theme(d):
 # ---------------------------------------------------------------- power
 def test_power_readout_and_battery_policy(d):
     p = d.cmd("power")[0]
-    assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ sim:-1 .*cpu:240 screen:lit bl:\d+$", p), p
+    assert re.match(r"power usb:1 mv:\d+ pct:-?\d+ charging:[01] sleep:\d+ screenoff:\d+ sim:-1 .*cpu:240 screen:lit bl:\d+$", p), p
     try:
         d.ok("setdim 2")                                   # on battery the dim time is min(setdim, 20 s)
         time.sleep(3)
@@ -1530,19 +1541,44 @@ def test_power_readout_and_battery_policy(d):
 
 
 def test_dark_screen_wakes_drawing(d):
-    """On battery the screen goes off after a minute and the panel sleeps with it: a wake brings it back."""
+    """On battery the screen goes off after the chosen time (here 30 s) and the panel sleeps with it: a wake
+    brings it back."""
+    old = re.search(r"screenoff:(\d+)", d.cmd("power")[0]).group(1)
     try:
+        assert " screenoff:30 " in d.cmd("power screenoff 30")[0]
         d.ok("power sim battery")
         d.ok("theme glass")
         t = time.time()
         while "screen:off" not in d.cmd("power")[0]:
-            assert time.time() - t < 75, "the screen never went off"
-            time.sleep(2)
+            assert time.time() - t < 40, "the screen never went off"
+            time.sleep(1)
+        assert time.time() - t > 27, "the screen went off early"
         d.ok("theme glass")
         assert re.search(r"cpu:240 screen:lit bl:\d+$", d.cmd("power")[0])
         assert len(d.shot().getcolors(1 << 20)) > 50
     finally:
         d.cmd("power sim off")
+        d.cmd(f"power screenoff {old}")
+
+
+def test_screen_off_time_in_settings(d):
+    """Settings › Display: the button after the last theme chip steps the screen's timeout on battery."""
+    old = re.search(r"screenoff:(\d+)", d.cmd("power")[0]).group(1)
+    assert " screenoff:0 " in d.cmd("power screenoff 0")[0]      # never
+    assert " screenoff:3600 " in d.cmd("power screenoff 9999")[0]  # clamped
+    try:
+        d.cmd("power screenoff 60")
+        d.ok("sheet")
+        time.sleep(0.8)
+        d.touch(60, 64)                                            # the Display tab
+        time.sleep(0.5)
+        for want in (120, 300, 600, 1800, 0, 30, 60):              # the button, right of the last theme chip
+            d.touch(383, 294)
+            time.sleep(0.4)
+            assert f" screenoff:{want} " in d.cmd("power")[0], want
+    finally:
+        d.cmd("sheet close")
+        d.cmd(f"power screenoff {old}")
 
 
 def test_power_sleep_minutes(d):

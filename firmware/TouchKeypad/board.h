@@ -2,7 +2,7 @@
    and firmware limits. Arduino-ESP32 core 3.2.1. */
 #pragma once
 
-#define FW_VERSION      "3.16.1"
+#define FW_VERSION      "3.16.2"
 #define SCHEMA_VERSION  2
 
 #ifndef KP_TEST                 // tools/kp.py builds with -DKP_TEST=1
@@ -62,6 +62,6 @@
 
 // ----- Power / timers -----
 #define DIM_LEVEL_PCT       20
-#define BAT_OFF_MS          60000UL      // on battery: the screen goes off after a minute idle (on USB it stays lit)
+#define SCREEN_OFF_DEFAULT_S 60          // on battery: the screen goes off after this idle (Settings › Display; on USB it stays lit)
 #define PAIR_WINDOW_MS      60000UL
 #define WDT_TIMEOUT_MS      8000

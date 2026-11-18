@@ -62,7 +62,7 @@ Each key's icon acts out its key when the key fires, and a few play while the sc
 | Other | RGB LED, microSD slot on its own SPI bus, BOOT and RESET buttons |
 | Draw | about 145 mA lit with icons moving, 38 mA with the screen off, on a 3.7 V cell |
 
-The flash is split 1.8 MB for the app and 2 MB for profiles and tiles (LittleFS). Firmware 3.16.0 uses 1,757,087 of the app's 1,900,544 bytes; the full pin map is in `docs/PLAN.md` §3.
+The flash is split 1.8 MB for the app and 2 MB for profiles and tiles (LittleFS). Firmware 3.16.2 uses 1,758,507 of the app's 1,900,544 bytes; the full pin map is in `docs/PLAN.md` §3.
 
 ## Build and flash
 
@@ -94,9 +94,9 @@ Studio connects over USB or, with no cable, over Bluetooth to a keypad paired wi
 ## Tests, from fastest to fullest
 
 ```
-cd studio && npm test                # 123 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
+cd studio && npm test                # 125 unit tests against a simulated keypad, a fake Bluetooth helper and a fake Claude Code
 cd studio && npm run smoke           # Electron boots and draws the glass preview with all icons
-python -m pytest tools/tests -v      # 164 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power and turn off, quick switch, Generate, folders, GIF keys, moving icons, notifications and the shade
+python -m pytest tools/tests -v      # 166 tests on the board: keys, gestures, pixels, calibration, LED, player, sheet, every theme, 60 fps floors, power and turn off, quick switch, Generate, folders, GIF keys, moving icons, notifications and the shade
 cd studio && npm run test:hw         # Studio's services against the board
 node tools/e2e/media_e2e.js          # a silent Windows media session -> keypad player (title, album, cover) -> tap to seek -> back to Windows
 python tools/e2e/run_e2e.py          # over BLE (reuses this PC's pairing): media keys read from Windows' HID stack, types, toggles, host action through Studio, Play/Pause
@@ -118,4 +118,4 @@ The BLE E2E types only into the window it opens and keeps focused, and presses P
 - **Windows GATT:** open the console service shared and dispose it on exit. A service left to the finalizer stays held, and the next connection gets AccessDenied. Read characteristics and descriptors uncached: after a firmware update, the cached CCCD handle answers "write not permitted".
 - **Heap:** about 114 KB free with NimBLE, the double DMA buffers and the album-art buffer. The album cover (128×128, 32 KB) is decoded into two 16 KB halves, which fit where one 32 KB block often doesn't once the heap has split; when even they find no room, the keypad drops the decoded tiles and the inflated icon animations (both come back from flash) and tries again. Studio checks each profile it reads against the file's size from `ls`, so a reply that lost bytes on the way is refused instead of autosaved.
 - **Flash:** the key icons' 4-bit masks are run-length coded (188 KB to 96 KB) and unpacked per draw into a 648-byte buffer per core; the animations are deflated per icon and inflated by the ESP32's ROM `tinfl` while a key plays them.
-- **Bluetooth console:** after a quiet spell the link can sleep through 30 connection events (0.45 s) before the notify queue drains, so a chunk of console output waits up to 1.5 s for room; giving up sooner left holes in replies (3.15.1).
+- **Bluetooth console:** after a quiet spell the link can sleep through 30 connection events (0.45 s) before the notify queue drains, so a chunk of console output waits up to 1.5 s for room; giving up sooner left holes in replies (3.15.1). That wait is in the loop that draws the screen, so a long reply holds the screen while it drains: output goes in full 244-byte notifications over 251-byte LE packets (one per line made a profile read hold it 2 s; now 0.3-0.8 s), and Studio reads again only the profiles whose CRC changed, so a reconnect after sleep holds it not at all (3.16.2).
