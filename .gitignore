@@ -11,3 +11,4 @@ tools/e2e/KpHelper/obj/
 # personal keypad profiles: may hold credentials (profiles/spsf.json types a device password)
 /profiles/
 .superpowers/
+.playwright-mcp/
