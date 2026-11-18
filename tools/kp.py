@@ -11,6 +11,7 @@
   python tools/kp.py upload local_file device_path
   python tools/kp.py reset
 
+KP_RAWLOG=<file> appends every byte sent and received, timestamped (for a reply that went missing).
 Port and paths come from KP_PORT (default COM26) and KP_ARDUINO_CLI. The Device
 class is importable (tests use it). Windows opens COM ports exclusively, so
 concurrent kp.py processes serialize by retrying the open.
@@ -65,6 +66,7 @@ class Device:
         self.buf = b""
         self.events = []          # (time, line) for every EVT: seen
         self.prompted = False     # a prompt went by as the prefix of a later line (async EVT: after it)
+        self.raw = open(os.environ["KP_RAWLOG"], "ab") if os.environ.get("KP_RAWLOG") else None
         self.open(open_wait)
 
     # ---- port handling ----
@@ -113,6 +115,8 @@ class Device:
             return []
         if not data:
             return []
+        if self.raw:
+            self.raw.write(b"\n[RX %.3f] " % time.time() + data)
         self.buf += data
         out = []
         while b"\n" in self.buf:
@@ -165,6 +169,8 @@ class Device:
         raise DeviceError(f"no prompt within {timeout}s")
 
     def write_line(self, line):
+        if self.raw:
+            self.raw.write(b"\n[TX %.3f] " % time.time() + line.encode()[:200])
         self.ser.write(line.encode() + b"\n")
 
     def cmd(self, line, timeout=5):
