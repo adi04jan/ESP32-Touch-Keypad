@@ -94,7 +94,22 @@ function Cover($p) {
   $g.Dispose(); $bmp.Dispose(); $img.Dispose(); $st.Dispose()
   [Convert]::ToBase64String($ms.ToArray())
 }
-$last = ''; $artKey = ''; $artTries = 0
+# The cover to send for this poll, or ''. Covers often arrive seconds after the track, and for about a
+# second the session can still hold the previous track's (Chrome changes the title first): ask for
+# ~15 s per track, and take the previous cover again only for the same album, or after 3 s (two tracks
+# may share one); a different cover after that still replaces it.
+function ArtStep($key, $album, $get) {
+  if ($key -ne $script:artKey) { $script:artKey = $key; $script:artTries = 0; $script:stale = $script:sent; $script:staleAlbum = $script:sentAlbum; $script:sent = '' }
+  if ($script:artTries -lt 0 -or $script:artTries -ge 30) { return '' }
+  $script:artTries++
+  $a = & $get
+  if (-not $a -or $a -ceq $script:sent) { return '' }
+  if ($a -cne $script:stale -or ($album -and $album -eq $script:staleAlbum)) { $script:artTries = -1 }
+  elseif ($script:artTries -lt 6) { return '' }
+  $script:sent = $a; $script:sentAlbum = $album
+  $a
+}
+$last = ''; $artKey = ''; $artTries = 0; $sent = ''; $sentAlbum = ''; $stale = ''; $staleAlbum = ''
 # Console.In.ReadLineAsync blocks in .NET Framework; the raw stdin stream reads on the pool.
 $stdin = [Console]::OpenStandardInput(); $inBuf = New-Object byte[] 256; $pend = ''
 $rd = $stdin.ReadAsync($inBuf, 0, 256)
@@ -118,13 +133,10 @@ while ($true) {
     } else { $o = [ordered]@{ title = ''; album = ''; artist = ''; app = ''; pos = 0; len = 0; playing = $false } }
     $j = $o | ConvertTo-Json -Compress
     if ($j -ne $last) { $last = $j; [Console]::Out.WriteLine($j); [Console]::Out.Flush() }
-    # Covers often arrive seconds after the track: keep asking for ~15 s per track.
     $key = "$($o.title)|$($o.artist)|$($o.album)"
-    if ($key -ne $artKey) { $artKey = $key; $artTries = 0 }
-    if ($s -and $artTries -ge 0 -and $artTries -lt 30) {
-      $artTries++
-      $a = Cover $p
-      if ($a) { $artTries = -1; [Console]::Out.WriteLine((@{ art = $a; key = $key } | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
+    if ($s) {
+      $a = ArtStep $key $o.album { Cover $p }
+      if ($a) { [Console]::Out.WriteLine((@{ art = $a; key = $key } | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
     }
   } catch { [Console]::Error.WriteLine($_.Exception.Message) }
   Start-Sleep -Milliseconds 500

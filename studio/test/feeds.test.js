@@ -10,6 +10,22 @@ test("the PowerShell helpers print UTF-8, not the OEM code page (titles like Bey
   assert.match(require("../services/activewin").PS, utf8);
 });
 
+// Runs the helper's own ArtStep over scripted polls ([key, album, cover]); "-" = nothing sent.
+test("a new track's cover is not the previous track's that the session still holds", { skip: process.platform !== "win32" }, () => {
+  const fn = feeds.NP_PS.match(/^function ArtStep[\s\S]*?^}$/m);
+  assert.ok(fn, "ArtStep in NP_PS");
+  const polls = [
+    ["A", "", "a"],                                            // first track: take what is there
+    ["B", "", "a"], ["B", "", "a"], ["B", "", "b"], ["B", "", "b"],   // Chrome: title first, cover ~1 s later
+    ["C", "X", "c"], ["D", "X", "c"],                          // same album: the same cover is right
+    ...Array(6).fill(["E", "Y", "c"]), ["E", "Y", "c"], ["E", "Y", "e"],   // shared cover after 3 s, a late new one still wins
+    ["F", "", ""], ["F", "", "f"],                             // no cover yet
+  ];
+  const ps = `${fn[0]}\n` + polls.map(([k, al, c]) => `$r = ArtStep '${k}' '${al}' { '${c}' }; if ($r) { $r } else { '-' }`).join("\n");
+  const out = require("child_process").execFileSync("powershell.exe", ["-NoProfile", "-EncodedCommand", Buffer.from(ps, "utf16le").toString("base64")], { encoding: "utf8" });
+  assert.deepEqual(out.trim().split(/\r?\n/), ["a", "-", "-", "b", "-", "c", "c", "-", "-", "-", "-", "-", "c", "-", "e", "-", "f"]);
+});
+
 test("settime carries epoch seconds and minutes east of UTC", () => {
   const d = new Date(Date.UTC(2026, 9, 1, 12, 0, 0));
   const [cmd, epoch, tz] = feeds.timeCommand(d).split(" ");
